@@ -1,4 +1,5 @@
 import type { StoredScenario } from '../types'
+import { resolveRuntimeRowsValue } from './runtimeSettingsModel'
 
 // Where browser evidence is turned on, for the empty states it would have
 // filled. Both settings are off unless a browser script or a scenario group
@@ -24,9 +25,9 @@ export interface PageTimingCoverage {
 
 /**
  * Which browser groups will record page timings and Web Vitals: the group's
- * browser section, else the scenario's, else the script's own setting
- * decides, as the controller merges them (each section replaces the whole
- * one below). A group whose script was not reviewed is left out.
+ * row, else the scenario's, else the script's own setting decides, as the
+ * controller merges them (a v1 browser section replaces the whole one below; a
+ * partial row decides only the paths it lists). A group whose script was not reviewed is left out.
  */
 export function pageTimingCoverage(
   scenario: ScenarioCapture,
@@ -38,10 +39,11 @@ export function pageTimingCoverage(
     const script = byId.get(group.script_id)
     if (script?.protocol !== 'browser') continue
     coverage.browserGroups.push(group)
-    const groupSection = group.runtime_settings?.browser_config
-    const section = groupSection ?? scenario.runtime_settings?.browser_config
-    if (section ? section.capture_document_metrics === true : script.documentCapture === true) continue
-    coverage.without.push({ group, source: groupSection ? 'group' : section ? 'scenario' : 'script' })
+    // Resolved per path: a partial row (override_fields) decides only when it lists
+    // browser.capture_document_metrics (or browser); a v1 browser_config replaces the section.
+    const { index, value } = resolveRuntimeRowsValue('browser.capture_document_metrics', [group.runtime_settings, scenario.runtime_settings])
+    if (index >= 0 ? value === true : script.documentCapture === true) continue
+    coverage.without.push({ group, source: index === 0 ? 'group' : index === 1 ? 'scenario' : 'script' })
   }
   return coverage
 }

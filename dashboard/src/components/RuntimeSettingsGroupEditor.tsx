@@ -12,20 +12,26 @@ import { inheritedPlaceholder as inh } from './runtimeFieldParsers'
 import {
   EMPTY_RUNTIME_DRAFT,
   HTTP_VERSION_OPTIONS,
-  errorHandlingFromDraft,
+  applyRuntimeOverrideDiff,
+  applyRuntimeOverrideEdit,
   formatEffectiveRuntimeField,
+  isFieldOverridden,
   isRuntimeDraftEmpty,
   isRuntimeFieldApplicable,
+  overlayRuntimeOverrideSection,
   overrideFromRuntimeDraft,
+  resetOverrideField,
   runtimeDraftFromOverride,
   runtimeOverrideFromScriptConfig,
+  runtimeOverrideRowFromDraft,
   RUNTIME_FIELD_SOURCE_LABEL,
+  setOverrideField,
   type RuntimeFieldKey,
 } from './runtimeSettingsModel'
-import { editReplacementSection, materializeRuntimeSettingsForApply } from './runtimeSettingsApply'
+import { materializeRuntimeSettingsForApply, type RuntimeApplyReport } from './runtimeSettingsApply'
 import { HTTP3ExecutionNote } from './HTTP3ExecutionNote'
 import { HTTPQUICSettingsFields } from './HTTPQUICSettingsFields'
-import { http3PolicyIssues, patchQUICConfig, quicPanelDisabledReason } from './httpQUICModel'
+import { http3PolicyIssues, quicPanelDisabledReason } from './httpQUICModel'
 import { useBrowserEmulationCatalog } from '../hooks/useBrowserEmulationCatalog'
 import WebHttpTab from './runtimeTabs/WebHttpTab'
 import { JavaEnvSettingsFields, type JavaEnvSettingsValue } from './JavaEnvSettingsFields'
@@ -78,7 +84,8 @@ export interface RuntimeSettingsGroupEditorProps {
   /** Per-group overrides, aligned to `groups`. */
   overrides: Array<ScenarioRuntimeSettingsDraft | undefined>
   onChange: (index: number, next: ScenarioRuntimeSettingsDraft | undefined) => void
-  onApplyToGroups: (sourceIndex: number, targetIndexes: number[]) => void
+  /** May return what it did not copy, which the apply panel then reports. */
+  onApplyToGroups: (sourceIndex: number, targetIndexes: number[]) => void | RuntimeApplyReport
   /** Overrides the panel heading (single-target mounts such as the scenario root). */
   title?: string
   description?: string
@@ -159,6 +166,11 @@ type RunLogicSettings = NonNullable<RuntimeSettingsOverride['run_logic']>
 type ThinkTimeSettings = NonNullable<RuntimeSettingsOverride['think_time']>
 type PacingSettings = NonNullable<RuntimeSettingsOverride['pacing']>
 
+/** Mode select value for a mode this group overrides to empty (Browser > Engine default). */
+const BROWSER_IDENTITY_LEAVES = ['mode', 'browser_type', 'browser_version', 'platform', 'custom_user_agent'] as const
+type BrowserIdentityLeaf = (typeof BROWSER_IDENTITY_LEAVES)[number]
+const ENGINE_DEFAULT_MODE_OPTION = '__engine_default__'
+
 function groupLabel(group: RuntimeEditorGroup, index: number): string {
   return group.name || `Group ${index + 1}`
 }
@@ -183,6 +195,7 @@ export default function RuntimeSettingsGroupEditor({
   const tabPrefix = useId()
   const [applyOpen, setApplyOpen] = useState(false)
   const [applyTargets, setApplyTargets] = useState<number[]>([])
+  const [applyNotice, setApplyNotice] = useState<string | null>(null)
   const [rawActiveTab, setRawActiveTab] = useState<RuntimeTabId>('summary')
   const [rawHttpSubTab, setRawHttpSubTab] = useState<HttpSubTabId>('request_defaults')
 
@@ -216,7 +229,9 @@ export default function RuntimeSettingsGroupEditor({
   }
 
   const draft = overrides[index] ?? EMPTY_RUNTIME_DRAFT
-  const groupOverride = overrideFromRuntimeDraft(overrides[index])
+  // The stored row the group draft describes (an untyped pacing and `{}` sections
+  // kept), so the Summary reads it the way the backend applies it.
+  const groupOverride = runtimeOverrideRowFromDraft(overrides[index]) as RuntimeSettingsOverride | undefined
   const scriptDefault = runtimeOverrideFromScriptConfig(focusGroup.scriptConfig)
   const engineDefault = runtimeOverrideFromScriptConfig(engineDefaults)
 
@@ -259,46 +274,18 @@ export default function RuntimeSettingsGroupEditor({
     },
   )
   const inheritedWeb = structuredClone(inheritedOverride?.web_runtime ?? {})
-  // web_runtime overlays populated top-level units on the lower layer, so the
-  // shaping a group runs with is its own unit where set, else the inherited one.
-  const effectiveWebRuntimeForHTTP3: typeof inheritedWeb = { ...inheritedWeb }
-  for (const [key, value] of Object.entries(draft.web_runtime ?? {})) {
-    if (value !== undefined) (effectiveWebRuntimeForHTTP3 as Record<string, unknown>)[key] = value
-  }
   const inheritedIterations = inheritedRunLogic.iterations ?? inheritedOverride?.iterations
 
-  const currentError = errorHandlingFromDraft(draft)
-
-  const hasLegacyLog = Boolean(draft.log_level)
-  const currentLog: LogSettings | undefined = draft.log
-    ? structuredClone(draft.log)
-    : hasLegacyLog
-      ? { ...structuredClone(inheritedLog), level: draft.log_level }
-      : undefined
-
-  const hasLegacyRunLogic = draft.iterations !== undefined || Boolean(draft.auto_transactions)
-  const currentRunLogic: RunLogicSettings | undefined = draft.run_logic
-    ? structuredClone(draft.run_logic)
-    : hasLegacyRunLogic
-      ? {
-          ...structuredClone(inheritedRunLogic),
-          ...(draft.iterations !== undefined ? { iterations: draft.iterations } : {}),
-          ...(draft.auto_transactions ? { auto_transactions: draft.auto_transactions } : {}),
-        }
-      : undefined
-
-  const hasLegacyBrowser = Boolean(draft.browser)
-  const currentBrowser: BrowserSettings | undefined = draft.browser_config
-    ? structuredClone(draft.browser_config)
-    : hasLegacyBrowser
-      ? { ...structuredClone(inheritedBrowser), ...structuredClone(draft.browser) }
-      : undefined
-
-  const effectiveThink = draft.think_time ?? inheritedThink
-  const effectiveError = currentError ?? inheritedError
-  const effectiveLog = currentLog ?? inheritedLog
-  const effectiveHttp = draft.http ?? inheritedHttp
-  const effectiveBrowser = currentBrowser ?? inheritedBrowser
+  // Each section's effective value is the inherited section with the paths this
+  // layer overrides laid over it (a v1 whole-section override replaces it).
+  const effectiveThink: Partial<ThinkTimeSettings> = overlayRuntimeOverrideSection(inheritedThink, overrides[index], 'think_time') ?? {}
+  const effectiveError: ErrorHandlingSettings = overlayRuntimeOverrideSection(inheritedError, overrides[index], 'error_handling') ?? {}
+  const effectiveLog: LogSettings = overlayRuntimeOverrideSection(inheritedLog, overrides[index], 'log') ?? {}
+  const effectiveHttp: HTTPSettings = overlayRuntimeOverrideSection(inheritedHttp, overrides[index], 'http') ?? {}
+  const effectiveBrowser: BrowserSettings = overlayRuntimeOverrideSection(inheritedBrowser, overrides[index], 'browser') ?? {}
+  // web_runtime overlays populated top-level units on the lower layer, so the
+  // shaping a group runs with is its own unit where set, else the inherited one.
+  const effectiveWebRuntimeForHTTP3: typeof inheritedWeb = overlayRuntimeOverrideSection(inheritedWeb, overrides[index], 'web_runtime') ?? {}
 
   const browserApplicable = fieldApplicable('browser')
   const httpApplicable = fieldApplicable('http')
@@ -306,84 +293,81 @@ export default function RuntimeSettingsGroupEditor({
   const javaVuserApplicable = fieldApplicable('java_vuser')
   const browserEmulationApplicable = fieldApplicable('browser_emulation')
 
-  // Browser emulation replaces as a whole section (mirrors the Go controller).
   const inheritedBrowserEmulation: BrowserEmulationSettings = structuredClone(inheritedOverride?.browser_emulation ?? {})
-  const effectiveBrowserEmulation: BrowserEmulationSettings = draft.browser_emulation ?? inheritedBrowserEmulation
+  const effectiveBrowserEmulation: BrowserEmulationSettings =
+    overlayRuntimeOverrideSection(inheritedBrowserEmulation, overrides[index], 'browser_emulation') ?? {}
   const selectedEmulationBrowser = browserEmulationCatalog.browsers.find(
     browser => browser.type === effectiveBrowserEmulation.browser_type,
   )
+  // An effective version or platform the selected browser does not offer (a lower
+  // layer changed its browser under this group's pick) is shown as itself, marked
+  // unavailable, rather than as 'Latest' / 'Browser default'.
+  const unavailableEmulationVersion = selectedEmulationBrowser && effectiveBrowserEmulation.browser_version
+    && !(selectedEmulationBrowser.versions || []).includes(effectiveBrowserEmulation.browser_version)
+    ? effectiveBrowserEmulation.browser_version
+    : ''
+  const unavailableEmulationPlatform = selectedEmulationBrowser && effectiveBrowserEmulation.platform
+    && !(selectedEmulationBrowser.platforms || []).includes(effectiveBrowserEmulation.platform)
+    ? effectiveBrowserEmulation.platform
+    : ''
 
-  // The Java Env override replaces the whole section: seed the editor from the
-  // group override when present, else from the inherited (script/scenario) value.
   const inheritedJava: RuntimeJavaVuserSettings = structuredClone(inheritedOverride?.java_vuser ?? {})
-  const effectiveJava: JavaEnvSettingsValue = draft.java_vuser ?? inheritedJava
+  const effectiveJava: JavaEnvSettingsValue = overlayRuntimeOverrideSection(inheritedJava, overrides[index], 'java_vuser') ?? {}
 
-  const patch = (next: Partial<ScenarioRuntimeSettingsDraft>) => {
-    const merged: ScenarioRuntimeSettingsDraft = { ...EMPTY_RUNTIME_DRAFT, ...draft, ...next }
-    onChange(index, isRuntimeDraftEmpty(merged) ? undefined : merged)
+  // Every edit goes through the runtime settings model, which lists exactly the
+  // paths a control changes in override_fields (converting a stored v1 row
+  // first, without changing its meaning). The backend then applies only those
+  // paths, so editing one field never pins — or wipes — the rest of a section
+  // the group inherits from its script.
+  const commit = (next: ScenarioRuntimeSettingsDraft) => {
+    onChange(index, isRuntimeDraftEmpty(next) ? undefined : next)
+  }
+  const editSection = (section: string, next: object) => {
+    commit(applyRuntimeOverrideEdit(overrides[index], section, next as Record<string, unknown>))
+  }
+  const resetPaths = (...paths: string[]) => {
+    commit(paths.reduce<ScenarioRuntimeSettingsDraft | undefined>((current, path) => resetOverrideField(current, path), overrides[index]) ?? { ...EMPTY_RUNTIME_DRAFT })
   }
 
-  const editedHttp = (next: Partial<NonNullable<ScenarioRuntimeSettingsDraft['http']>>) => {
-    const hasCurrentSection = draft.http !== undefined
-    const current = hasCurrentSection ? draft.http : inheritedHttp
-    const topLevelNext = { ...next }
-    delete topLevelNext.tls
-    delete topLevelNext.proxy
-    delete topLevelNext.auth
-    delete topLevelNext.quic
-    const edited = editReplacementSection<HTTPSettings>(current, topLevelNext, inheritedHttp) as HTTPSettings
+  const patchHttp = (next: Partial<HTTPSettings>) => {
+    const leaves: Record<string, unknown> = { ...next }
+    // The request-defaults editor folds the default_headers map into the
+    // ordered list and clears the map; that clear is an explicit empty map,
+    // not a return to the inherited headers (which the list now carries).
+    const clearsHeaderMap = Object.prototype.hasOwnProperty.call(next, 'default_headers')
+      && next.default_headers === undefined
+      && next.default_header_list !== undefined
+    if (clearsHeaderMap) delete leaves.default_headers
+    let updated = applyRuntimeOverrideEdit(overrides[index], 'http', leaves)
+    if (clearsHeaderMap) updated = setOverrideField(updated, 'http.default_headers', undefined)
+    commit(updated)
+  }
 
-    if (Object.prototype.hasOwnProperty.call(next, 'tls')) {
-      const tls = editReplacementSection(
-        hasCurrentSection ? (draft.http?.tls ?? {}) : inheritedHttp.tls,
-        next.tls,
-        inheritedHttp.tls,
-      )
-      if (Object.keys(tls).length > 0) edited.tls = tls
-      else delete edited.tls
+  const patchQuic = (next: Record<string, unknown>) => {
+    const leaves: Record<string, unknown> = {}
+    for (const [key, value] of Object.entries(next)) leaves[key] = value === '' ? undefined : value
+    editSection('http.quic', leaves)
+  }
+
+  // A distribution change normalizes the effective think time for that type
+  // (default percentages, dropping fields the type does not use); only the
+  // leaves that change are overridden.
+  const patchThinkTime = (next: Partial<ThinkTimeSettings>) => {
+    if (next.type === undefined) {
+      editSection('think_time', next)
+      return
     }
-    if (Object.prototype.hasOwnProperty.call(next, 'proxy')) {
-      const proxy = editReplacementSection(
-        hasCurrentSection ? (draft.http?.proxy ?? {}) : inheritedHttp.proxy,
-        next.proxy,
-        inheritedHttp.proxy,
-      )
-      if (Object.keys(proxy).length > 0) edited.proxy = proxy
-      else delete edited.proxy
+    const normalized = thinkTimeConfigForType({ ...effectiveThink, ...next }, next.type || 'fixed') as unknown as Record<string, unknown>
+    const before = effectiveThink as Record<string, unknown>
+    const leaves: Record<string, unknown> = { ...next }
+    for (const key of new Set([...Object.keys(before), ...Object.keys(normalized)])) {
+      if (key in leaves) continue
+      if (JSON.stringify(before[key]) !== JSON.stringify(normalized[key])) leaves[key] = normalized[key]
     }
-    if (Object.prototype.hasOwnProperty.call(next, 'quic')) {
-      // The QUIC block layers like tls: an emptied block removes the key.
-      if (next.quic && Object.keys(next.quic).length > 0) edited.quic = structuredClone(next.quic)
-      else delete edited.quic
-    }
-    if (Object.prototype.hasOwnProperty.call(next, 'auth')) {
-      const auth = editReplacementSection(
-        hasCurrentSection ? (draft.http?.auth ?? {}) : inheritedHttp.auth,
-        next.auth,
-        inheritedHttp.auth,
-      )
-      if (Object.keys(auth).length > 0) edited.auth = auth
-      else delete edited.auth
-    }
-    return edited
+    editSection('think_time', leaves)
   }
 
-  const patchHttp = (next: Partial<NonNullable<ScenarioRuntimeSettingsDraft['http']>>) => {
-    patch({ http: editedHttp(next) })
-  }
-
-  // think_time / pacing carry the full DSL config. Clearing routes through the
-  // type select (Inherit), which sets the whole section undefined.
-  const patchThinkTime = (next: Partial<NonNullable<ScenarioRuntimeSettingsDraft['think_time']>>) => {
-    const edited = editReplacementSection(draft.think_time, next, inheritedThink)
-    patch({ think_time: thinkTimeConfigForType({ ...edited, type: effectiveThink.type }, edited.type || 'fixed') })
-  }
-
-  const patchPacing = (next: Partial<NonNullable<ScenarioRuntimeSettingsDraft['pacing']>>) => {
-    const edited = editReplacementSection(draft.pacing, next, inheritedPacing)
-    const effective = { type: edited.type || 'none', ...edited }
-    patch({ pacing: effective })
-  }
+  const patchPacing = (next: Partial<PacingSettings>) => editSection('pacing', next)
 
   const toggleLogOption = (option: string, on: boolean) => {
     const current = effectiveLog.extended_options ?? []
@@ -391,92 +375,58 @@ export default function RuntimeSettingsGroupEditor({
     patchLog({ extended_options: nextOptions })
   }
 
-  // patchLog/patchRunLogic edit the full section, promoting the legacy single-field
-  // values (log_level / iterations / auto_transactions) into the section and clearing
-  // them — so a section override always carries every field (section-replace safe) and
-  // the legacy shim is never double-emitted alongside it.
-  const patchLog = (next: Partial<NonNullable<ScenarioRuntimeSettingsDraft['log']>>) => {
-    const effective = editReplacementSection(currentLog, next, inheritedLog)
-    patch({ log: effective, log_level: '' })
-  }
-
-  const patchRunLogic = (next: Partial<NonNullable<ScenarioRuntimeSettingsDraft['run_logic']>>) => {
-    const effective = editReplacementSection(currentRunLogic, next, inheritedRunLogic)
-    patch({ run_logic: effective, iterations: undefined, auto_transactions: '' })
-  }
-
-  const patchErrorHandling = (next: Partial<ErrorHandlingSettings>) => {
-    const effective = editReplacementSection(currentError, next, inheritedError)
-    const hasAny = Object.values(effective).some(
-      value => value !== undefined && value !== '' && (!Array.isArray(value) || value.length > 0),
-    )
-    patch({
-      continue_on_error: effective.continue_on_error,
-      snapshot_on_error: effective.snapshot_on_error,
-      fail_transaction_on_error_message: effective.fail_transaction_on_error_message,
-      max_retries: effective.max_retries,
-      retry_delay_ms: effective.retry_delay_ms,
-      retry_backoff: effective.retry_backoff,
-      retry_on: effective.retry_on,
-      honor_retry_after: effective.honor_retry_after,
-      retry_after_max_ms: effective.retry_after_max_ms,
-      error_handling: hasAny ? effective : undefined,
-    })
-  }
-
-  const patchBrowserConfig = (next: Partial<NonNullable<ScenarioRuntimeSettingsDraft['browser_config']>>) => {
-    const hasCurrentSection = currentBrowser !== undefined
-    const topLevelNext = { ...next }
-    delete topLevelNext.viewport
-    delete topLevelNext.review_policy
-    const edited = editReplacementSection<BrowserSettings>(currentBrowser, topLevelNext, inheritedBrowser) as BrowserSettings
-
-    if (Object.prototype.hasOwnProperty.call(next, 'viewport')) {
-      const viewport = editReplacementSection(
-        hasCurrentSection ? (currentBrowser?.viewport ?? {}) : inheritedBrowser.viewport,
-        next.viewport,
-        inheritedBrowser.viewport,
-      )
-      if (Object.keys(viewport).length > 0) edited.viewport = viewport
-      else delete edited.viewport
+  const patchLog = (next: Partial<LogSettings>) => editSection('log', next)
+  const patchRunLogic = (next: Partial<RunLogicSettings>) => editSection('run_logic', next)
+  const patchErrorHandling = (next: Partial<ErrorHandlingSettings>) => editSection('error_handling', next)
+  const patchBrowserConfig = (next: Partial<BrowserSettings>) => editSection('browser', next)
+  const patchBrowserEmulation = (next: Partial<BrowserEmulationSettings>) => editSection('browser_emulation', next)
+  // Language > 'Engine default': a lower layer's language (e.g. the script's
+  // de-DE) would otherwise come back through a reset, so write an explicit empty
+  // whenever something below would supply a value.
+  const emptyBrowserEmulationChoice = (field: 'language') =>
+    (inheritedBrowserEmulation[field] ? '' : undefined)
+  // Version, Platform and Custom User-Agent are only valid together with the mode
+  // and browser they were chosen for (the DSL rejects e.g. Safari on android, or a
+  // custom User-Agent in specific mode). Editing one alone while the rest is
+  // inherited would let a later lower-layer change pair it with another browser,
+  // so the edit pins the whole identity at its current effective values. An edit
+  // that lands back on exactly the inherited identity inherits it again.
+  const patchBrowserIdentityLeaf = (field: 'browser_version' | 'platform' | 'custom_user_agent', value: string) => {
+    const identityMode = (emulation: BrowserEmulationSettings) =>
+      emulation.mode || (emulation.browser_type ? 'specific' : emulation.custom_user_agent ? 'custom' : '')
+    const next: Record<BrowserIdentityLeaf, string> = {
+      mode: identityMode(effectiveBrowserEmulation) || (field === 'custom_user_agent' ? 'custom' : 'specific'),
+      browser_type: effectiveBrowserEmulation.browser_type || '',
+      browser_version: effectiveBrowserEmulation.browser_version || '',
+      platform: effectiveBrowserEmulation.platform || '',
+      custom_user_agent: effectiveBrowserEmulation.custom_user_agent || '',
+      [field]: value,
     }
-    if (Object.prototype.hasOwnProperty.call(next, 'review_policy')) {
-      const reviewPolicy = editReplacementSection(
-        hasCurrentSection ? (currentBrowser?.review_policy ?? {}) : inheritedBrowser.review_policy,
-        next.review_policy,
-        inheritedBrowser.review_policy,
-      )
-      if (Object.keys(reviewPolicy).length > 0) edited.review_policy = reviewPolicy
-      else delete edited.review_policy
+    const inheritedIdentity: Record<BrowserIdentityLeaf, string> = {
+      mode: identityMode(inheritedBrowserEmulation),
+      browser_type: inheritedBrowserEmulation.browser_type || '',
+      browser_version: inheritedBrowserEmulation.browser_version || '',
+      platform: inheritedBrowserEmulation.platform || '',
+      custom_user_agent: inheritedBrowserEmulation.custom_user_agent || '',
     }
-    patch({ browser_config: edited, browser: undefined })
+    if (BROWSER_IDENTITY_LEAVES.every(leaf => next[leaf] === inheritedIdentity[leaf])) {
+      resetPaths(...BROWSER_IDENTITY_LEAVES.map(leaf => `browser_emulation.${leaf}`))
+      return
+    }
+    const patch: Partial<BrowserEmulationSettings> = { [field]: value }
+    for (const leaf of BROWSER_IDENTITY_LEAVES) {
+      if (leaf !== field && !isFieldOverridden(overrides[index], `browser_emulation.${leaf}`)) (patch as Record<string, string>)[leaf] = next[leaf]
+    }
+    patchBrowserEmulation(patch)
   }
+  const customUserAgentOverridden = isFieldOverridden(overrides[index], 'browser_emulation.custom_user_agent')
+  // A lower layer in custom mode supplies a User-Agent this group can inherit.
+  const inheritedCustomUserAgent = inheritedBrowserEmulation.mode === 'custom' ? inheritedBrowserEmulation.custom_user_agent || '' : ''
+  // Mode overridden to empty (after Browser > Engine default) is shown apart from
+  // Inherit, so Inherit can be picked to return the identity to the lower layer.
+  const modeOverriddenEmpty = isFieldOverridden(overrides[index], 'browser_emulation.mode') && !draft.browser_emulation?.mode
+  const engineDefaultIdentity: Partial<BrowserEmulationSettings> = { mode: '', browser_type: '', browser_version: '', platform: '', custom_user_agent: '' }
 
-  // Browser-emulation edits replace the whole section; the first edit
-  // materializes the inherited section, mirroring patchBrowserConfig.
-  const editedBrowserEmulation = (next: Partial<BrowserEmulationSettings>) => {
-    const hasCurrentSection = draft.browser_emulation !== undefined
-    const topLevelNext = { ...next }
-    delete topLevelNext.cache
-    const edited = editReplacementSection<BrowserEmulationSettings>(
-      draft.browser_emulation,
-      topLevelNext,
-      inheritedBrowserEmulation,
-    ) as BrowserEmulationSettings
-    if (Object.prototype.hasOwnProperty.call(next, 'cache')) {
-      const cache = editReplacementSection(
-        hasCurrentSection ? (draft.browser_emulation?.cache ?? {}) : inheritedBrowserEmulation.cache,
-        next.cache,
-        inheritedBrowserEmulation.cache,
-      )
-      if (Object.keys(cache).length > 0) edited.cache = cache
-      else delete edited.cache
-    }
-    return edited
-  }
-  const patchBrowserEmulation = (next: Partial<BrowserEmulationSettings>) => {
-    patch({ browser_emulation: editedBrowserEmulation(next) })
-  }
   const httpSettingsValue: HTTPSettings = {
     ...effectiveHttp,
     cache_enabled: effectiveBrowserEmulation.cache?.simulate_cache ?? effectiveHttp.cache_enabled,
@@ -502,10 +452,12 @@ export default function RuntimeSettingsGroupEditor({
   const requestDefaultErrorCount = countHTTPDefaultHeaderErrors(httpSettingsValue)
   const pinnedCookieErrorCount = countPinnedCookieErrors(httpSettingsValue)
   const patchHTTPSettings = (next: Partial<HTTPSettings>) => {
-    if (!Object.prototype.hasOwnProperty.call(next, 'cache_enabled') || draft.browser_emulation?.cache?.simulate_cache === undefined) {
+    if (!Object.prototype.hasOwnProperty.call(next, 'cache_enabled') || effectiveBrowserEmulation.cache?.simulate_cache === undefined) {
       patchHttp(next)
       return
     }
+    // Browser emulation's simulate_cache is the canonical cache switch once it
+    // is set, so the HTTP cache toggle writes both.
     const cachePatch = next.cache_enabled
       ? { simulate_cache: true }
       : {
@@ -513,10 +465,9 @@ export default function RuntimeSettingsGroupEditor({
           cache_content_urls: undefined,
           check_newer_versions: undefined,
         }
-    patch({
-      http: editedHttp(next),
-      browser_emulation: editedBrowserEmulation({ cache: cachePatch }),
-    })
+    let updated = applyRuntimeOverrideEdit(overrides[index], 'http', next as Record<string, unknown>)
+    updated = applyRuntimeOverrideEdit(updated, 'browser_emulation', { cache: cachePatch })
+    commit(updated)
   }
 
   const browserBoolValue = (a?: boolean, b?: boolean): string => {
@@ -524,140 +475,42 @@ export default function RuntimeSettingsGroupEditor({
     return value === undefined ? '' : value ? 'true' : 'false'
   }
 
-  const clearField = (field: RuntimeFieldKey) => {
-    switch (field) {
-      case 'iterations': {
-        // fieldHasOverride reports an override when the value lives in the
-        // promoted run_logic section, so clearing must strip both the legacy
-        // top-level field AND the section copy. When run_logic retains sibling
-        // fields, its replacement semantics require us to materialize the inherited
-        // iterations value; simply omitting it would reset duration behavior.
-        const rl: Partial<RunLogicSettings> | undefined = draft.run_logic ? { ...draft.run_logic, iterations: undefined } : undefined
-        const hasRunLogicSibling = Boolean(rl && Object.entries(rl).some(([key, value]) => key !== 'iterations' && value !== undefined))
-        if (rl && hasRunLogicSibling && inheritedIterations !== undefined) rl.iterations = inheritedIterations
-        patch({ iterations: undefined, run_logic: hasRunLogicSibling ? rl : undefined })
-        break
-      }
-      case 'pacing':
-        patch({ pacing: undefined })
-        break
-      case 'think_time':
-        patch({ think_time: undefined })
-        break
-      case 'browser':
-        patch({ browser: undefined })
-        break
-      case 'log_level': {
-        const lg: Partial<LogSettings> | undefined = draft.log ? { ...draft.log, level: undefined } : undefined
-        const hasLogSibling = Boolean(lg && Object.entries(lg).some(([key, value]) => key !== 'level' && value !== undefined))
-        if (lg && hasLogSibling && inheritedLog.level !== undefined) lg.level = inheritedLog.level
-        patch({ log_level: '', log: hasLogSibling ? lg : undefined })
-        break
-      }
-      case 'auto_transactions': {
-        const rl: Partial<RunLogicSettings> | undefined = draft.run_logic ? { ...draft.run_logic, auto_transactions: undefined } : undefined
-        const hasRunLogicSibling = Boolean(rl && Object.entries(rl).some(([key, value]) => key !== 'auto_transactions' && value !== undefined))
-        if (rl && hasRunLogicSibling && inheritedRunLogic.auto_transactions !== undefined) {
-          rl.auto_transactions = inheritedRunLogic.auto_transactions
-        }
-        patch({ auto_transactions: '', run_logic: hasRunLogicSibling ? rl : undefined })
-        break
-      }
-      case 'error_handling':
-        patch({
-          continue_on_error: undefined,
-          snapshot_on_error: undefined,
-          fail_transaction_on_error_message: undefined,
-          max_retries: undefined,
-          retry_delay_ms: undefined,
-          retry_backoff: undefined,
-          retry_on: undefined,
-          honor_retry_after: undefined,
-          retry_after_max_ms: undefined,
-          error_handling: undefined,
-        })
-        break
-      case 'results':
-        patch({ results: undefined })
-        break
-      case 'log':
-        patch({ log: undefined, log_level: '' })
-        break
-      case 'run_logic':
-        patch({ run_logic: undefined, iterations: undefined, auto_transactions: '' })
-        break
-      case 'http':
-        patch({ http: undefined })
-        break
-      case 'websocket':
-        patch({websocket: undefined})
-        break
-      case 'web_runtime':
-        patch({ web_runtime: undefined })
-        break
-      case 'browser_config':
-        patch({ browser_config: undefined, browser: undefined })
-        break
-      case 'browser_emulation':
-        patch({ browser_emulation: undefined })
-        break
-      case 'java_vuser':
-        patch({ java_vuser: undefined })
-        break
-    }
+  /** Canonical override paths behind each summary row. */
+  const FIELD_PATHS: Record<RuntimeFieldKey, string[]> = {
+    results: ['results'],
+    iterations: ['run_logic.iterations'],
+    pacing: ['pacing'],
+    think_time: ['think_time'],
+    browser: ['browser.headless', 'browser.device_profile', 'browser.touch_mode', 'browser.orientation'],
+    log_level: ['log.level'],
+    auto_transactions: ['run_logic.auto_transactions'],
+    error_handling: ['error_handling'],
+    log: ['log'],
+    run_logic: ['run_logic'],
+    http: ['http'],
+    websocket: ['websocket'],
+    web_runtime: ['web_runtime'],
+    browser_config: ['browser'],
+    browser_emulation: ['browser_emulation'],
+    java_vuser: ['java_vuser'],
   }
 
-  const fieldHasOverride = (field: RuntimeFieldKey): boolean => {
-    const o = groupOverride
-    if (!o) return false
-    switch (field) {
-      case 'iterations':
-        // Per-VUser iterations only (legacy top-level or the promoted run_logic
-        // section). global_iterations is a distinct fleet-wide shared cap shown via
-        // the Run Logic row, not conflated into this per-VUser Iterations row.
-        return o.iterations !== undefined || o.run_logic?.iterations !== undefined
-      case 'pacing':
-        return Boolean(o.pacing?.type)
-      case 'think_time':
-        return Boolean(o.think_time)
-      case 'browser':
-        return Boolean(o.browser)
-      case 'log_level':
-        return Boolean(o.log_level) || Boolean(o.log?.level)
-      case 'auto_transactions':
-        return Boolean(o.auto_transactions) || Boolean(o.run_logic?.auto_transactions)
-      case 'error_handling':
-        return Boolean(o.error_handling)
-      case 'results':
-        return Boolean(o.results)
-      case 'log':
-        return Boolean(o.log)
-      case 'run_logic':
-        return Boolean(o.run_logic)
-      case 'http':
-        return Boolean(o.http)
-      case 'websocket':
-        return Boolean(o.websocket)
-      case 'web_runtime':
-        return Boolean(o.web_runtime)
-      case 'browser_config':
-        return Boolean(o.browser_config)
-      case 'browser_emulation':
-        return Boolean(o.browser_emulation)
-      case 'java_vuser':
-        return Boolean(o.java_vuser)
-    }
-  }
+  // Clear returns the row's paths to inherited; every other overridden field —
+  // including siblings in the same section — keeps its override.
+  const clearField = (field: RuntimeFieldKey) => resetPaths(...FIELD_PATHS[field])
 
-  // A Java Env edit replaces the whole section. Materialize from the inherited
-  // value on first edit so a single field change does not clear the others, then
-  // drop the section entirely when it collapses back to the inherited value.
+  const fieldHasOverride = (field: RuntimeFieldKey): boolean =>
+    FIELD_PATHS[field].some(path => isFieldOverridden(overrides[index], path))
+
+  // The Java Env editor hands back the whole effective section; only the fields
+  // that changed are overridden (a field set back to empty inherits again).
   const patchJavaVuser = (next: JavaEnvSettingsValue) => {
-    const merged: RuntimeJavaVuserSettings = { ...next }
-    for (const key of Object.keys(merged) as Array<keyof RuntimeJavaVuserSettings>) {
-      if (merged[key] === undefined) delete merged[key]
-    }
-    patch({ java_vuser: Object.keys(merged).length > 0 ? merged : undefined })
+    commit(applyRuntimeOverrideDiff(overrides[index], 'java_vuser', effectiveJava, next))
+  }
+
+  // The Web/HTTP tab hands back this layer's whole web_runtime section.
+  const setWebRuntime = (next: ScenarioRuntimeSettingsDraft['web_runtime']) => {
+    commit(applyRuntimeOverrideDiff(overrides[index], 'web_runtime', draft.web_runtime, next))
   }
 
   const toggleTarget = (target: number) => {
@@ -665,9 +518,15 @@ export default function RuntimeSettingsGroupEditor({
   }
 
   const applyNow = () => {
+    let notice: string | null = null
     if (applyTargets.length > 0) {
-      onApplyToGroups(index, applyTargets)
+      const missing = onApplyToGroups(index, applyTargets)?.missingSOAPCredentialTargets ?? []
+      if (missing.length > 0) {
+        const names = missing.map(target => (groups[target] ? groupLabel(groups[target], target) : `Group ${target + 1}`)).join(', ')
+        notice = `Not applied to ${names}: no SOAP WS-Security credentials of its own. Credentials are not copied between groups, so enter them for that group first.`
+      }
     }
+    setApplyNotice(notice)
     setApplyOpen(false)
     setApplyTargets([])
   }
@@ -707,13 +566,13 @@ export default function RuntimeSettingsGroupEditor({
   const httpSubTab: HttpSubTabId = visibleHttpSubTabs.some(st => st.id === rawHttpSubTab) ? rawHttpSubTab : 'request_defaults'
 
   const patchProxy = (next: Partial<NonNullable<NonNullable<ScenarioRuntimeSettingsDraft['http']>['proxy']>>) => {
-    patchHttp({ proxy: { ...draft.http?.proxy, ...next } })
+    patchHttp({ proxy: next })
   }
   const patchTls = (next: Partial<NonNullable<NonNullable<ScenarioRuntimeSettingsDraft['http']>['tls']>>) => {
-    patchHttp({ tls: { ...draft.http?.tls, ...next } })
+    patchHttp({ tls: next })
   }
   const patchAuth = (next: Partial<NonNullable<NonNullable<ScenarioRuntimeSettingsDraft['http']>['auth']>>) => {
-    patchHttp({ auth: { ...draft.http?.auth, ...next } })
+    patchHttp({ auth: next })
   }
 
   const applyPanelAvailable = !hideApplyPanel && groups.length > 1
@@ -823,7 +682,7 @@ export default function RuntimeSettingsGroupEditor({
                   onChange={event => {
                     const type = event.target.value
                     if (!type) {
-                      patch({ think_time: undefined })
+                      resetPaths('think_time')
                       return
                     }
                     patchThinkTime({ type })
@@ -900,7 +759,7 @@ export default function RuntimeSettingsGroupEditor({
                 onChange={event => {
                   const type = event.target.value as NonNullable<ScenarioRuntimeSettingsDraft['pacing']>['type'] | ''
                   if (type) patchPacing({ type })
-                  else patch({ pacing: undefined })
+                  else resetPaths('pacing')
                 }}
               >
                 <option value="">Inherit</option>
@@ -1022,8 +881,8 @@ export default function RuntimeSettingsGroupEditor({
 
         {activeTab === 'error_handling' && (
           <>
-            {fieldApplicable('results') && <MessageDetailFields value={draft.results?.message_detail ?? inheritedOverride?.results?.message_detail} onChange={value => patch({ results: { ...inheritedOverride?.results, ...draft.results, message_detail: value } })} />}
-            {fieldApplicable('results') && <PropertyAnalyticsFields value={draft.results?.property_analytics ?? inheritedOverride?.results?.property_analytics} onChange={value => patch({ results: { ...inheritedOverride?.results, ...draft.results, property_analytics: value } })} />}
+            {fieldApplicable('results') && <MessageDetailFields value={draft.results?.message_detail ?? inheritedOverride?.results?.message_detail} onChange={value => (value === undefined ? resetPaths('results.message_detail') : commit(setOverrideField(overrides[index], 'results.message_detail', value)))} />}
+            {fieldApplicable('results') && <PropertyAnalyticsFields value={draft.results?.property_analytics ?? inheritedOverride?.results?.property_analytics} onChange={value => (value === undefined ? resetPaths('results.property_analytics') : commit(setOverrideField(overrides[index], 'results.property_analytics', value)))} />}
             <div className="scenario-option-grid">
               <label className={`scenario-option-card ${(effectiveError.continue_on_error ?? true) ? 'selected' : ''}`}>
                 <input type="checkbox" checked={effectiveError.continue_on_error ?? true} onChange={event => patchErrorHandling({ continue_on_error: event.target.checked })} />
@@ -1207,7 +1066,7 @@ export default function RuntimeSettingsGroupEditor({
                   </div>
                   <HTTPQUICSettingsFields value={draft.http?.quic} inherited={inheritedHttp.quic}
                     disabledReason={quicPanelDisabledReason(effectiveHttp, effectiveWebRuntimeForHTTP3)}
-                    onChange={patch => patchHttp({ quic: patchQUICConfig(draft.http ? draft.http.quic : inheritedHttp.quic, patch) ?? {} })} />
+                    onChange={patch => patchQuic(patch as Record<string, unknown>)} />
                   <label><span>Max connections / host</span><input className="settings-input" type="number" min={0} value={draft.http?.max_conns_per_host ?? ''} onChange={event => patchHttp({ max_conns_per_host: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder={inh(inheritedHttp.max_conns_per_host)} /></label>
                   <label><span>Max idle connections</span><input className="settings-input" type="number" min={0} value={draft.http?.max_idle_conns ?? ''} onChange={event => patchHttp({ max_idle_conns: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder={inh(inheritedHttp.max_idle_conns)} /></label>
                   <label><span>Max redirects</span><input className="settings-input" type="number" min={0} value={draft.http?.max_redirects ?? ''} onChange={event => patchHttp({ max_redirects: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder={inh(inheritedHttp.max_redirects)} /></label>
@@ -1445,32 +1304,51 @@ export default function RuntimeSettingsGroupEditor({
                 <span>Mode</span>
                 <select
                   className="settings-input"
-                  value={draft.browser_emulation?.mode ?? ''}
+                  value={modeOverriddenEmpty ? ENGINE_DEFAULT_MODE_OPTION : draft.browser_emulation?.mode ?? ''}
                   aria-label="Browser emulation mode"
                   onChange={event => {
                     const mode = event.target.value
+                    if (mode === ENGINE_DEFAULT_MODE_OPTION) {
+                      patchBrowserEmulation(engineDefaultIdentity)
+                      return
+                    }
                     if (!mode) {
                       // Inherit browser identity, but keep this group's cache AND
                       // language overrides. Neither is mode-dependent at replay —
                       // the engine derives Accept-Language from `language` whether
-                      // or not a mode is set — so dropping them here would silently
-                      // discard edits made on this same tab.
-                      const kept: BrowserEmulationSettings = {}
-                      const currentCache = draft.browser_emulation?.cache
-                      if (currentCache) kept.cache = currentCache
-                      const currentLanguage = draft.browser_emulation?.language
-                      if (currentLanguage) kept.language = currentLanguage
-                      patch({ browser_emulation: Object.keys(kept).length > 0 ? kept : undefined })
+                      // or not a mode is set — so only the identity fields reset.
+                      resetPaths(
+                        'browser_emulation.mode',
+                        'browser_emulation.browser_type',
+                        'browser_emulation.browser_version',
+                        'browser_emulation.platform',
+                        'browser_emulation.custom_user_agent',
+                      )
                       return
                     }
+                    // The identity fields the new mode forbids are written as
+                    // explicit empties, not reset: a reset would inherit the
+                    // script's browser (or User-Agent) into a mode the DSL
+                    // rejects it in, with the control disabled to clear it.
                     if (mode === 'custom') {
-                      patchBrowserEmulation({ mode: 'custom', browser_type: undefined, browser_version: undefined, platform: undefined })
+                      // An earlier Specific (or Engine default) left the User-Agent
+                      // overridden to empty; over an inherited custom User-Agent that
+                      // empty would fail validation, so it inherits again.
+                      const inheritUserAgent = customUserAgentOverridden && !draft.browser_emulation?.custom_user_agent && Boolean(inheritedCustomUserAgent)
+                      patchBrowserEmulation({
+                        mode: 'custom',
+                        browser_type: '',
+                        browser_version: '',
+                        platform: '',
+                        ...(inheritUserAgent ? { custom_user_agent: undefined } : {}),
+                      })
                     } else {
-                      patchBrowserEmulation({ mode: 'specific', custom_user_agent: undefined })
+                      patchBrowserEmulation({ mode: 'specific', custom_user_agent: '' })
                     }
                   }}
                 >
-                  <option value="">Inherit{effectiveBrowserEmulation.mode ? ` (${effectiveBrowserEmulation.mode})` : ''}</option>
+                  <option value="">Inherit{inheritedBrowserEmulation.mode ? ` (${inheritedBrowserEmulation.mode})` : ''}</option>
+                  {modeOverriddenEmpty && <option value={ENGINE_DEFAULT_MODE_OPTION}>None (engine default)</option>}
                   <option value="specific">Specific browser</option>
                   <option value="custom">Custom browser</option>
                 </select>
@@ -1482,7 +1360,14 @@ export default function RuntimeSettingsGroupEditor({
                   value={effectiveBrowserEmulation.browser_type || ''}
                   disabled={effectiveBrowserEmulation.mode === 'custom'}
                   aria-label="Browser type"
-                  onChange={event => patchBrowserEmulation({ mode: event.target.value ? 'specific' : undefined, browser_type: event.target.value || undefined, browser_version: undefined, platform: undefined })}
+                  onChange={event => patchBrowserEmulation(event.target.value
+                    // A new browser starts from its own latest version and default
+                    // platform: the previous browser's may not exist for it.
+                    ? { mode: 'specific', browser_type: event.target.value, browser_version: '', platform: '' }
+                    // Engine default overrides the browser identity to empty, so the
+                    // script's browser no longer applies; Mode > Inherit inherits it
+                    // (the Mode select then shows None (engine default), not Inherit).
+                    : engineDefaultIdentity)}
                 >
                   <option value="">Engine default</option>
                   {browserEmulationCatalog.browsers.map(browser => (
@@ -1497,9 +1382,12 @@ export default function RuntimeSettingsGroupEditor({
                   value={effectiveBrowserEmulation.browser_version || ''}
                   disabled={effectiveBrowserEmulation.mode === 'custom' || !effectiveBrowserEmulation.browser_type}
                   aria-label="Browser version"
-                  onChange={event => patchBrowserEmulation({ browser_version: event.target.value || undefined })}
+                  onChange={event => patchBrowserIdentityLeaf('browser_version', event.target.value)}
                 >
                   <option value="">Latest</option>
+                  {unavailableEmulationVersion && (
+                    <option value={unavailableEmulationVersion}>{unavailableEmulationVersion} (not available for {selectedEmulationBrowser?.label})</option>
+                  )}
                   {(selectedEmulationBrowser?.versions || []).map(version => (
                     <option key={version} value={version}>{version}</option>
                   ))}
@@ -1512,9 +1400,15 @@ export default function RuntimeSettingsGroupEditor({
                   value={effectiveBrowserEmulation.platform || ''}
                   disabled={effectiveBrowserEmulation.mode === 'custom' || !effectiveBrowserEmulation.browser_type}
                   aria-label="Browser platform"
-                  onChange={event => patchBrowserEmulation({ platform: event.target.value || undefined })}
+                  onChange={event => patchBrowserIdentityLeaf('platform', event.target.value)}
                 >
                   <option value="">Browser default</option>
+                  {unavailableEmulationPlatform && (
+                    <option value={unavailableEmulationPlatform}>
+                      {browserEmulationCatalog.platforms.find(candidate => candidate.id === unavailableEmulationPlatform)?.label || unavailableEmulationPlatform}
+                      {' '}(not available for {selectedEmulationBrowser?.label})
+                    </option>
+                  )}
                   {(selectedEmulationBrowser?.platforms || []).map(platform => (
                     <option key={platform} value={platform}>
                       {browserEmulationCatalog.platforms.find(candidate => candidate.id === platform)?.label || platform}
@@ -1528,7 +1422,7 @@ export default function RuntimeSettingsGroupEditor({
                   className="settings-input"
                   value={effectiveBrowserEmulation.language || ''}
                   aria-label="Browser language"
-                  onChange={event => patchBrowserEmulation({ language: event.target.value || undefined })}
+                  onChange={event => patchBrowserEmulation({ language: event.target.value || emptyBrowserEmulationChoice('language') })}
                 >
                   <option value="">Engine default</option>
                   {browserEmulationCatalog.languages.map(language => (
@@ -1542,9 +1436,17 @@ export default function RuntimeSettingsGroupEditor({
                   className="settings-input"
                   value={effectiveBrowserEmulation.custom_user_agent || ''}
                   disabled={effectiveBrowserEmulation.mode !== 'custom'}
-                  placeholder={inh(inheritedBrowserEmulation.custom_user_agent)}
+                  placeholder={customUserAgentOverridden ? undefined : inh(inheritedBrowserEmulation.custom_user_agent)}
                   aria-label="Custom User-Agent"
-                  onChange={event => patchBrowserEmulation({ custom_user_agent: event.target.value })}
+                  onChange={event => {
+                    // Clearing the field inherits a lower layer's custom User-Agent
+                    // again rather than overriding it to an empty one custom mode rejects.
+                    if (!event.target.value && inheritedCustomUserAgent) {
+                      resetPaths('browser_emulation.custom_user_agent')
+                      return
+                    }
+                    patchBrowserIdentityLeaf('custom_user_agent', event.target.value)
+                  }}
                 />
               </label>
             </div>
@@ -1595,7 +1497,7 @@ export default function RuntimeSettingsGroupEditor({
         )}
 
         {activeTab === 'web_http' && (
-          <WebHttpTab web={draft.web_runtime} inheritedWeb={inheritedWeb} setWeb={next => patch({ web_runtime: next })} />
+          <WebHttpTab web={draft.web_runtime} inheritedWeb={inheritedWeb} setWeb={setWebRuntime} />
         )}
 
         {activeTab === 'java_env' && (
@@ -1620,12 +1522,13 @@ export default function RuntimeSettingsGroupEditor({
         )}
       </div>
 
-      {fieldApplicable('websocket') && <label className="runtime-apply-row"><span>WebSocket callback interval (ms)</span><input className="settings-input" type="number" min={0} max={60000} value={draft.websocket?.callback_interval_ms ?? ''} placeholder={String(inheritedOverride?.websocket?.callback_interval_ms ?? 500)} onChange={event => patch({websocket: {...(draft.websocket ?? inheritedOverride?.websocket), callback_interval_ms: event.target.value === '' ? undefined : Number(event.target.value)}})} /></label>}
+      {fieldApplicable('websocket') && <label className="runtime-apply-row"><span>WebSocket callback interval (ms)</span><input className="settings-input" type="number" min={0} max={60000} value={draft.websocket?.callback_interval_ms ?? ''} placeholder={String(inheritedOverride?.websocket?.callback_interval_ms ?? 500)} onChange={event => editSection('websocket', { callback_interval_ms: event.target.value === '' ? undefined : Number(event.target.value) })} /></label>}
       {applyPanelAvailable && (
       <div className="runtime-apply-row">
         <button type="button" className="btn btn-sm btn-secondary" onClick={() => setApplyOpen(open => !open)} disabled={groups.length < 2}>
           Apply to groups…
         </button>
+        {applyNotice && <div className="form-hint" role="status" data-testid="runtime-apply-notice">{applyNotice}</div>}
         {applyOpen && (
           <div className="runtime-apply-panel">
             <p>Copy {groupLabel(focusGroup, index)}’s effective runtime to:</p>

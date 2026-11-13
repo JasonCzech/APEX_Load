@@ -10,7 +10,9 @@ export interface WebHttpTabProps {
   web?: WebRuntimeConfig
   /** The value this section inherits (scenario default) — fills input placeholders. */
   inheritedWeb?: WebRuntimeConfig
-  /** Replace the whole web_runtime section (undefined clears it). */
+  /** Hand back this layer's whole web_runtime section (undefined clears it). The
+   * runtime editor lists only the leaves that changed, so a control must not copy
+   * inherited values into the section. */
   setWeb: (next: WebRuntimeConfig | undefined) => void
 }
 
@@ -244,7 +246,7 @@ export default function WebHttpTab({ web, inheritedWeb, setWeb }: WebHttpTabProp
       </div>
       <div className="scenario-option-grid">
         <label className={`scenario-option-card ${(web?.data_formatting?.auto_detect ?? inheritedWeb?.data_formatting?.auto_detect) ? 'selected' : ''}`}>
-          <input type="checkbox" checked={Boolean(web?.data_formatting?.auto_detect ?? inheritedWeb?.data_formatting?.auto_detect)} onChange={event => patchWeb({ data_formatting: { ...inheritedWeb?.data_formatting, ...web?.data_formatting, auto_detect: event.target.checked } })} />
+          <input type="checkbox" checked={Boolean(web?.data_formatting?.auto_detect ?? inheritedWeb?.data_formatting?.auto_detect)} onChange={event => patchWeb({ data_formatting: { ...web?.data_formatting, auto_detect: event.target.checked } })} />
           <div><strong>Auto-detect formatting</strong><span>Detect and decode response encodings automatically.</span></div>
         </label>
       </div>

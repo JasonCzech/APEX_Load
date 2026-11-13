@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import type { StoredScenario } from '../types'
 import { formatBrowserRuntimeSummary } from './browserRuntimeSummary'
+import { runtimeBrowserSettings } from './runtimeSettingsModel'
 import { ObjectInfoBadge } from './LibraryRowBadges'
 import BadgeIcon from './ux/BadgeIcon'
 
@@ -37,7 +38,7 @@ function resultCount(scenario: StoredScenario) {
  */
 export function ScenarioNameMeta({ scenario, duplicateName = false, children }: { scenario: StoredScenario; duplicateName?: boolean; children?: ReactNode }) {
   const hosts = hostTargets(scenario)
-  const browser = formatBrowserRuntimeSummary(scenario.runtime_settings?.browser)
+  const browser = formatBrowserRuntimeSummary(runtimeBrowserSettings(scenario.runtime_settings))
   const pools = dataPoolList(scenario)
   return <div className="script-table-meta">
     <ObjectInfoBadge name={scenario.name} refKey={scenario.ref_key} createdAt={scenario.created_at} activity={scenario.activity}>

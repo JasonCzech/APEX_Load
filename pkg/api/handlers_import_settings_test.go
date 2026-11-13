@@ -504,17 +504,26 @@ func TestWidenedImportSettingsFamiliesAndCredentialGuards(t *testing.T) {
 		})
 	}
 
-	// Existing protected credential on source cannot be overwritten via import settings.
-	withProtected := cloneScriptDefinition(script)
-	withProtected.Config.SOAP.WSSecurity = &dsl.SOAPWSSecurityConfig{
+	// An imported WS-Security password is script-sourced, never a secret: it
+	// may be replaced with a {{secret.*}} reference, but not with a new typed
+	// literal. (Clearing it alone is a validation issue: the username needs it.)
+	withImported := cloneScriptDefinition(script)
+	withImported.Config.SOAP.WSSecurity = &dsl.SOAPWSSecurityConfig{
 		UsernameToken: &dsl.SOAPUsernameTokenConfig{
 			Username: "admin",
 			Password: "imported-raw-password",
 		},
 	}
-	if draft, changeErrs := applyImportSettings(withProtected, "SOAP", []ImportSettingsChange{
-		settingChange("config.soap.ws_security.username_token.password", `"{{secret.NEW_REF}}"`),
+	for _, value := range []string{`"{{secret.NEW_REF}}"`} {
+		if draft, changeErrs := applyImportSettings(withImported, "SOAP", []ImportSettingsChange{
+			settingChange("config.soap.ws_security.username_token.password", value),
+		}); len(changeErrs) != 0 || draft == nil {
+			t.Fatalf("imported WS-Security password should accept %s, got errs=%v", value, changeErrs)
+		}
+	}
+	if draft, changeErrs := applyImportSettings(withImported, "SOAP", []ImportSettingsChange{
+		settingChange("config.soap.ws_security.username_token.password", `"another-typed-password"`),
 	}); len(changeErrs) == 0 || draft != nil {
-		t.Fatalf("expected protected value guard when overwriting existing imported secret, got errs=%v", changeErrs)
+		t.Fatalf("expected a typed WS-Security password to be refused, got errs=%v", changeErrs)
 	}
 }

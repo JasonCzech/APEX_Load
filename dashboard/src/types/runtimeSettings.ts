@@ -11,6 +11,7 @@ import type {
   WebRuntimeConfig,
   WebSocketConfig,
   ScriptResultsConfig,
+  SOAPConfig,
 } from './scripts'
 
 export interface RedactionRule {
@@ -83,6 +84,28 @@ export interface RuntimeSettingsOverride {
   redaction_rules?: RedactionRule[]
 }
 
+/**
+ * The versioned partial-override contract (pkg/api RuntimeSettingsOverride).
+ *
+ * `override_fields` lists the canonical field paths a row overrides
+ * (normalizeRuntimeOverrideFields: section paths such as `http`, leaf paths
+ * such as `http.request_timeout_ms`, `env.KEY`, `java_vuser.FIELD`, and map or
+ * list fields as whole leaves). A row with a non-empty list applies only those
+ * paths onto the inherited config; a row without one keeps the exact v1
+ * whole-section semantics. `soap` is the SOAP override section.
+ *
+ * These live beside RuntimeSettingsOverride rather than on it because the
+ * Command Center dialog's field-coverage guard (groupRuntimeSettingsModel)
+ * enumerates RuntimeSettingsOverride keys as replace-style editable fields.
+ */
+export interface RuntimeOverrideFieldsExtension {
+  override_fields?: string[]
+  soap?: SOAPConfig
+}
+
+/** A runtime override row as the API stores it, including the partial-override fields. */
+export type PartialRuntimeSettingsOverride = RuntimeSettingsOverride & RuntimeOverrideFieldsExtension
+
 export interface RuntimeSettingsFinding {
   id: string
   scope: string
@@ -139,4 +162,11 @@ export interface ScenarioRuntimeSettingsDraft {
   base_url?: string
   env?: Record<string, string>
   redaction_rules?: RedactionRule[]
+  soap?: SOAPConfig
+  /**
+   * Canonical paths this draft overrides. Undefined keeps the stored row's v1
+   * whole-section semantics (the row is untouched); any edit through the
+   * runtime settings model converts the draft to a partial row first.
+   */
+  override_fields?: string[]
 }

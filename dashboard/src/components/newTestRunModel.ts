@@ -1,7 +1,26 @@
 import { countLabel as formatCount } from '../utils/numberFormat'
 import { GeneratorAssignmentSettings, RuntimeSettingsOverride, StoredScenario, SystemInventoryGenerator, TrafficProfile } from '../types'
+import { type PartialRuntimeSettingsOverride } from '../types/runtimeSettings'
 import { parseDurationToSeconds } from '../utils/timeUtils'
 import { normalizeRequiredLabels } from './assignmentLabels'
+import {
+  applyRuntimeOverrideDiff,
+  effectiveRuntimeSection,
+  resolveRuntimeRowsValue,
+  isFieldOverridden,
+  isPartialRuntimeDraft,
+  normalizeRuntimeOverrideFieldPath,
+  overrideFieldValue,
+  partialRuntimeOverrideFromDraft,
+  resetOverrideField,
+  runtimeDraftFromOverride,
+  runtimeOverrideFieldPaths,
+  runtimeRowCoversPath,
+  runtimeSectionSource,
+  sameRuntimeValue,
+  setOverrideField,
+  upgradeRuntimeDraftToPartial,
+} from './runtimeSettingsModel'
 import { canonicalThinkTimeType } from './thinkTimeConfig'
 import { formatMillisecondsAsSecondsValue, formatPacingTiming } from './runtimeTiming'
 import { trafficProfileMappingForGroup, trafficProfileTargetAt, trafficProfileTimelineSeconds, trafficProfileTpsStatistics } from './trafficProfilePreviewModel'
@@ -215,33 +234,39 @@ export function groupOverrideCount(overrides: Record<string, GroupRunOverride>) 
   return Object.values(overrides).filter(hasGroupOverrideValues).length
 }
 
-function formatRuntimePacingConfig(pacing?: RuntimeSettingsOverride['pacing'] | null) {
+/**
+ * A section partial rows set only some leaves of, over a script section this page never loads:
+ * without a listed type the timing is the script's own, adjusted by the listed leaves.
+ */
+function formatPartialTiming(prefix: string, section?: object | null) {
+  const leaves = Object.entries(section || {})
+    .filter(([, value]) => value !== undefined && value !== null && value !== '')
+    .map(([key, value]) => `${key.replace(/_/g, ' ')} ${String(value)}`)
+  return leaves.length ? `${prefix} · ${leaves.join(', ')}` : prefix
+}
+
+function formatRuntimePacingConfig(pacing?: RuntimeSettingsOverride['pacing'] | null, partial = false) {
+  if (partial && !pacing?.type) return formatPartialTiming('Script pacing', pacing)
   return formatPacingTiming(pacing) || 'Script default'
 }
 
-function formatRuntimePacingTableValue(pacing?: RuntimeSettingsOverride['pacing'] | null) {
+function formatRuntimePacingTableValue(pacing?: RuntimeSettingsOverride['pacing'] | null, partial = false) {
+  if (partial && !pacing?.type) return formatPartialTiming('Script timing', pacing)
   if (!pacing?.type) return 'Script timing'
   return formatRuntimePacingConfig(pacing)
 }
 
-function formatRuntimePacing(scenario?: StoredScenario | null) {
-  return formatRuntimePacingConfig(scenario?.runtime_settings?.pacing)
-}
-
-function formatRuntimeThinkTimeConfig(thinkTime?: RuntimeSettingsOverride['think_time'] | null) {
+function formatRuntimeThinkTimeConfig(thinkTime?: RuntimeSettingsOverride['think_time'] | null, partial = false) {
   if (!thinkTime) return 'Script default'
   if (thinkTime.ignore) return 'Disabled'
+  if (partial && !thinkTime.type) return formatPartialTiming('Script think time', thinkTime)
   if (thinkTime.type === 'recorded') return 'Replay recorded think time'
   return `${thinkTime.type || 'fixed'} · ${thinkTime.mean_ms || 0}ms`
 }
 
-function formatRuntimeThinkTimeTableValue(thinkTime?: RuntimeSettingsOverride['think_time'] | null) {
+function formatRuntimeThinkTimeTableValue(thinkTime?: RuntimeSettingsOverride['think_time'] | null, partial = false) {
   if (!thinkTime) return 'Script think time'
-  return formatRuntimeThinkTimeConfig(thinkTime)
-}
-
-function formatRuntimeThinkTime(scenario?: StoredScenario | null) {
-  return formatRuntimeThinkTimeConfig(scenario?.runtime_settings?.think_time)
+  return formatRuntimeThinkTimeConfig(thinkTime, partial)
 }
 
 function formatRuntimeBooleanValue(value?: boolean | null) {
@@ -281,8 +306,9 @@ function formatRuntimeText(value: string | undefined | null, fallback: string) {
 //      section wins entirely; lower levels contribute nothing, not even a half the winner omits.
 function formatRuntimeErrorHandlingTableValue(continueOnError?: boolean, snapshotOnError?: boolean, sectionPinned = false) {
   if (!sectionPinned && continueOnError === undefined && snapshotOnError === undefined) return 'Script default'
-  const continueLabel = continueOnError ? 'Continue' : 'Stop'
-  const snapshotLabel = snapshotOnError ? 'Snapshot' : 'No snapshot'
+  // A half no layer lists (partial rows resolve per path) inherits the script's own setting.
+  const continueLabel = continueOnError === undefined ? 'Script default' : continueOnError ? 'Continue' : 'Stop'
+  const snapshotLabel = snapshotOnError === undefined ? 'Script default snapshot' : snapshotOnError ? 'Snapshot' : 'No snapshot'
   return `${continueLabel} / ${snapshotLabel}`
 }
 
@@ -411,68 +437,69 @@ type ResolvedErrorHandling = {
 }
 
 /**
- * Read the two booleans out of ONE error_handling section the way the run will execute
- * them: a section that omits a boolean executes it as false, so the resolved value is
- * never undefined once a section exists. Only the absence of a section leaves both
- * undefined, which is the single case that really does inherit the script's own config.
+ * The row the run level transmits: the run-default edits laid over the scenario row exactly as
+ * buildRuntimeSettingsForRun submits them, or the stored scenario row when the run changes nothing.
  */
-function resolveErrorHandlingSectionValues(section?: RuntimeSettingsOverride['error_handling']): ResolvedErrorHandling {
-  if (!errorHandlingSectionIsPinned(section)) {
-    return { continue_on_error: undefined, snapshot_on_error: undefined, error_handling_pinned: false }
-  }
-  return {
-    continue_on_error: Boolean(section?.continue_on_error),
-    snapshot_on_error: Boolean(section?.snapshot_on_error),
-    error_handling_pinned: true,
-  }
+export function runLevelRuntimeSettings(scenario: StoredScenario, overrides: RunDefaultOverrides): RuntimeSettingsOverride | undefined {
+  return buildRuntimeSettingsForRun(scenario, overrides) ?? scenario.runtime_settings
 }
 
-// Mirrors buildRuntimeSettingsForRun exactly — that function builds the run-level section this
-// page actually submits, so any divergence here reports a section the run will not send. The
-// flat continue_on_error/snapshot_on_error run-default overrides are folded into the scenario's
-// error_handling section, so clearing one of them does not by itself remove a section the
-// scenario supplies. Returns undefined when the run level transmits NO section: unlike a
-// section read back off the API, this one is synthesised here, so an empty result means
-// "nothing set" rather than the pinned `{}` the wire uses for an all-false section.
-function runDefaultErrorHandlingSection(
-  runtimeOverrides: RunRuntimeOverrideDraft,
-  scenarioRuntime?: RuntimeSettingsOverride,
-): RuntimeSettingsOverride['error_handling'] {
-  const scenarioSection = scenarioRuntime?.error_handling
-  const touchesErrorHandling = hasOwnKey(runtimeOverrides, 'continue_on_error') || hasOwnKey(runtimeOverrides, 'snapshot_on_error')
-  if (!touchesErrorHandling) return scenarioSection
-  const merged = { ...(scenarioSection || {}) }
-  if (hasOwnKey(runtimeOverrides, 'continue_on_error')) {
-    if (runtimeOverrides.continue_on_error == null) delete merged.continue_on_error
-    else merged.continue_on_error = runtimeOverrides.continue_on_error
-  }
-  if (hasOwnKey(runtimeOverrides, 'snapshot_on_error')) {
-    if (runtimeOverrides.snapshot_on_error == null) delete merged.snapshot_on_error
-    else merged.snapshot_on_error = runtimeOverrides.snapshot_on_error
-  }
-  return errorHandlingSectionHasValues(merged) ? merged : undefined
+/** The value a row stack supplies at `path` (highest layer first), or listed=false when no
+ * layer lists it and the script's own config applies. A listed path with no value is an
+ * explicit empty (a v1 section that omits the field, or a partial clear). */
+function runtimeLayerValue(path: string, group?: RuntimeSettingsOverride, root?: RuntimeSettingsOverride): { listed: boolean; value: unknown } {
+  const { index, value } = resolveRuntimeRowsValue(path, [group, root])
+  return { listed: index >= 0, value }
 }
 
 /**
- * Section-wise resolution, matching mergeRuntimeSettings: when the group transmits a section it
- * is the one that runs and it is applied whole, so lower levels contribute nothing — not even a
- * half the winner omits. Resolving the two booleans independently across levels would report a
- * half the run discards. `effective` is the submitted overlay, so a run-only tombstone has
- * already removed the stored section by the time it gets here.
+ * The section a row stack (highest layer first) displays: each partial row contributes only the
+ * paths it lists, laid over the layers below it, and a row listing the whole section (every v1
+ * row that carries it) replaces them. This and runtimeLayerValue are the only ways the display
+ * and baseline code in this file reads an override row (newTestRuntimeReadGuard.test.ts).
  */
-function resolveGroupErrorHandling(
-  effective: RuntimeSettingsOverride | undefined,
-  runDefaults: ResolvedErrorHandling,
-): ResolvedErrorHandling {
-  const section = effective?.error_handling
-  if (!errorHandlingSectionIsPinned(section)) {
-    return {
-      continue_on_error: runDefaults.continue_on_error,
-      snapshot_on_error: runDefaults.snapshot_on_error,
-      error_handling_pinned: runDefaults.error_handling_pinned,
-    }
+function runtimeLayerSection<K extends 'pacing' | 'think_time'>(section: K, group?: RuntimeSettingsOverride, root?: RuntimeSettingsOverride): RuntimeSettingsOverride[K] | undefined {
+  return effectiveRuntimeSection<RuntimeSettingsOverride[K]>(section, [group, root]) ?? undefined
+}
+
+/** True when rows set leaves inside `section` but none lists it whole, so the rest is the script's. */
+function runtimeLayerSectionIsPartial(section: string, group?: RuntimeSettingsOverride, root?: RuntimeSettingsOverride): boolean {
+  if (!runtimeSectionSource(section, [group, root])) return false
+  return !runtimeRowCoversPath(group, section) && !runtimeRowCoversPath(root, section)
+}
+
+/**
+ * Resolve the two error-handling booleans through the group row and the run-level row the
+ * way the backend does. Each half is resolved per path: a partial row supplies only the halves
+ * it lists, and an unlisted half falls through to the next layer (undefined = the script's own
+ * config.error_handling, which this page never loads). A v1 row lists its error_handling
+ * section whole, so a half it omits resolves to false (whole-section v1 semantics) and lower
+ * layers contribute nothing.
+ */
+function resolveErrorHandlingLayers(group?: RuntimeSettingsOverride, root?: RuntimeSettingsOverride): ResolvedErrorHandling {
+  const resolved: ResolvedErrorHandling = { continue_on_error: undefined, snapshot_on_error: undefined, error_handling_pinned: false }
+  for (const half of ['continue_on_error', 'snapshot_on_error'] as const) {
+    const { listed, value } = runtimeLayerValue(`error_handling.${half}`, group, root)
+    if (!listed) continue
+    resolved[half] = Boolean(value)
+    resolved.error_handling_pinned = true
   }
-  return resolveErrorHandlingSectionValues(section)
+  return resolved
+}
+
+const BROWSER_TABLE_FIELDS = ['headless', 'device_profile', 'touch_mode', 'orientation'] as const
+
+/** The four browser fields the run editors expose, resolved per path through the layers. */
+function resolveBrowserLayers(group?: RuntimeSettingsOverride, root?: RuntimeSettingsOverride): RuntimeSettingsOverride['browser'] | undefined {
+  const browser: Record<string, unknown> = {}
+  let any = false
+  for (const field of BROWSER_TABLE_FIELDS) {
+    const { listed, value } = runtimeLayerValue(`browser.${field}`, group, root)
+    if (!listed) continue
+    any = true
+    if (value !== undefined && value !== null && value !== '') browser[field] = value
+  }
+  return any ? browser as RuntimeSettingsOverride['browser'] : undefined
 }
 
 function formatRuntimeBrowserTableValue(browser?: RuntimeSettingsOverride['browser']) {
@@ -510,6 +537,14 @@ export function cloneRuntimeSettingsForRun(settings?: RuntimeSettingsOverride): 
  */
 export function mergeRuntimeSettingsForRun(base?: RuntimeSettingsOverride, overlay?: RuntimeSettingsOverride): RuntimeSettingsOverride | undefined {
   if (!base && !overlay) return undefined
+  if (isPartialRuntimeDraft(base)) return mergePartialRuntimeSettingsForRun(base as PartialRuntimeSettingsOverride, overlay)
+  // A partial overlay over a v1 (or absent) row: the row is upgraded to the partial row that
+  // applies exactly what it did (every v1 section listed whole), so the overlay's paths can be
+  // listed beside it. A v1 merge would assign the overlay's projected sections as whole sections.
+  if (isPartialRuntimeDraft(overlay)) {
+    const upgraded = partialRuntimeOverrideFromDraft(upgradeRuntimeDraftToPartial(runtimeDraftFromOverride(cloneRuntimeSettingsForRun(base))))
+    return mergePartialRuntimeSettingsForRun({ ...(upgraded || {}), override_fields: upgraded?.override_fields || [] }, overlay, base)
+  }
   const merged = cloneRuntimeSettingsForRun(base) || {}
   const patch = cloneRuntimeSettingsForRun(overlay)
   if (patch) {
@@ -521,30 +556,154 @@ export function mergeRuntimeSettingsForRun(base?: RuntimeSettingsOverride, overl
   return hasRuntimeSettingsValues(merged) ? merged : undefined
 }
 
-function runtimeIterations(settings?: RuntimeSettingsOverride) {
-  return settings?.run_logic?.iterations ?? settings?.iterations
-}
+/** Run editors replace these sections whole, so a run edit lists the section rather than mixing
+ * its leaves with a lower layer's (a run pacing of one type over another type's timings). */
+const WHOLE_RUN_SECTIONS = new Set(['pacing', 'think_time'])
+const COMPACT_RUNTIME_ALIASES = new Set(['iterations', 'log_level', 'auto_transactions', 'browser'])
+const COMPACT_BROWSER_FIELDS = ['headless', 'device_profile', 'touch_mode', 'orientation'] as const
 
-function runtimeLogLevel(settings?: RuntimeSettingsOverride) {
-  return settings?.log?.level ?? settings?.log_level
-}
-
-function runtimeAutoTransactions(settings?: RuntimeSettingsOverride) {
-  return settings?.run_logic?.auto_transactions ?? settings?.auto_transactions
-}
-
-function runtimeBrowser(settings?: RuntimeSettingsOverride): RuntimeSettingsOverride['browser'] | undefined {
-  if (settings?.browser_config) {
-    return {
-      headless: settings.browser_config.headless,
-      device_profile: settings.browser_config.device_profile,
-      touch_mode: settings.browser_config.touch_mode,
-      orientation: settings.browser_config.orientation,
+/**
+ * The partial-row counterpart of mergeRuntimeSettingsForRun. The backend applies only the paths
+ * a partial row lists (pkg/api/runtime_overrides.go), so assigning a top-level key beside the
+ * base row's override_fields would be ignored by the run. Each overlay key is applied through
+ * the runtime settings model instead: a null tombstone resets the key's paths to inherited,
+ * pacing and think_time are set as whole sections, and every other section lists only the
+ * leaves the overlay changed. The overlay's own override_fields (a copy of an earlier merge)
+ * is ignored: the values say what changed.
+ */
+function mergePartialRuntimeSettingsForRun(
+  base: PartialRuntimeSettingsOverride,
+  overlay?: RuntimeSettingsOverride,
+  original: RuntimeSettingsOverride | undefined = base,
+): RuntimeSettingsOverride | undefined {
+  const stored = cloneRuntimeSettingsForRun(base) as PartialRuntimeSettingsOverride
+  const patch = cloneRuntimeSettingsForRun(overlay) as Record<string, unknown> | undefined
+  if (!patch) return cloneRuntimeSettingsForRun(original)
+  let draft = runtimeDraftFromOverride(stored)
+  let changed = false
+  // Sections first, so an alias edit (iterations beside an unchanged run_logic copy) wins.
+  const keys = Object.keys(patch)
+    .filter(key => key !== 'override_fields' && patch[key] !== undefined)
+    .sort((left, right) => Number(COMPACT_RUNTIME_ALIASES.has(left)) - Number(COMPACT_RUNTIME_ALIASES.has(right)))
+  for (const key of keys) {
+    const value = patch[key]
+    if (key === 'browser') {
+      const compact = (value ?? {}) as Record<string, unknown>
+      for (const field of COMPACT_BROWSER_FIELDS) {
+        const path = `browser.${field}`
+        const next = compact[field] === '' || compact[field] === null ? undefined : compact[field]
+        if (sameRuntimeValue(overrideFieldValue(stored, path), next)) continue
+        draft = next === undefined ? resetOverrideField(draft, path) : setOverrideField(draft, path, next)
+        changed = true
+      }
+      continue
+    }
+    const path = normalizeRuntimeOverrideFieldPath(key)
+    if (!path) continue
+    // A section key is read off the stored row itself (it holds only listed values), so a leaf
+    // the overlay removed is seen as removed even when only some of the section is listed.
+    const before = COMPACT_RUNTIME_ALIASES.has(key) ? overrideFieldValue(stored, path) : (stored as Record<string, unknown>)[key] ?? undefined
+    if (value === null) {
+      draft = resetOverrideField(draft, path)
+      changed = true
+    } else if (WHOLE_RUN_SECTIONS.has(path) || !isPlainRuntimeSection(value)) {
+      if (sameRuntimeValue(before, value)) continue
+      draft = setOverrideField(draft, path, value)
+      changed = true
+    } else {
+      const next = applyRuntimeOverrideDiff(draft, path, before, value)
+      changed = changed || next !== draft
+      draft = next
     }
   }
-  return settings?.browser ?? undefined
+  // A partial overlay is a complete row (buildPartialGroupRunRuntimeOverride starts from the
+  // stored row), so a stored path it no longer lists was reset to inherited by the edit. Its
+  // section key is simply absent from the overlay, which the value walk above cannot see.
+  // Coverage is exact: a stored field survives only when the overlay lists it or an ancestor.
+  // A stored v1 section the overlay lists only by some children (an upgraded v1 section after
+  // an inherit reset one of its leaves) is reset and the overlay's listed children re-applied,
+  // so the reset leaf leaves the row instead of the whole section staying listed.
+  if (isPartialRuntimeDraft(overlay)) {
+    const partialOverlay = overlay as PartialRuntimeSettingsOverride
+    const overlayFields = runtimeOverrideFieldPaths(partialOverlay)
+    for (const field of runtimeOverrideFieldPaths(stored)) {
+      if (runtimeRowCoversPath(partialOverlay, field)) continue
+      draft = resetOverrideField(draft, field)
+      for (const child of overlayFields) {
+        if (!child.startsWith(`${field}.`)) continue
+        draft = setOverrideField(draft, child, overrideFieldValue(partialOverlay, child))
+      }
+      changed = true
+    }
+  }
+  if (!changed) return cloneRuntimeSettingsForRun(original)
+  return partialRuntimeOverrideFromDraft(draft)
 }
 
+/**
+ * True when a group's run-dialog edits must use partial semantics: the group's merged row, the
+ * stored scenario row or the run-level row is partial (override_fields). Partial edits are
+ * written per path, so the two error-handling halves inherit independently and a retry policy
+ * left on the group never pins them.
+ */
+export function groupRunRuntimeIsPartial(
+  group: ScenarioScriptGroup,
+  scenario: StoredScenario,
+  runDefaultOverrides: RunDefaultOverrides,
+  override?: GroupRunOverride,
+): boolean {
+  return isPartialRuntimeDraft(mergeRuntimeSettingsForRun(group.runtime_settings, override?.runtime_settings))
+    || isPartialRuntimeDraft(scenario.runtime_settings)
+    || isPartialRuntimeDraft(buildRuntimeSettingsForRun(scenario, runDefaultOverrides))
+}
+
+/**
+ * One error-handling select edit in the group dialog. v1 rows keep the section-level inherit
+ * coupling (applyGroupErrorHandlingDraftEdit); partial rows reset each half on its own.
+ */
+export function applyGroupErrorHandlingSelect(
+  draft: GroupErrorHandlingDraftHalves,
+  half: ErrorHandlingHalf,
+  value: string,
+  partial: boolean,
+): GroupErrorHandlingDraftHalves {
+  if (partial) return { ...draft, [half]: value }
+  return applyGroupErrorHandlingDraftEdit(draft, half, value)
+}
+
+/** One run-dialog edit of a group's runtime settings: `undefined` resets the path to inherited. */
+export type GroupRuntimePathEdit = { path: string; value: unknown }
+
+/**
+ * The run override a group edit stores when the group row or the scenario row is partial. The
+ * backend applies a partial row's listed paths only (pkg/api/runtime_overrides.go), so every edit
+ * is written through the runtime settings model as its own path: nothing inherited is copied in,
+ * because a partial ancestor's sections hold only the leaves it lists and copying one into a
+ * group section would replace the script's whole section with those leaves. A v1 group row is
+ * upgraded first, so its sections keep applying whole (legacy v1 semantics). The result is the
+ * complete row (stored row plus edits); `{ override_fields: [] }` when the edits reset everything,
+ * so the clear is not mistaken for "no override" and the stored row restored.
+ */
+export function buildPartialGroupRunRuntimeOverride(
+  stored: RuntimeSettingsOverride | undefined,
+  existing: RuntimeSettingsOverride | undefined,
+  edits: readonly GroupRuntimePathEdit[],
+): RuntimeSettingsOverride {
+  const current = mergeRuntimeSettingsForRun(stored, existing)
+  let draft = upgradeRuntimeDraftToPartial(runtimeDraftFromOverride(cloneRuntimeSettingsForRun(current) as PartialRuntimeSettingsOverride))
+  for (const edit of edits) {
+    draft = edit.value === undefined ? resetOverrideField(draft, edit.path) : setOverrideField(draft, edit.path, edit.value)
+  }
+  return partialRuntimeOverrideFromDraft(draft) ?? { override_fields: [] } as PartialRuntimeSettingsOverride
+}
+
+function isPlainRuntimeSection(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+}
+
+// The setRuntime* helpers write a section of a v1 row in place (every caller is a v1 write path:
+// buildRuntimeSettingsForRun's v1 branch and NewTestPage's v1 group save); partial rows go through
+// setOverrideField instead. runtime-row-v1-write-begin
 export function setRuntimeIterations(settings: RuntimeSettingsOverride, value: number | undefined) {
   if (settings.run_logic) {
     settings.run_logic = { ...settings.run_logic, iterations: value }
@@ -596,7 +755,7 @@ export type RuntimeBrowserWriteOptions = {
  * into one: the backend merges a flat `browser` field-wise onto the script's own config, while
  * `browser_config` replaces that config whole (pkg/api/runtime_overrides.go:379-395). This is the
  * one place that knows the difference — every other helper works on the flat four-field view
- * runtimeBrowser() returns.
+ * resolveBrowserLayers() returns.
  *
  * Both shapes release the section the same way, which is the half that used to be missing: when
  * nothing is left to pin the key is REMOVED so stampClearedRuntimeSections can tombstone it.
@@ -626,6 +785,7 @@ export function setRuntimeBrowser(
     delete settings.browser
   }
 }
+// runtime-row-v1-write-end
 
 export function getEffectiveRunDuration(scenario?: StoredScenario | null, overrides?: RunDefaultOverrides) {
   return scenario?.termination_mode === 'iterations' ? '' : overrides?.duration?.trim() || scenario?.duration || ''
@@ -636,17 +796,28 @@ export function getEffectiveResourceBaseline(scenario?: StoredScenario | null, o
   return hasOwnKey(overrides || {}, 'resource_baseline') ? Boolean(overrides?.resource_baseline) : Boolean(scenario.resource_baseline)
 }
 
+/**
+ * The run-level values, read off the row the run transmits (the run-default edits laid over the
+ * scenario row, runLevelRuntimeSettings): every value is resolved per path or per section through
+ * the shared resolvers, so a partial scenario row contributes only the paths it lists.
+ */
 export function getEffectiveRuntimeDefaults(scenario: StoredScenario, overrides: RunDefaultOverrides) {
-  const runtimeOverrides = overrides.runtime_settings
-  const scenarioRuntime = scenario.runtime_settings
+  return effectiveRuntimeFromRows(undefined, runLevelRuntimeSettings(scenario, overrides))
+}
+
+/** The displayed run-time values of a row stack (group row over the run-level row). */
+function effectiveRuntimeFromRows(group?: RuntimeSettingsOverride, root?: RuntimeSettingsOverride) {
+  const iterations = runtimeLayerValue('run_logic.iterations', group, root).value
   return {
-    iterations: hasOwnKey(runtimeOverrides, 'iterations') ? runtimeOverrides.iterations ?? undefined : runtimeIterations(scenarioRuntime),
-    pacing: hasOwnKey(runtimeOverrides, 'pacing') ? runtimeOverrides.pacing ?? undefined : scenarioRuntime?.pacing,
-    think_time: hasOwnKey(runtimeOverrides, 'think_time') ? runtimeOverrides.think_time ?? undefined : scenarioRuntime?.think_time,
-    browser: runtimeBrowser(scenarioRuntime),
-    log_level: hasOwnKey(runtimeOverrides, 'log_level') ? runtimeOverrides.log_level || undefined : runtimeLogLevel(scenarioRuntime),
-    auto_transactions: hasOwnKey(runtimeOverrides, 'auto_transactions') ? runtimeOverrides.auto_transactions || undefined : runtimeAutoTransactions(scenarioRuntime),
-    ...resolveErrorHandlingSectionValues(runDefaultErrorHandlingSection(runtimeOverrides, scenarioRuntime)),
+    iterations: iterations === undefined || iterations === null ? undefined : Number(iterations),
+    pacing: runtimeLayerSection('pacing', group, root),
+    pacing_partial: runtimeLayerSectionIsPartial('pacing', group, root),
+    think_time: runtimeLayerSection('think_time', group, root),
+    think_time_partial: runtimeLayerSectionIsPartial('think_time', group, root),
+    browser: resolveBrowserLayers(group, root),
+    log_level: (runtimeLayerValue('log.level', group, root).value as string | undefined) || undefined,
+    auto_transactions: (runtimeLayerValue('run_logic.auto_transactions', group, root).value as string | undefined) || undefined,
+    ...resolveErrorHandlingLayers(group, root),
   }
 }
 
@@ -675,11 +846,14 @@ export function buildEffectiveScenarioGroups(scenario: StoredScenario | undefine
 
 export function effectiveGroupIterations(group: ScenarioScriptGroup, scenario: StoredScenario, runDefaultOverrides: RunDefaultOverrides, groupOverride?: GroupRunOverride) {
   const runDefaults = getEffectiveRuntimeDefaults(scenario, runDefaultOverrides)
-  return runtimeIterations(groupOverride?.runtime_settings) ?? runtimeIterations(group.runtime_settings) ?? group.iterations ?? runDefaults.iterations
+  // Read off the merged row the run submits, so a run edit that reset the stored row's
+  // iterations to inherited is not read back off the stored group.
+  const effective = mergeRuntimeSettingsForRun(group.runtime_settings, groupOverride?.runtime_settings)
+  const groupIterations = runtimeLayerValue('run_logic.iterations', effective).value as number | undefined
+  return groupIterations ?? group.iterations ?? runDefaults.iterations
 }
 
 export function effectiveGroupRuntimeSettings(group: ScenarioScriptGroup, scenario: StoredScenario, runDefaultOverrides: RunDefaultOverrides, groupOverride?: GroupRunOverride) {
-  const runDefaults = getEffectiveRuntimeDefaults(scenario, runDefaultOverrides)
   const groupRuntime = group.runtime_settings
   const overrideRuntime = groupOverride?.runtime_settings
   // Every CLEARABLE section is resolved off the SAME overlay buildGroupsForRunPayload submits,
@@ -689,26 +863,76 @@ export function effectiveGroupRuntimeSettings(group: ScenarioScriptGroup, scenar
   // needs no new case here. What the overlay does not carry falls through to the run-level
   // defaults, exactly as mergeRuntimeSettings does on the backend.
   const effective = mergeRuntimeSettingsForRun(groupRuntime, overrideRuntime)
+  // Leaves are resolved per path through the merged group row and the run-level row, so a
+  // partial row supplies only what it lists (a v1 row lists its sections whole).
+  const root = runLevelRuntimeSettings(scenario, runDefaultOverrides)
   return {
+    ...effectiveRuntimeFromRows(effective, root),
     iterations: effectiveGroupIterations(group, scenario, runDefaultOverrides, groupOverride),
-    pacing: effective?.pacing ?? runDefaults.pacing,
-    think_time: effective?.think_time ?? runDefaults.think_time,
-    browser: runtimeBrowser(effective) ?? runDefaults.browser,
-    // Not clearable by any run editor (their controls have no inherit option), so these keep
-    // the plain override -> group -> run-default precedence.
-    log_level: runtimeLogLevel(overrideRuntime) ?? runtimeLogLevel(groupRuntime) ?? runDefaults.log_level,
-    auto_transactions: runtimeAutoTransactions(overrideRuntime) ?? runtimeAutoTransactions(groupRuntime) ?? runDefaults.auto_transactions,
-    ...resolveGroupErrorHandling(effective, runDefaults),
   }
+}
+
+/**
+ * An untyped partial pacing or think_time override the group dialog's inherit option would hide:
+ * the rows list only some leaves (say think_time.mean_ms) and the type comes from the script, so
+ * the type select sits on its inherit option with the leaf inputs hidden. Returns the summary
+ * the table shows and whether the group row itself lists the leaves (so a reset at the group
+ * removes them), or undefined when nothing is hidden.
+ */
+export function groupHiddenPartialTiming(
+  section: 'pacing' | 'think_time',
+  group: ScenarioScriptGroup,
+  scenario: StoredScenario,
+  runDefaultOverrides: RunDefaultOverrides,
+  groupOverride?: GroupRunOverride,
+): { summary: string; groupOwned: boolean } | undefined {
+  const runtime = effectiveGroupRuntimeSettings(group, scenario, runDefaultOverrides, groupOverride)
+  const value = section === 'pacing' ? runtime.pacing : runtime.think_time
+  const partial = section === 'pacing' ? runtime.pacing_partial : runtime.think_time_partial
+  if (!partial || !value || value.type || (section === 'think_time' && (value as NonNullable<RuntimeSettingsOverride['think_time']>).ignore)) return undefined
+  const summary = section === 'pacing'
+    ? formatRuntimePacingTableValue(value as RuntimeSettingsOverride['pacing'], true)
+    : formatRuntimeThinkTimeTableValue(value as RuntimeSettingsOverride['think_time'], true)
+  const groupRow = mergeRuntimeSettingsForRun(group.runtime_settings, groupOverride?.runtime_settings)
+  return { summary, groupOwned: isFieldOverridden(groupRow, section) }
 }
 
 function hasRunRuntimeOverrides(overrides: RunDefaultOverrides) {
   return Object.keys(overrides.runtime_settings).length > 0
 }
 
+/**
+ * buildRuntimeSettingsForRun for a partial scenario row: every run default is applied through
+ * the runtime settings model, so the path is listed in override_fields (the backend ignores an
+ * unlisted section), and a run-level clear resets the path to inherited instead of deleting a
+ * key the row still lists (which the backend would apply as the zero value).
+ */
+function buildPartialRuntimeSettingsForRun(base: PartialRuntimeSettingsOverride, runtimeOverrides: RunDefaultOverrides['runtime_settings']): RuntimeSettingsOverride | undefined {
+  let draft = runtimeDraftFromOverride(cloneRuntimeSettingsForRun(base) as PartialRuntimeSettingsOverride)
+  const apply = (path: string, value: unknown) => {
+    draft = value === undefined ? resetOverrideField(draft, path) : setOverrideField(draft, path, value)
+  }
+  if (hasOwnKey(runtimeOverrides, 'iterations')) {
+    apply('run_logic.iterations', runtimeOverrides.iterations == null ? undefined : Number(runtimeOverrides.iterations))
+  }
+  if (hasOwnKey(runtimeOverrides, 'pacing')) apply('pacing', runtimeOverrides.pacing ? { ...runtimeOverrides.pacing } : undefined)
+  if (hasOwnKey(runtimeOverrides, 'think_time')) apply('think_time', runtimeOverrides.think_time ? { ...runtimeOverrides.think_time } : undefined)
+  if (hasOwnKey(runtimeOverrides, 'log_level')) apply('log.level', runtimeOverrides.log_level || undefined)
+  if (hasOwnKey(runtimeOverrides, 'auto_transactions')) apply('run_logic.auto_transactions', runtimeOverrides.auto_transactions || undefined)
+  if (hasOwnKey(runtimeOverrides, 'continue_on_error')) apply('error_handling.continue_on_error', runtimeOverrides.continue_on_error ?? undefined)
+  if (hasOwnKey(runtimeOverrides, 'snapshot_on_error')) apply('error_handling.snapshot_on_error', runtimeOverrides.snapshot_on_error ?? undefined)
+  // The run has overrides, so the row is always transmitted: a defined empty row applies nothing,
+  // whereas leaving runtime_settings out makes the API clone the scenario's stored row back in
+  // (testcreation.go), restoring the path the run just cleared.
+  return partialRuntimeOverrideFromDraft(draft) ?? {}
+}
+
 export function buildRuntimeSettingsForRun(scenario: StoredScenario, overrides: RunDefaultOverrides): RuntimeSettingsOverride | undefined {
   if (!hasRunRuntimeOverrides(overrides)) return undefined
   const runtimeOverrides = overrides.runtime_settings
+  if (isPartialRuntimeDraft(scenario.runtime_settings)) {
+    return buildPartialRuntimeSettingsForRun(scenario.runtime_settings as PartialRuntimeSettingsOverride, runtimeOverrides)
+  }
   const payload = cloneRuntimeSettingsForRun(scenario.runtime_settings) || {}
 
   if (hasOwnKey(runtimeOverrides, 'iterations')) {
@@ -908,7 +1132,7 @@ export function buildRunDefaultCards(scenario: StoredScenario | undefined, overr
   // Same whole-section rule as the group table: a scenario section that names neither
   // boolean still executes both as false, so the scenario column must not claim the
   // script's own setting is inherited.
-  const scenarioErrorHandling = resolveErrorHandlingSectionValues(scenario.runtime_settings?.error_handling)
+  const scenarioResolved = effectiveRuntimeFromRows(undefined, scenario.runtime_settings)
   const duration = getEffectiveRunDuration(scenario, overrides)
   const scriptShakeout = hasOwnKey(overrides, 'script_shakeout') ? overrides.script_shakeout : scenario.script_shakeout
   const resourceBaseline = hasOwnKey(overrides, 'resource_baseline') ? overrides.resource_baseline : scenario.resource_baseline
@@ -925,7 +1149,7 @@ export function buildRunDefaultCards(scenario: StoredScenario | undefined, overr
       key: 'iterations',
       label: 'Iterations',
       value: effectiveRuntime.iterations === undefined ? 'Script default' : String(effectiveRuntime.iterations),
-      scenarioValue: String(runtimeIterations(scenario.runtime_settings) ?? 'Script default'),
+      scenarioValue: String(scenarioResolved.iterations ?? 'Script default'),
       isDefault: effectiveRuntime.iterations === undefined,
       isOverridden: hasOwnKey(overrides.runtime_settings, 'iterations'),
     },
@@ -933,7 +1157,7 @@ export function buildRunDefaultCards(scenario: StoredScenario | undefined, overr
       key: 'log_level',
       label: 'Log level',
       value: effectiveRuntime.log_level || 'Script default',
-      scenarioValue: runtimeLogLevel(scenario.runtime_settings) || 'Script default',
+      scenarioValue: scenarioResolved.log_level || 'Script default',
       isDefault: !effectiveRuntime.log_level,
       isOverridden: hasOwnKey(overrides.runtime_settings, 'log_level'),
     },
@@ -941,23 +1165,23 @@ export function buildRunDefaultCards(scenario: StoredScenario | undefined, overr
       key: 'auto_transactions',
       label: 'Auto transactions',
       value: effectiveRuntime.auto_transactions || 'Script default',
-      scenarioValue: runtimeAutoTransactions(scenario.runtime_settings) || 'Script default',
+      scenarioValue: scenarioResolved.auto_transactions || 'Script default',
       isDefault: !effectiveRuntime.auto_transactions,
       isOverridden: hasOwnKey(overrides.runtime_settings, 'auto_transactions'),
     },
     {
       key: 'pacing',
       label: 'Pacing',
-      value: formatRuntimePacingConfig(effectiveRuntime.pacing),
-      scenarioValue: formatRuntimePacing(scenario),
+      value: formatRuntimePacingConfig(effectiveRuntime.pacing, effectiveRuntime.pacing_partial),
+      scenarioValue: formatRuntimePacingConfig(scenarioResolved.pacing, scenarioResolved.pacing_partial),
       isDefault: !effectiveRuntime.pacing,
       isOverridden: hasOwnKey(overrides.runtime_settings, 'pacing'),
     },
     {
       key: 'think_time',
       label: 'Think time',
-      value: formatRuntimeThinkTimeConfig(effectiveRuntime.think_time),
-      scenarioValue: formatRuntimeThinkTime(scenario),
+      value: formatRuntimeThinkTimeConfig(effectiveRuntime.think_time, effectiveRuntime.think_time_partial),
+      scenarioValue: formatRuntimeThinkTimeConfig(scenarioResolved.think_time, scenarioResolved.think_time_partial),
       isDefault: !effectiveRuntime.think_time,
       isOverridden: hasOwnKey(overrides.runtime_settings, 'think_time'),
     },
@@ -965,7 +1189,7 @@ export function buildRunDefaultCards(scenario: StoredScenario | undefined, overr
       key: 'continue_on_error',
       label: 'Continue on error',
       value: formatRuntimeBooleanValue(effectiveRuntime.continue_on_error),
-      scenarioValue: formatRuntimeBooleanValue(scenarioErrorHandling.continue_on_error),
+      scenarioValue: formatRuntimeBooleanValue(scenarioResolved.continue_on_error),
       isDefault: effectiveRuntime.continue_on_error === undefined,
       isOverridden: hasOwnKey(overrides.runtime_settings, 'continue_on_error'),
     },
@@ -973,7 +1197,7 @@ export function buildRunDefaultCards(scenario: StoredScenario | undefined, overr
       key: 'snapshot_on_error',
       label: 'Snapshot on error',
       value: formatRuntimeBooleanValue(effectiveRuntime.snapshot_on_error),
-      scenarioValue: formatRuntimeBooleanValue(scenarioErrorHandling.snapshot_on_error),
+      scenarioValue: formatRuntimeBooleanValue(scenarioResolved.snapshot_on_error),
       isDefault: effectiveRuntime.snapshot_on_error === undefined,
       isOverridden: hasOwnKey(overrides.runtime_settings, 'snapshot_on_error'),
     },
@@ -1148,8 +1372,8 @@ export function buildGroupRuntimeTableValues(group: ScenarioScriptGroup, scenari
   const runtime = effectiveGroupRuntimeSettings(group, scenario, runDefaultOverrides, override)
   return {
     iterations: runtime.iterations === undefined ? 'Duration driven' : String(runtime.iterations),
-    pacing: formatRuntimePacingTableValue(runtime.pacing),
-    thinkTime: formatRuntimeThinkTimeTableValue(runtime.think_time),
+    pacing: formatRuntimePacingTableValue(runtime.pacing, runtime.pacing_partial),
+    thinkTime: formatRuntimeThinkTimeTableValue(runtime.think_time, runtime.think_time_partial),
     logLevel: formatRuntimeText(runtime.log_level, 'Standard'),
     autoTransactions: formatRuntimeText(runtime.auto_transactions, 'None'),
     errorHandling: formatRuntimeErrorHandlingTableValue(runtime.continue_on_error, runtime.snapshot_on_error, runtime.error_handling_pinned),

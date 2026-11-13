@@ -1,12 +1,15 @@
 import type { JointEvidenceProjection } from '../types/jointEvidence'
 import type { ScriptResultsConfig } from '../types/scripts'
 import type { StoredScript } from '../types/storedContent'
+import type { PartialRuntimeSettingsOverride } from '../types/runtimeSettings'
+import { resolveRuntimeRowsValue } from './runtimeSettingsModel'
 
 // The group settings that decide what a group promotes (a TestHub form or a
 // run draft).
+type PromotionRuntime = { results?: ScriptResultsConfig; override_fields?: string[] }
 type PromotionSource = {
-  groups: ReadonlyArray<{ script_id: string; runtimeSettings?: { results?: ScriptResultsConfig } }>
-  runtime_settings?: { results?: ScriptResultsConfig }
+  groups: ReadonlyArray<{ script_id: string; runtimeSettings?: PromotionRuntime }>
+  runtime_settings?: PromotionRuntime
 }
 
 // The controller's projectable dimensions (engine.JointDimensions), in its
@@ -51,8 +54,15 @@ export function promotedPropertyCategories(form: PromotionSource, scripts: Reado
   const names = new Set<string>()
   for (const group of form.groups) {
     const script = scripts.find(item => item.id === group.script_id)
-    const results = group.runtimeSettings?.results ?? form.runtime_settings?.results ?? script?.script?.config?.results
-    for (const rule of results?.property_analytics ?? []) {
+    // Resolved per path: a partial row (override_fields) supplies property_analytics only
+    // when it lists it (a message-detail edit leaves the script's categories in place); a
+    // v1 results section replaces the whole one below.
+    const { index, value } = resolveRuntimeRowsValue('results.property_analytics', [
+      group.runtimeSettings as PartialRuntimeSettingsOverride | undefined,
+      form.runtime_settings as PartialRuntimeSettingsOverride | undefined,
+    ])
+    const rules = (index >= 0 ? value : script?.script?.config?.results?.property_analytics) as ScriptResultsConfig['property_analytics']
+    for (const rule of rules ?? []) {
       if (rule.name) names.add(rule.name)
     }
     if (script?.protocol === 'browser') names.add(BROWSER_ITERATION_CATEGORY)

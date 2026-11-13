@@ -38,14 +38,21 @@ export function SoapRuntimeSection({ script, sectionIsActive, onSelectSection, o
   const runtimeSectionIsActive = sectionIsActive
   const selectRuntimeSettingsSection = onSelectSection
   const updateField = onUpdateField
+  const [newNamespacePrefix, setNewNamespacePrefix] = useState('')
+  const [newNamespaceUri, setNewNamespaceUri] = useState('')
 
   const addSoapNamespace = () => {
-    const key = window.prompt('Namespace prefix:')
+    const key = newNamespacePrefix.trim()
     if (!key) return
     updateField('config.soap', {
       ...(script.config.soap || {}),
-      namespaces: { ...(script.config.soap?.namespaces || {}), [key]: '' },
+      namespaces: {
+        ...(script.config.soap?.namespaces || {}),
+        [key]: newNamespaceUri.trim(),
+      },
     })
+    setNewNamespacePrefix('')
+    setNewNamespaceUri('')
   }
 
   const updateSoapNamespace = (oldKey: string, newKey: string, value: string) => {
@@ -79,7 +86,7 @@ export function SoapRuntimeSection({ script, sectionIsActive, onSelectSection, o
             <h5>Envelope</h5>
             <div className="form-grid">
               <label>
-                <span>SOAP Version</span>
+                <span>SOAP version</span>
                 <select value={script.config.soap?.version || '1.1'} onChange={e => updateField('config.soap', {
                   ...(script.config.soap || {}),
                   version: e.target.value,
@@ -103,14 +110,43 @@ export function SoapRuntimeSection({ script, sectionIsActive, onSelectSection, o
           </div>
 
           <div className="settings-sub-group">
-            <div className="sub-header"><h4>Namespaces</h4><button className="btn btn-sm btn-ghost" onClick={addSoapNamespace}>+ Add</button></div>
+            <div className="sub-header">
+              <h4>Namespaces</h4>
+              <span className="repository-status-pill" data-testid="soap-namespaces-body-mode-badge">
+                Applies when action.soap.body_mode is generated
+              </span>
+            </div>
             {Object.entries(script.config.soap?.namespaces || {}).map(([key, value]) => (
               <div key={key} className="kv-row">
                 <input className="kv-key" value={key} onChange={e => updateSoapNamespace(key, e.target.value, value)} placeholder="Prefix" />
                 <input className="kv-val" value={value} onChange={e => updateSoapNamespace(key, key, e.target.value)} placeholder="Namespace URI" />
-                <button className="btn-icon danger" onClick={() => removeSoapNamespace(key)}>✕</button>
+                <button type="button" className="btn-icon danger" onClick={() => removeSoapNamespace(key)}>✕</button>
               </div>
             ))}
+            <div className="kv-row" data-testid="soap-namespace-add-row">
+              <input
+                className="kv-key"
+                aria-label="Namespace prefix"
+                placeholder="Namespace prefix"
+                value={newNamespacePrefix}
+                onChange={e => setNewNamespacePrefix(e.target.value)}
+              />
+              <input
+                className="kv-val"
+                aria-label="Namespace URI"
+                placeholder="Namespace URI"
+                value={newNamespaceUri}
+                onChange={e => setNewNamespaceUri(e.target.value)}
+              />
+              <button
+                type="button"
+                className="btn btn-sm btn-ghost"
+                disabled={!newNamespacePrefix.trim()}
+                onClick={addSoapNamespace}
+              >
+                Add namespace
+              </button>
+            </div>
           </div>
 
           <div className="settings-sub-group">
@@ -122,10 +158,10 @@ export function SoapRuntimeSection({ script, sectionIsActive, onSelectSection, o
               </label>
               <label>
                 <span>Password</span>
-                <input type="password" value={script.config.soap?.ws_security?.username_token?.password || ''} onChange={e => updateField('config.soap.ws_security.username_token.password', e.target.value)} placeholder="secret" />
+                <input aria-label="WS-Security password" type="text" autoComplete="off" spellCheck={false} value={script.config.soap?.ws_security?.username_token?.password || ''} onChange={e => updateField('config.soap.ws_security.username_token.password', e.target.value)} placeholder="{{secret.SOAP_WSSE_PASSWORD}}" />
               </label>
               <label>
-                <span>Password Type</span>
+                <span>Password type</span>
                 <select value={script.config.soap?.ws_security?.username_token?.password_type || 'text'} onChange={e => updateField('config.soap.ws_security.username_token.password_type', e.target.value)}>
                   <option value="text">text</option>
                   <option value="digest">digest</option>
@@ -240,7 +276,7 @@ export function JavaHTTPRuntimeSection({ script, sectionIsActive, onSelectSectio
                 <input value={script.config.java_http?.object_schema || ''} onChange={e => updateField('config.java_http.object_schema', e.target.value)} placeholder="com.example.AuthRequest" />
               </label>
               <label>
-                <span>Extractor Type</span>
+                <span>Extractor type</span>
                 <input value={script.config.java_http?.extractor_type || ''} onChange={e => updateField('config.java_http.extractor_type', e.target.value)} placeholder="opaque" />
               </label>
               <label className="checkbox-label">
@@ -283,12 +319,14 @@ export function JavaHTTPRuntimeSection({ script, sectionIsActive, onSelectSectio
 export interface WebRuntimeCompatibilitySectionProps extends RuntimeSettingsSectionProps {
   httpProxyMode: string
   httpProxySummary: string
+  onOpenCanonicalProxy?: () => void
 }
 
-export function WebRuntimeCompatibilitySection({ script, sectionIsActive, onSelectSection, onUpdateField, httpProxyMode, httpProxySummary }: WebRuntimeCompatibilitySectionProps) {
+export function WebRuntimeCompatibilitySection({ script, sectionIsActive, onSelectSection, onUpdateField, httpProxySummary, onOpenCanonicalProxy }: WebRuntimeCompatibilitySectionProps) {
   const runtimeSectionIsActive = sectionIsActive
   const selectRuntimeSettingsSection = onSelectSection
   const updateField = onUpdateField
+  const isSoapScript = script.protocol.trim().toLowerCase() === 'soap'
 
   return (
     <div className={`settings-section ${runtimeSectionIsActive('web_runtime') ? 'open' : ''}`}>
@@ -309,38 +347,18 @@ export function WebRuntimeCompatibilitySection({ script, sectionIsActive, onSele
           <div className="cell-muted" style={{ marginBottom: 12 }}>
             These settings are captured in the draft now so Web HTTP/HTML scripts can mirror source runtime coverage even where full APEX Load execution support is still rolling out.
           </div>
-          <div className="settings-sub-group">
-            <h5>Proxy Routing</h5>
-            <div className="form-grid">
-              <label>
-                <span>Proxy Mode</span>
-                <select value={httpProxyMode}
-                  onChange={e => updateField('config.http', { ...script.config.http, proxy_mode: e.target.value })}>
-                  <option value="none">No proxy</option>
-                  <option value="system">Use environment proxy</option>
-                  <option value="custom">Custom proxy</option>
-                </select>
-              </label>
-              <label className="full-width"><span>Proxy URL</span>
-                <input value={script.config.http?.proxy?.url || ''} placeholder="http://proxy.example.test:8080"
-                  onChange={e => updateField('config.http', { ...script.config.http, proxy: { ...script.config.http?.proxy, url: e.target.value } })} /></label>
-              {httpProxyMode === 'custom' && (
-                <>
-                  <label><span>Proxy Username</span>
-                    <input value={script.config.http?.proxy?.username || ''}
-                      onChange={e => updateField('config.http', { ...script.config.http, proxy: { ...script.config.http?.proxy, username: e.target.value } })} /></label>
-                  <label><span>Proxy Password</span>
-                    <input type="password" value={script.config.http?.proxy?.password || ''}
-                      onChange={e => updateField('config.http', { ...script.config.http, proxy: { ...script.config.http?.proxy, password: e.target.value } })} /></label>
-                </>
-              )}
-              <label className="full-width"><span>Bypass Hosts</span>
-                <textarea rows={3} value={formatLineList(script.config.http?.proxy?.no_proxy)} placeholder={'localhost\n*.internal.example.com'}
-                  onChange={e => updateField('config.http', { ...script.config.http, proxy: { ...script.config.http?.proxy, no_proxy: parseLineList(e.target.value) } })} /></label>
-            </div>
+          <div className="http-cache-canonical-note" role="note" data-testid="web-runtime-canonical-proxy-note" style={{ marginBottom: 12 }}>
+            <span>
+              Canonical Proxy Routing (Proxy Mode, PAC URL, Proxy URL, and Bypass Hosts) is managed in Security, proxy &amp; auth → HTTP Transport → Proxy ({httpProxySummary}).
+            </span>
+            {onOpenCanonicalProxy && (
+              <button type="button" className="link-button" onClick={onOpenCanonicalProxy}>
+                Open canonical Proxy settings
+              </button>
+            )}
           </div>
           <div className="settings-sub-group">
-            <h5>Additional Attributes</h5>
+            <h5>Additional attributes</h5>
             <label className="full-width">
               <span>Name=Value pairs</span>
               <textarea rows={4} placeholder={'env=perf\nregion=east'} value={formatKeyValueLines(script.config.web_runtime?.additional_attributes)}
@@ -351,7 +369,14 @@ export function WebRuntimeCompatibilitySection({ script, sectionIsActive, onSele
             </label>
           </div>
           <div className="settings-sub-group">
-            <h5>Download Filters</h5>
+            <div className="sub-header">
+              <h5>Download filters</h5>
+              {isSoapScript && (
+                <span className="repository-status-pill" data-testid="soap-inactive-web-resource-badge">
+                  Inactive for POST XML SOAP requests (GET/HTML resource filter only)
+                </span>
+              )}
+            </div>
             <div className="form-grid">
               <label>
                 <span>Mode</span>
@@ -382,7 +407,7 @@ export function WebRuntimeCompatibilitySection({ script, sectionIsActive, onSele
             </div>
           </div>
           <div className="settings-sub-group">
-            <h5>Content Check</h5>
+            <h5>Content check</h5>
             <label className="full-width">
               <span>One per line: text|scope|fail_if_found</span>
               <textarea rows={4} placeholder={'Access Denied|any_response|true'} value={formatContentChecks(script.config.web_runtime?.content_checks)}
@@ -427,7 +452,7 @@ export function WebRuntimeCompatibilitySection({ script, sectionIsActive, onSele
                 </select>
               </label>
               <label>
-                <span>Bandwidth (Kbps)</span>
+                <span>Bandwidth (kbps)</span>
                 <input type="number" value={script.config.web_runtime?.network_simulation?.bandwidth_kbps || 0}
                   onChange={e => updateField('config.web_runtime', {
                     ...script.config.web_runtime,
@@ -527,7 +552,7 @@ export function WebRuntimeCompatibilitySection({ script, sectionIsActive, onSele
                   </select>
                 </label>
                 <label>
-                  <span>Bandwidth (Kbps)</span>
+                  <span>Bandwidth (kbps)</span>
                   <input type="number" aria-label="Profile bandwidth" value={profile.bandwidth_kbps || 0}
                     onChange={e => updateField('config.web_runtime', {
                       ...script.config.web_runtime,
@@ -574,7 +599,7 @@ export function WebRuntimeCompatibilitySection({ script, sectionIsActive, onSele
                 </select>
               </label>
               <label>
-                <span>Buffer Size (s)</span>
+                <span>Buffer size (s)</span>
                 <SecondsFromMillisecondsInput valueMs={(script.config.web_runtime?.streaming?.buffer_size_seconds || 0) * 1000}
                   onChangeMs={value => updateField('config.web_runtime', {
                     ...script.config.web_runtime,
@@ -585,7 +610,7 @@ export function WebRuntimeCompatibilitySection({ script, sectionIsActive, onSele
                   })} />
               </label>
               <label>
-                <span>Fixed Bitrate (Kbps)</span>
+                <span>Fixed bitrate (kbps)</span>
                 <input type="number" value={script.config.web_runtime?.streaming?.fixed_bitrate_kbps || 0}
                   onChange={e => updateField('config.web_runtime', {
                     ...script.config.web_runtime,
@@ -596,7 +621,7 @@ export function WebRuntimeCompatibilitySection({ script, sectionIsActive, onSele
                   })} />
               </label>
               <label>
-                <span>Bandwidth Estimation</span>
+                <span>Bandwidth estimation</span>
                 <select value={script.config.web_runtime?.streaming?.bandwidth_estimation || 'rolling'}
                   onChange={e => updateField('config.web_runtime', {
                     ...script.config.web_runtime,
@@ -626,7 +651,7 @@ export function WebRuntimeCompatibilitySection({ script, sectionIsActive, onSele
                 <span>Auto-detect data format extensions</span>
               </label>
               <label className="full-width">
-                <span>DFE Chain</span>
+                <span>DFE chain</span>
                 <textarea rows={4} placeholder={'base64\ngzip mode=decode\njson_to_xml'} value={formatDFEChain(script.config.web_runtime?.data_formatting?.chain)}
                   onChange={e => updateField('config.web_runtime', {
                     ...script.config.web_runtime,
@@ -729,7 +754,7 @@ export function ImportedSourceRuntimeSection({
             <section className="imported-runtime-run-order" aria-label="Preserved run order">
               <h4>Preserved run order</h4>
               <p><strong>Preserved only — does not affect execution.</strong> The engine runs init, the authored action list, and teardown in that order. These imported values are migration evidence.</p>
-              <dl><dt>Block Scheduling</dt><dd>{runLogic?.block_scheduling || 'Not specified'}</dd><dt>Action Sequence</dt><dd>{runLogic?.action_sequence?.join(', ') || 'Not specified'}</dd></dl>
+              <dl><dt>Block scheduling</dt><dd>{runLogic?.block_scheduling || 'Not specified'}</dd><dt>Action sequence</dt><dd>{runLogic?.action_sequence?.join(', ') || 'Not specified'}</dd></dl>
               <p>Implement branching or repetition in executable control-flow actions. Change action order in the Action editor.</p>
             </section>
           )}

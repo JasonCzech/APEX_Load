@@ -13,6 +13,7 @@ import type { ScriptConfig } from '../types/scripts'
 import RuntimeSettingsGroupEditor from './RuntimeSettingsGroupEditor'
 import { buildRuntimeSettingsDraft } from './scenarioDraftUtils'
 import { buildRuntimeSettingsPayload } from './scenarioPayloadUtils'
+import { isFieldOverridden, runtimeRowCoversPath } from './runtimeSettingsModel'
 import {
   changedRuntimeFieldKeys,
   EDITABLE_RUNTIME_FIELD_KEYS,
@@ -59,6 +60,7 @@ const FIELD_SUMMARY_LABELS: Record<(typeof EDITABLE_RUNTIME_FIELD_KEYS)[number],
 
 /** Rebuild a partial ScriptConfig from the masked base-script settings projection
  *  so the group editor can show the script layer in its inheritance display. */
+// runtime-settings-projection-begin (script_settings is a settings view, not an override row)
 function scriptConfigFromSettings(settings?: RuntimeSettingsOverride): ScriptConfig | undefined {
   if (!settings) return undefined
   return {
@@ -77,6 +79,7 @@ function scriptConfigFromSettings(settings?: RuntimeSettingsOverride): ScriptCon
     ...(settings.java_vuser ? { java_vuser: settings.java_vuser } : {}),
   } as ScriptConfig
 }
+// runtime-settings-projection-end
 
 function describeRuntimeValue(value: unknown): string {
   if (value === undefined || value === null) return '—'
@@ -177,26 +180,55 @@ function ImportedRuntimeSourcePanel({ source }: { source: ImportedRuntimeSource 
   )
 }
 
-function runtimeLayerClaimsField(settings: RuntimeSettingsOverride | undefined, key: string): boolean {
+/** The canonical override path a summary key reads (compact aliases name a leaf). */
+const SUMMARY_KEY_PATHS: Record<string, string> = {
+  iterations: 'run_logic.iterations',
+  auto_transactions: 'run_logic.auto_transactions',
+  log_level: 'log.level',
+  browser: 'browser',
+  browser_config: 'browser',
+}
+
+/**
+ * Whether a layer supplies a summary key: 'whole' when it supplies the key's value, 'part'
+ * when the row lists only some paths inside it, or false. Both wire shapes go through the shared
+ * row resolver: a partial row (override_fields) claims what it lists, and a v1 row lists every
+ * section it carries whole (a compact alias names its leaf; a compact browser block, merged
+ * field-wise by the backend, names the browser fields it sets).
+ */
+function runtimeLayerClaimsField(settings: RuntimeSettingsOverride | undefined, key: string): 'whole' | 'part' | false {
   if (!settings) return false
-  switch (key) {
-    case 'iterations':
-    case 'auto_transactions':
-      return settings.run_logic !== undefined || settings[key] !== undefined
-    case 'log_level':
-      return settings.log !== undefined || settings.log_level !== undefined
-    case 'browser':
-      return settings.browser_config !== undefined || settings.browser !== undefined
-    default:
-      return (settings as unknown as Record<string, unknown>)[key] !== undefined
-  }
+  const path = SUMMARY_KEY_PATHS[key] ?? key
+  if (runtimeRowCoversPath(settings, path)) return 'whole'
+  return isFieldOverridden(settings, path) ? 'part' : false
+}
+
+/** The script layer is a settings projection, not an override row: a key it carries is set. */
+const SCRIPT_SETTINGS_KEYS: Record<string, readonly string[]> = {
+  iterations: ['run_logic', 'iterations'],
+  auto_transactions: ['run_logic', 'auto_transactions'],
+  log_level: ['log', 'log_level'],
+  browser: ['browser_config', 'browser'],
+}
+
+function scriptSettingsClaimField(settings: RuntimeSettingsOverride | undefined, key: string): boolean {
+  if (!settings) return false
+  const record = settings as unknown as Record<string, unknown>
+  return (SCRIPT_SETTINGS_KEYS[key] ?? [key]).some(name => record[name] !== undefined)
 }
 
 function runtimeValueSourceLabel(view: TestGroupRuntimeSettingsView, key: string): string {
-  if (runtimeLayerClaimsField(view.runtime_settings, key)) return 'Group override'
-  if (runtimeLayerClaimsField(view.test_runtime_settings, key)) return 'Scenario default'
-  if (runtimeLayerClaimsField(view.script_settings, key)) return 'Script'
-  return 'Engine default'
+  const layers: Array<[RuntimeSettingsOverride | undefined, string]> = [
+    [view.runtime_settings, 'Group override'],
+    [view.test_runtime_settings, 'Scenario default'],
+  ]
+  for (const [settings, label] of layers) {
+    const claim = runtimeLayerClaimsField(settings, key)
+    if (claim === 'whole') return label
+    // Some fields come from this layer, the rest from the layers below it.
+    if (claim === 'part') return `${label} (some fields)`
+  }
+  return scriptSettingsClaimField(view.script_settings, key) ? 'Script' : 'Engine default'
 }
 
 interface ImportedRuntimeSource {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { buildDefaultScenarioGroup, buildInitialScenarioDraft, buildScenarioDraftFromTest, scenarioDraftReducer } from './scenarioDraftUtils'
+import { buildDefaultScenarioGroup, buildInitialScenarioDraft, buildRuntimeSettingsDraft, buildScenarioDraftFromTest, scenarioDraftReducer } from './scenarioDraftUtils'
 
 describe('scenarioDraftUtils', () => {
   it('retains iteration termination, empty duration and private root-clear provenance from a queued source', () => {
@@ -513,4 +513,53 @@ it('preserves all 9 ErrorHandlingConfig fields when building a scenario draft fr
     script_id: 'script-1',
   } as never)
   expect(draft.runtimeSettings).toEqual(expect.objectContaining(fullErrorHandling))
+})
+
+describe('scenarioDraftUtils partial runtime overrides', () => {
+  const group = { name: 'orders', scriptId: 'script', vusers: 1, rampUp: '', rampDown: '', initialization: 'at_runtime' as const }
+
+  it('edits one runtime control as its own listed path', () => {
+    const initial = buildInitialScenarioDraft({ ...buildInitialScenarioDraft(undefined, []), runtimeSettings: buildRuntimeSettingsDraft({ http: { version: '2' } }) }, [])
+    const timeout = scenarioDraftReducer(initial, { type: 'setRuntimeSettingField', field: 'log_level', value: 'debug' })
+    // The stored v1 http section keeps its meaning; the log level is one path.
+    expect(timeout.runtimeSettings.override_fields).toEqual(['http', 'log.level'])
+    const inherit = scenarioDraftReducer(timeout, { type: 'setRuntimeSettingField', field: 'log_level', value: '' })
+    expect(inherit.runtimeSettings.override_fields).toEqual(['http'])
+    const retries = scenarioDraftReducer(inherit, { type: 'setRuntimeSettingField', field: 'retry_on', value: ['5xx'] })
+    expect(retries.runtimeSettings.override_fields).toEqual(['http', 'error_handling.retry_on'])
+  })
+
+  it('does not materialize an absent snapshot flag for a partial row', () => {
+    const partial = buildRuntimeSettingsDraft({ error_handling: { max_retries: 2 }, override_fields: ['error_handling.max_retries'] } as never)
+    expect(partial.snapshot_on_error).toBeUndefined()
+    expect(partial.override_fields).toEqual(['error_handling.max_retries'])
+    // The v1 builder keeps its materialized false.
+    expect(buildRuntimeSettingsDraft({ error_handling: { max_retries: 2 } }).snapshot_on_error).toBe(false)
+  })
+
+  it('edits a runtime-owned iteration count as run_logic.iterations alone', () => {
+    const runtimeSettings = buildRuntimeSettingsDraft({ run_logic: { iterations: 4 }, override_fields: ['run_logic.iterations'] } as never)
+    const draft = buildInitialScenarioDraft({ ...buildInitialScenarioDraft(undefined, []), groups: [{ ...group, runtimeSettings }] }, [])
+    const edited = scenarioDraftReducer(draft, { type: 'updateGroup', index: 0, patch: { iterations: 9 } })
+    expect(edited.groups[0].runtimeSettings?.override_fields).toEqual(['run_logic.iterations'])
+    expect(edited.groups[0].runtimeSettings?.run_logic).toEqual({ iterations: 9 })
+    const cleared = scenarioDraftReducer(edited, { type: 'updateGroup', index: 0, patch: { iterations: undefined } })
+    expect(cleared.groups[0].runtimeSettings?.override_fields).toEqual([])
+    // A v1 alias is converted, not promoted into a whole run_logic section.
+    const legacy = buildInitialScenarioDraft({ ...buildInitialScenarioDraft(undefined, []), groups: [{ ...group, runtimeSettings: buildRuntimeSettingsDraft({ iterations: 4 }) }] }, [])
+    const promoted = scenarioDraftReducer(legacy, { type: 'updateGroup', index: 0, patch: { iterations: 6 } })
+    expect(promoted.groups[0].runtimeSettings?.override_fields).toEqual(['run_logic.iterations'])
+    expect(promoted.groups[0].runtimeSettings?.run_logic).toEqual({ iterations: 6 })
+  })
+
+  it('keeps a group\'s compact iterations when a partial row lists only other run_logic fields', () => {
+    const runtimeSettings = buildRuntimeSettingsDraft({ run_logic: { workload_model: 'open' }, override_fields: ['run_logic.workload_model'] } as never)
+    const draft = buildInitialScenarioDraft({ ...buildInitialScenarioDraft(undefined, []), groups: [{ ...group, iterations: 3, runtimeSettings }] }, [])
+    expect(draft.groups[0].iterations).toBe(3)
+    const fromTest = buildScenarioDraftFromTest({
+      id: 't', name: 't', duration: '1m', status: 'QUEUED', total_vusers: 1, created_at: '',
+      groups: [{ name: 'orders', script_id: 'script', vusers: 1, iteration_override: 5, iteration_override_known: true, runtime_settings: { run_logic: { workload_model: 'open' }, override_fields: ['run_logic.workload_model'] } }],
+    } as never)
+    expect(fromTest.groups[0]).toMatchObject({ iterations: 5, iterationPayloadSource: 'top_level' })
+  })
 })

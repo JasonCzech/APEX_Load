@@ -9,10 +9,10 @@ import ThinkTimePercentageInputs from './ThinkTimePercentageInputs'
 import { RuntimeCountLimit } from './RuntimeCountLimit'
 import { RuntimeContextSummary, type DebugRuntimeContext } from './RuntimeContextSummary'
 import { RuntimeFieldEvidence } from './RuntimeFieldEvidence'
-import { RUNTIME_WORKSPACE_CATEGORIES, RUNTIME_SEARCH_TERMS, runtimeTimingIssues, effectiveThinkTimeLabel } from './runtimeWorkspaceModel'
+import { EXPONENTIAL_THINK_TIME_CAP_FACTOR, RUNTIME_WORKSPACE_CATEGORIES, canonicalPacingType, canonicalWorkloadModel, exponentialThinkTimeStopMs, isOpenWorkloadModel, RUNTIME_SEARCH_TERMS, runtimeTimingIssues, effectiveThinkTimeLabel } from './runtimeWorkspaceModel'
 import TabList from './ux/TabList'
 import { handleTabKey } from './tabKeyboard'
-import { useId, useState, type ReactNode } from 'react'
+import { useId, useState, type InputHTMLAttributes, type ReactNode } from 'react'
 
 import type { TransactionSLARule } from '../types/goals'
 import type { ScriptActionDefinition, ScriptDefinition, ScriptConfig } from '../types/scripts'
@@ -56,23 +56,36 @@ import {
   collectScriptTransactionNames,
   formatBrowserEmulationSummary,
   formatLineList,
+  formatRunBlockActions,
   formatRuntimeSettingStatusLabel,
   formatScriptProtocolLabel,
   getRuntimeProtocolCapabilities,
   httpTransportTabIsAvailable,
   isTransactionSLADurationMetric,
+  parseArrivalSeed,
+  parseCommaList,
   parseLineList,
   readImportedRuntimeFiles,
+  rebuildRunBlockChildren,
+  runBlockActionsWeightsSurviveParsing,
+  scriptHasLLMActions,
   readImportedRuntimeSettingDispositions,
   summarizeImportedRuntimeDispositions,
   runtimeSettingsSectionIsAvailable,
   type HTTPTransportTabId,
   type RuntimeSettingsSectionId,
 } from './scriptEditorRuntimeSettingsModel'
-import { HTTP_VERSION_OPTIONS, formatScriptHTTPVersion, scriptHTTPVersionSettings } from './httpVersionModel'
+import { HTTP_VERSION_OPTIONS, formatScriptHTTPVersion, inheritedHTTPActionVersion, scriptHTTPVersionSettings } from './httpVersionModel'
 import { HTTP3ExecutionNote } from './HTTP3ExecutionNote'
 import { HTTPQUICSettingsFields } from './HTTPQUICSettingsFields'
 import { http3PolicyIssues, patchQUICConfig, quicPanelDisabledReason } from './httpQUICModel'
+import {
+  RuntimeSettingsEditor,
+  getTlsMaxVersionHttp3Warning,
+  hasIgnoredSoapConfigOnHttpScript,
+  hasReadOnlyScheduleCompatibility,
+  type RuntimeSettingsEditorMode,
+} from './runtime-settings'
 import { formatPacingTiming } from './runtimeTiming'
 import SecondsFromMillisecondsInput from './SecondsFromMillisecondsInput'
 import HttpRequestDefaultsEditor, {
@@ -95,6 +108,44 @@ function flattenRuntimeActions(actions: ScriptActionDefinition[]): ScriptActionD
     ...flattenRuntimeActions(action.control?.steps || []),
     ...flattenRuntimeActions(action.control?.else || []),
   ])
+}
+
+type DraftTextInputProps = Omit<InputHTMLAttributes<HTMLInputElement>, 'value' | 'onChange'> & {
+  /** Canonical text for the stored value. */
+  value: string
+  /**
+   * Canonical text the stored value would have after committing raw, or null
+   * when raw does not show what it stores (the stored value is shown instead).
+   */
+  normalize: (raw: string) => string | null
+  /** Store the parsed value of raw (called on every keystroke). */
+  onCommit: (raw: string) => void
+}
+
+/**
+ * A list input that commits on every keystroke but keeps showing what the
+ * author typed (a trailing "," or ":") while it still parses to the stored
+ * value. Re-rendering from the parsed value alone would drop the separator
+ * the moment it is typed.
+ */
+function DraftTextInput({ value, normalize, onCommit, onBlur, ...inputProps }: DraftTextInputProps) {
+  const [draft, setDraft] = useState<string | null>(null)
+  const normalized = draft !== null ? normalize(draft) : null
+  const shown = draft !== null && normalized !== null && normalized === value ? draft : value
+  return (
+    <input
+      {...inputProps}
+      value={shown}
+      onChange={event => {
+        setDraft(event.target.value)
+        onCommit(event.target.value)
+      }}
+      onBlur={event => {
+        setDraft(null)
+        onBlur?.(event)
+      }}
+    />
+  )
 }
 
 function usesPersistentJavaVuserLifecycle(script: ScriptDefinition): boolean {
@@ -172,49 +223,180 @@ export function ScriptRuntimeSettingsSidebar({
   )
 }
 
-interface ScriptRuntimeSettingsViewProps {
+export interface ScriptRuntimeSettingsViewProps {
   debugContext?: DebugRuntimeContext
   baselineConfig?: ScriptConfig
   hideSave?: boolean
+  embeddedInCanonicalEditor?: boolean
+  editorMode?: RuntimeSettingsEditorMode
   activeHTTPTransportTab: HTTPTransportTabId
   activeSection: RuntimeSettingsSectionId
-  canEditProtocol: boolean
+  canEditProtocol?: boolean
   draftScope?: string
-  onSave: () => void
+  onSave?: () => void
   onAddHTTPRuntimeAction?: (type: HTTPRuntimeActionType) => void
   onSelectHTTPTransportTab: (tab: HTTPTransportTabId) => void
   onSelectSection: (section: RuntimeSettingsSectionId) => void
-  onUpdateField: (path: string, value: unknown) => void
-  onUpdateProtocol: (protocol: string) => void
-  saveDisabled: boolean
+  onUpdateField?: (path: string, value: unknown) => void
+  onUpdateProtocol?: (protocol: string) => void
+  onUpdateScript?: (updater: (prev: ScriptDefinition) => ScriptDefinition) => void
+  saveDisabled?: boolean
   saveTitle?: string
-  saving: boolean
+  saving?: boolean
   script: ScriptDefinition
+}
+
+interface ExtendedQuotaPacingConfig {
+  tpm?: number
+  rpm?: number
+  estimated_tokens_per_request?: number
+  burst_tokens?: number
+  adaptive_aimd?: boolean
+  default_tokens?: number
+  headroom_ratio?: number
+}
+
+interface ExtendedPacingRateStage {
+  duration_seconds?: number
+  target_tps?: number
+  end_tps?: number
+}
+
+type ExtendedPacingConfig = NonNullable<ScriptConfig['pacing']> & {
+  arrival_process?: 'uniform' | 'poisson' | 'gamma' | string
+  burstiness?: number
+  seed?: number
+  rate_stages?: ExtendedPacingRateStage[]
+  quota?: ExtendedQuotaPacingConfig
+}
+
+type ExtendedThinkTimeConfig = NonNullable<ScriptConfig['think_time']> & {
+  distribution?: 'uniform' | 'exponential' | string
+}
+
+function buildThinkTimeConfigForType(
+  current: Partial<ExtendedThinkTimeConfig> | undefined,
+  nextTypeRaw: string,
+): ExtendedThinkTimeConfig {
+  const extendedCurrent = current
+  if (nextTypeRaw === 'exponential') {
+    const next: ExtendedThinkTimeConfig = {
+      type: 'exponential',
+      distribution: 'exponential',
+      mean_ms: extendedCurrent?.mean_ms ?? 0,
+      min_ms: extendedCurrent?.min_ms ?? 0,
+      max_ms: extendedCurrent?.max_ms ?? 0,
+      multiplier: extendedCurrent?.multiplier ?? 1,
+      limit_ms: extendedCurrent?.limit_ms ?? 0,
+    }
+    if (extendedCurrent?.ignore) {
+      next.ignore = true
+    }
+    if (extendedCurrent?.force) {
+      next.force = true
+    }
+    return next
+  }
+  const cleanedCurrent: Partial<ExtendedThinkTimeConfig> = { ...(extendedCurrent || {}) }
+  delete cleanedCurrent.distribution
+  const base = thinkTimeConfigForType(
+    cleanedCurrent as ScriptDefinition['config']['think_time'],
+    nextTypeRaw,
+  ) as ExtendedThinkTimeConfig
+  if (extendedCurrent?.distribution === 'uniform' && nextTypeRaw === 'uniform') {
+    base.distribution = 'uniform'
+  }
+  if (extendedCurrent?.force) {
+    base.force = true
+  }
+  return base
+}
+
+/**
+ * Help for the exponential cap base. Mirrors engine computeThinkTime: the
+ * draw is capped at max_ms × 4, then the multiplier applies, then Limit (s).
+ */
+function exponentialThinkTimeCapHelp(think: { max_ms?: number; multiplier?: number } | undefined): string {
+  const tail = 'Min (s) must not exceed this value. Use Limit (s) for a hard maximum.'
+  const stopMs = exponentialThinkTimeStopMs(think)
+  if (stopMs <= 0) return `Exponential draws stop at ${EXPONENTIAL_THINK_TIME_CAP_FACTOR} × this value. ${tail}`
+  const multiplier = think?.multiplier
+  if (typeof multiplier === 'number' && Number.isFinite(multiplier) && multiplier > 0 && multiplier !== 1) {
+    return `Exponential draws stop at ${EXPONENTIAL_THINK_TIME_CAP_FACTOR} × this value, then the × ${multiplier} multiplier applies (${stopMs / 1000} s). ${tail}`
+  }
+  return `Exponential draws stop at ${EXPONENTIAL_THINK_TIME_CAP_FACTOR} × this value (${stopMs / 1000} s). ${tail}`
+}
+
+function applyFieldPathToScript(prev: ScriptDefinition, path: string, value: unknown): ScriptDefinition {
+  if (path === 'version') {
+    return { ...prev, version: String(value ?? '') }
+  }
+  if (path === 'goal_config') {
+    return { ...prev, goal_config: value as ScriptDefinition['goal_config'] }
+  }
+  if (path === 'config') {
+    return { ...prev, config: (value as ScriptConfig) || {} }
+  }
+  if (path.startsWith('config.')) {
+    const subParts = path.slice('config.'.length).split('.')
+    const nextConfig: Record<string, unknown> = { ...(prev.config || {}) }
+    let cursor: Record<string, unknown> = nextConfig
+    for (let i = 0; i < subParts.length - 1; i++) {
+      const part = subParts[i]
+      const current = cursor[part]
+      const cloned = current && typeof current === 'object' && !Array.isArray(current)
+        ? { ...(current as Record<string, unknown>) }
+        : {}
+      cursor[part] = cloned
+      cursor = cloned
+    }
+    cursor[subParts[subParts.length - 1]] = value
+    return {
+      ...prev,
+      config: { base_url: prev.config?.base_url ?? '', ...nextConfig } as ScriptConfig,
+    }
+  }
+  return prev
 }
 
 export function ScriptRuntimeSettingsView({
   debugContext,
   baselineConfig,
   hideSave = false,
+  embeddedInCanonicalEditor = false,
+  editorMode,
   activeHTTPTransportTab,
   activeSection,
-  canEditProtocol,
+  canEditProtocol = false,
   draftScope,
-  onSave,
+  onSave = () => {},
   onAddHTTPRuntimeAction,
   onSelectHTTPTransportTab,
   onSelectSection,
   onUpdateField,
   onUpdateProtocol,
-  saveDisabled,
+  onUpdateScript,
+  saveDisabled = false,
   saveTitle,
-  saving,
+  saving = false,
   script,
 }: ScriptRuntimeSettingsViewProps) {
   const [search, setSearch] = useState('')
   const [modifiedOnly, setModifiedOnly] = useState(false)
   const timingIssues = runtimeTimingIssues(script.config)
   const httpVersionSettings = scriptHTTPVersionSettings(script.protocol, script.config.http?.version)
+  // The policy the engine applies: an explicit config.http.version, else the
+  // protocol alias default (protocol "http/3" inherits exact HTTP/3).
+  const inheritedHTTPPolicy = inheritedHTTPActionVersion(script.protocol, script.config.http?.version)
+  const effectiveHTTPPolicy = inheritedHTTPPolicy === null || inheritedHTTPPolicy === 'auto' ? undefined : inheritedHTTPPolicy
+  // effectiveHTTPPolicy already resolves the protocol alias; resolving it
+  // again would turn an explicit "auto" on an "http/3" script back into HTTP/3.
+  const tlsMaxVersionHttp3Warning = getTlsMaxVersionHttp3Warning(
+    effectiveHTTPPolicy,
+    script.config.http?.tls?.max_version,
+  )
+  const ignoredSoapOnHttpNotice = hasIgnoredSoapConfigOnHttpScript(script.protocol, script.config)
+  const readOnlyScheduleNotice = hasReadOnlyScheduleCompatibility(script.config)
   const capabilities = getRuntimeProtocolCapabilities(script.protocol)
   const {
     browser: isBrowserScript,
@@ -247,20 +429,70 @@ export function ScriptRuntimeSettingsView({
   const runtimeSectionIsActive = (section: RuntimeSettingsSectionId) => activeSection === section
   const selectRuntimeSettingsSection = onSelectSection
   const setActiveHTTPTransportTab = onSelectHTTPTransportTab
-  const updateField = onUpdateField
-  const updateProtocol = onUpdateProtocol
+  const updateField = (path: string, value: unknown) => {
+    if (onUpdateField) {
+      onUpdateField(path, value)
+      return
+    }
+    if (onUpdateScript) {
+      onUpdateScript(prev => applyFieldPathToScript(prev, path, value))
+    }
+  }
+  const updateProtocol = (protocol: string) => {
+    if (onUpdateProtocol) {
+      onUpdateProtocol(protocol)
+      return
+    }
+    if (onUpdateScript) {
+      onUpdateScript(prev => ({ ...prev, protocol }))
+    }
+  }
   const handleSave = onSave
   const saveScriptDisabled = saveDisabled
   const saveScriptTitle = saveTitle
   const persistentJavaVuserLifecycle = isJavaVuserScript && usesPersistentJavaVuserLifecycle(script)
   const importedJavaVMParameters = isJavaVuserScript ? readImportedJavaVMParameters(script.metadata?.import) : []
   const supportsBrowserEmulation = capabilities.browserEmulation
-  const thinkTimeType = canonicalThinkTimeType(script.config.think_time?.type || 'fixed')
-  const updateThinkTime = (patch: Partial<NonNullable<ScriptDefinition['config']['think_time']>>) => {
-    updateField('config.think_time', thinkTimeConfigForType({
-      ...script.config.think_time,
+  const rawThinkTime = script.config.think_time as ExtendedThinkTimeConfig | undefined
+  const thinkTimeType =
+    rawThinkTime?.type === 'exponential' || rawThinkTime?.distribution === 'exponential'
+      ? 'exponential'
+      : canonicalThinkTimeType(rawThinkTime?.type || 'fixed')
+  const updateThinkTime = (patch: Partial<ExtendedThinkTimeConfig>) => {
+    updateField('config.think_time', buildThinkTimeConfigForType({
+      ...rawThinkTime,
       ...patch,
     }, thinkTimeType))
+  }
+  const pacingConfig = script.config.pacing as ExtendedPacingConfig | undefined
+  const updatePacingConfig = (patch: Partial<ExtendedPacingConfig>) => {
+    updateField('config.pacing', {
+      ...(pacingConfig || {}),
+      ...patch,
+    })
+  }
+  // The engine builds the quota pacer whenever config.pacing.quota is set,
+  // independent of pacing.type, and it throttles only LLM actions.
+  const scriptUsesLLMActions = scriptHasLLMActions(script)
+  // dsl.CanonicalPacingType: a stored "TPS" or " tps " is TPS pacing at runtime.
+  const pacingType = canonicalPacingType(pacingConfig?.type)
+  const showQuotaEditor = scriptUsesLLMActions || pacingConfig?.quota !== undefined || pacingType === 'quota'
+  // Arrival process, burstiness, seed and rate stages are read only by the
+  // open-workload scheduler; closed TPS pacing uses a constant token bucket.
+  const pacingIsOpenWorkload = isOpenWorkloadModel(script.config)
+  // The engine and validation trim and lowercase the arrival process: a stored
+  // "Gamma" runs gamma arrivals.
+  const arrivalProcess = (pacingConfig?.arrival_process ?? '').trim().toLowerCase()
+  const closedWorkloadHasOpenArrivalSettings = Boolean(
+    pacingConfig?.arrival_process || pacingConfig?.burstiness !== undefined || pacingConfig?.seed !== undefined || pacingConfig?.rate_stages?.length,
+  )
+  const updatePacingQuota = (patch: Partial<ExtendedQuotaPacingConfig>) => {
+    updatePacingConfig({
+      quota: {
+        ...(pacingConfig?.quota || {}),
+        ...patch,
+      },
+    })
   }
 
   // The 'browser' sub-tab edits config.browser.* (Playwright runtime) and is
@@ -370,7 +602,7 @@ export function ScriptRuntimeSettingsView({
   })
   const activeSectionIsVisible = visibleCategories.some(category => category.id === activeSection)
 
-  return (
+  const workspaceBody = (
 <section className="center-document runtime-settings config-panel center-document-runtime" style={{ padding: 0 }} aria-label="Runtime Settings">
   {!hideSave && <div className="center-document-header runtime-settings-save-header">
     <div className="runtime-settings-header-actions">
@@ -383,6 +615,11 @@ export function ScriptRuntimeSettingsView({
     <label className="runtime-settings-search">Find setting<input type="search" autoComplete="off" value={search} onChange={event => setSearch(event.target.value)} placeholder="Timing, proxy, logging…" /></label>
     <label className="checkbox-label runtime-settings-modified-toggle"><input type="checkbox" checked={modifiedOnly} onChange={event => setModifiedOnly(event.target.checked)} />Modified only</label>
   </RuntimeContextSummary>
+  {ignoredSoapOnHttpNotice && (
+    <div className="parameter-empty-state" role="status" data-testid="http-ignored-soap-config-notice">
+      Read-only diagnostic: config.soap is present on this HTTP script, but SOAP envelope, WS-Security, and fault settings are ignored when script.protocol is http.
+    </div>
+  )}
   {timingIssues.length > 0 && <ul className="runtime-timing-issues" role="alert">{timingIssues.map(issue => <li key={issue}>{issue}</li>)}</ul>}
   <div className="runtime-settings-grid">
   <nav className="runtime-settings-tabs" aria-label="Runtime setting categories">
@@ -413,6 +650,11 @@ export function ScriptRuntimeSettingsView({
     </button>
     {runtimeSectionIsActive('script_config') && (
       <div className="section-body">
+        {readOnlyScheduleNotice && (
+          <div className="parameter-empty-state" role="status" data-testid="readonly-schedule-compatibility-notice" style={{ marginBottom: 12 }}>
+            Read-only compatibility notice: imported JMeter or sampler schedule metadata (config.jmeter / config.sampler_schedules) is preserved on this script for scenario conversion.
+          </div>
+        )}
         <NativeServicesEditor declarations={script.config.native_services?.live_tables} onChange={live_tables => updateField('config.native_services', { ...script.config.native_services, live_tables })} />
         <div className="form-grid">
           <label>
@@ -565,17 +807,18 @@ export function ScriptRuntimeSettingsView({
             <select value={thinkTimeType}
               onChange={e => updateField(
                 'config.think_time',
-                thinkTimeConfigForType(script.config.think_time, e.target.value),
+                buildThinkTimeConfigForType(script.config.think_time, e.target.value),
               )}>
               <option value="fixed">Fixed</option>
               <option value="recorded">Replay think time as recorded</option>
               <option value="random_percentage">Random percentage of recorded think time</option>
               <option value="gaussian">Gaussian (Normal)</option>
               <option value="uniform">Uniform (Random)</option>
+              <option value="exponential">Exponential</option>
             </select>
           </label>
           {thinkTimeType === 'random_percentage' && <ThinkTimePercentageInputs value={script.config.think_time} onChange={updateThinkTime} />}
-          {thinkTimeUsesMean(thinkTimeType) && (
+          {(thinkTimeUsesMean(thinkTimeType) || thinkTimeType === 'exponential') && (
             <label>
               <span>Mean (s)</span>
               <SecondsFromMillisecondsInput valueMs={script.config.think_time?.mean_ms}
@@ -589,7 +832,7 @@ export function ScriptRuntimeSettingsView({
                 onChangeMs={value => updateThinkTime({ std_ms: value ?? 0 })} />
             </label>
           )}
-          {thinkTimeUsesBounds(thinkTimeType) && (
+          {(thinkTimeUsesBounds(thinkTimeType) || thinkTimeType === 'exponential') && (
             <>
               <label>
                 <span>Min (s)</span>
@@ -597,9 +840,14 @@ export function ScriptRuntimeSettingsView({
                   onChangeMs={value => updateThinkTime({ min_ms: value ?? 0 })} />
               </label>
               <label>
-                <span>Max (s)</span>
+                <span>{thinkTimeType === 'exponential' ? 'Cap base (s)' : 'Max (s)'}</span>
                 <SecondsFromMillisecondsInput valueMs={script.config.think_time?.max_ms}
                   onChangeMs={value => updateThinkTime({ max_ms: value ?? 0 })} />
+                {thinkTimeType === 'exponential' && (
+                  <small data-testid="exponential-think-cap-help">
+                    {exponentialThinkTimeCapHelp(script.config.think_time)}
+                  </small>
+                )}
               </label>
             </>
           )}
@@ -614,6 +862,24 @@ export function ScriptRuntimeSettingsView({
             <SecondsFromMillisecondsInput valueMs={script.config.think_time?.limit_ms} placeholder="0 = no limit"
               onChangeMs={value => updateThinkTime({ limit_ms: value ?? 0 })} />
           </label>
+          {script.config.think_time?.force && (
+            // The engine reads force only from an action's think_time; the
+            // script-level policy drops it, so it is not offered as a control.
+            <p className="full-width" role="note" data-testid="script-think-time-force-notice">
+              Force exact think time is set on the script, where runs ignore it: it applies only to an action&apos;s own think time.{' '}
+              <button
+                type="button"
+                className="btn btn-sm btn-ghost"
+                onClick={() => {
+                  const nextThinkTime = { ...script.config.think_time }
+                  delete nextThinkTime.force
+                  updateField('config.think_time', nextThinkTime)
+                }}
+              >
+                Clear script-level force
+              </button>
+            </p>
+          )}
 
         </div></fieldset>
       </div>
@@ -631,11 +897,11 @@ export function ScriptRuntimeSettingsView({
     {runtimeSectionIsActive('pacing') && (
       <div className="section-body">
         <p>TPS controls the group iteration rate: open mode schedules arrivals, and closed mode shares a limiter across virtual users. It is not the number of HTTP requests per second. Scenario distribution determines each generator&apos;s share.</p>
-        {script.config.run_logic?.workload_model === 'open' && <p>Open workloads require TPS pacing. Change the workload model in Run Logic to choose a delay or interval mode.</p>}
+        {pacingIsOpenWorkload && <p>Open workloads require TPS pacing. Change the workload model in Run Logic to choose a delay or interval mode.</p>}
         <div className="form-grid">
           <label className="full-width">
             <span>Pacing Mode</span>
-            <select disabled={script.config.run_logic?.workload_model === 'open'} value={script.config.pacing?.type || 'none'}
+            <select disabled={pacingIsOpenWorkload} value={pacingType}
               onChange={e => updateField('config.pacing', { ...script.config.pacing, type: e.target.value })}>
               <option value="none">No delay (as fast as possible)</option>
               <option value="fixed_delay">Fixed delay after iteration</option>
@@ -643,15 +909,21 @@ export function ScriptRuntimeSettingsView({
               <option value="fixed_interval">Fixed interval from iteration start</option>
               <option value="random_interval">Random interval from iteration start</option>
               <option value="tps">Target iteration rate (TPS)</option>
+              {pacingType === 'quota' && <option value="quota">Quota only (no iteration pacing)</option>}
             </select>
           </label>
-          {script.config.pacing?.type === 'fixed_delay' && (
+          {pacingType === 'quota' && (
+            <p className="full-width" role="note" data-testid="pacing-quota-mode-notice">
+              The quota mode does not pace iterations. The LLM request quota below applies in every pacing mode, so choose the iteration pacing you want here.
+            </p>
+          )}
+          {pacingType === 'fixed_delay' && (
             <label><span>Delay (s)</span>
               <SecondsFromMillisecondsInput valueMs={script.config.pacing?.delay_ms}
                 onChangeMs={value => updateField('config.pacing', { ...script.config.pacing, delay_ms: value ?? 0 })} />
             </label>
           )}
-          {script.config.pacing?.type === 'random_delay' && (
+          {pacingType === 'random_delay' && (
             <>
               <label><span>Min Delay (s)</span>
                 <SecondsFromMillisecondsInput valueMs={script.config.pacing?.min_delay_ms}
@@ -663,13 +935,13 @@ export function ScriptRuntimeSettingsView({
               </label>
             </>
           )}
-          {script.config.pacing?.type === 'fixed_interval' && (
+          {pacingType === 'fixed_interval' && (
             <label><span>Interval (s)</span>
               <SecondsFromMillisecondsInput valueMs={script.config.pacing?.interval_ms}
                 onChangeMs={value => updateField('config.pacing', { ...script.config.pacing, interval_ms: value ?? 0 })} />
             </label>
           )}
-          {script.config.pacing?.type === 'random_interval' && (
+          {pacingType === 'random_interval' && (
             <>
               <label><span>Min Interval (s)</span>
                 <SecondsFromMillisecondsInput valueMs={script.config.pacing?.min_interval_ms}
@@ -681,11 +953,290 @@ export function ScriptRuntimeSettingsView({
               </label>
             </>
           )}
-          {script.config.pacing?.type === 'tps' && (
-            <label><span>Target TPS</span>
-              <input type="number" min="0" step="0.1" value={script.config.pacing?.tps ?? ''}
-                onChange={e => updateField('config.pacing', { ...script.config.pacing, tps: Number(e.target.value) })} />
-            </label>
+          {/* Validation checks leftover arrival settings for every pacing
+              mode, so the clear action shows whatever the closed workload's
+              pacing mode is, not only for TPS. */}
+          {!pacingIsOpenWorkload && closedWorkloadHasOpenArrivalSettings && (
+            <p className="full-width" role="note" data-testid="pacing-open-only-settings-notice">
+              Arrival process, burstiness, arrival seed and rate stages apply only to open workloads. {pacingType === 'tps'
+                ? 'This closed workload paces at a constant Target TPS and ignores them.'
+                : 'This closed workload ignores them, but invalid leftover values still fail validation.'}{' '}
+              <button
+                type="button"
+                className="btn btn-sm btn-ghost"
+                onClick={() => updatePacingConfig({
+                  arrival_process: undefined,
+                  burstiness: undefined,
+                  seed: undefined,
+                  rate_stages: undefined,
+                })}
+              >
+                Clear open-workload settings
+              </button>
+            </p>
+          )}
+          {pacingType === 'tps' && (
+            <>
+              <label><span>Target TPS</span>
+                <input type="number" min="0" step="0.1" value={script.config.pacing?.tps ?? ''}
+                  onChange={e => updateField('config.pacing', { ...script.config.pacing, tps: Number(e.target.value) })} />
+              </label>
+              {!pacingIsOpenWorkload && !closedWorkloadHasOpenArrivalSettings && (
+                <p className="full-width" data-testid="pacing-open-only-settings-hint">
+                  Arrival process, arrival seed and rate stages are available when Run Logic uses the open arrival-rate workload model.
+                </p>
+              )}
+              {pacingIsOpenWorkload && <>
+              <label>
+                <span>Arrival process</span>
+                <select
+                  aria-label="Arrival process"
+                  value={arrivalProcess}
+                  onChange={e => {
+                    const nextProcess = e.target.value || undefined
+                    // Gamma arrivals fail validation without a burstiness above 0.
+                    const needsBurstiness = nextProcess === 'gamma' && !((pacingConfig?.burstiness ?? 0) > 0)
+                    updatePacingConfig({
+                      arrival_process: nextProcess,
+                      ...(needsBurstiness ? { burstiness: 1 } : {}),
+                    })
+                  }}
+                >
+                  <option value="">Default (uniform)</option>
+                  <option value="uniform">Uniform</option>
+                  <option value="poisson">Poisson</option>
+                  <option value="gamma">Gamma</option>
+                </select>
+              </label>
+              {arrivalProcess === 'gamma' && (
+                <label>
+                  <span>Burstiness</span>
+                  <input
+                    type="number"
+                    min="0.1"
+                    max="1000"
+                    step="0.1"
+                    aria-label="Arrival burstiness"
+                    value={pacingConfig?.burstiness ?? ''}
+                    placeholder="Required: above 0, up to 1000"
+                    onChange={e => {
+                      const parsed = Number(e.target.value)
+                      updatePacingConfig({
+                        burstiness: e.target.value === '' || !Number.isFinite(parsed) ? undefined : parsed,
+                      })
+                    }}
+                  />
+                  <small>1.0 matches Poisson; higher values make arrivals burstier.</small>
+                </label>
+              )}
+              <label>
+                <span>Arrival seed</span>
+                <input
+                  type="number"
+                  step="1"
+                  aria-label="Arrival seed"
+                  value={pacingConfig?.seed ?? ''}
+                  placeholder="Empty = random each run"
+                  onChange={e => {
+                    // Any number, 0 included, fixes the arrival sequence; only
+                    // an unset seed is random per run.
+                    updatePacingConfig({ seed: parseArrivalSeed(e.target.value) })
+                  }}
+                />
+                <small>Any value, including 0, repeats the same arrival sequence. Leave empty for random arrivals.</small>
+              </label>
+              <div className="settings-sub-group full-width" data-testid="pacing-rate-stages-editor">
+                <div className="sub-header">
+                  <h5>Rate stages</h5>
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-secondary"
+                    onClick={() => updatePacingConfig({
+                      rate_stages: [
+                        ...(pacingConfig?.rate_stages || []),
+                        { duration_seconds: 30, target_tps: pacingConfig?.tps ?? 10 },
+                      ],
+                    })}
+                  >
+                    Add rate stage
+                  </button>
+                </div>
+                {(pacingConfig?.rate_stages || []).map((stage, stageIdx) => (
+                  <div key={`rate-stage-${stageIdx}`} className="pair-row" style={{ marginTop: 8 }}>
+                    <input
+                      type="number"
+                      min="1"
+                      max="3600"
+                      aria-label={`Rate stage ${stageIdx + 1} duration`}
+                      value={stage.duration_seconds ?? ''}
+                      placeholder="30"
+                      onChange={e => {
+                        const nextStages = [...(pacingConfig?.rate_stages || [])]
+                        nextStages[stageIdx] = {
+                          ...stage,
+                          duration_seconds:
+                            e.target.value === ''
+                              ? undefined
+                              : Math.min(3600, Math.max(1, Number(e.target.value) || 1)),
+                        }
+                        updatePacingConfig({ rate_stages: nextStages })
+                      }}
+                    />
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.1"
+                      aria-label={`Rate stage ${stageIdx + 1} target TPS`}
+                      value={stage.target_tps ?? ''}
+                      placeholder="Target TPS"
+                      onChange={e => {
+                        const nextStages = [...(pacingConfig?.rate_stages || [])]
+                        nextStages[stageIdx] = {
+                          ...stage,
+                          target_tps: e.target.value === '' ? undefined : Math.max(0, Number(e.target.value) || 0),
+                        }
+                        updatePacingConfig({ rate_stages: nextStages })
+                      }}
+                    />
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.1"
+                      aria-label={`Rate stage ${stageIdx + 1} end TPS`}
+                      value={stage.end_tps ?? ''}
+                      placeholder="End TPS (optional)"
+                      onChange={e => {
+                        const nextStages = [...(pacingConfig?.rate_stages || [])]
+                        nextStages[stageIdx] = {
+                          ...stage,
+                          end_tps: e.target.value === '' ? undefined : Math.max(0, Number(e.target.value) || 0),
+                        }
+                        updatePacingConfig({ rate_stages: nextStages })
+                      }}
+                    />
+                    <button
+                      type="button"
+                      className="btn btn-sm btn-ghost"
+                      aria-label={`Remove rate stage ${stageIdx + 1}`}
+                      onClick={() => {
+                        const nextStages = (pacingConfig?.rate_stages || []).filter((_, idx) => idx !== stageIdx)
+                        updatePacingConfig({ rate_stages: nextStages.length > 0 ? nextStages : undefined })
+                      }}
+                    >
+                      Remove
+                    </button>
+                  </div>
+                ))}
+              </div>
+              </>}
+            </>
+          )}
+          {showQuotaEditor && (
+            <div className="settings-sub-group full-width" data-testid="pacing-quota-editor">
+              <div className="sub-header">
+                <h5>LLM request quota</h5>
+                {pacingConfig?.quota !== undefined && (
+                  <button type="button" className="btn btn-sm btn-ghost" onClick={() => updatePacingConfig({ quota: undefined })}>
+                    Clear quota
+                  </button>
+                )}
+              </div>
+              <p>Applies in every pacing mode, and only to LLM actions: llm_request steps and HTTP steps marked with params.llm, llm_dialect or stream_profile.</p>
+              {!scriptUsesLLMActions && (
+                <p role="note" data-testid="pacing-quota-no-llm-notice">This script has no LLM actions, so the quota throttles nothing.</p>
+              )}
+              <div className="form-grid">
+              <label>
+                <span>Tokens per minute (TPM)</span>
+                <input
+                  type="number"
+                  min="0"
+                  aria-label="Quota TPM"
+                  value={pacingConfig?.quota?.tpm ?? ''}
+                  placeholder="60000"
+                  onChange={e => updatePacingQuota({
+                    tpm: e.target.value === '' ? undefined : Math.max(0, Number(e.target.value) || 0),
+                  })}
+                />
+              </label>
+              <label>
+                <span>Requests per minute (RPM)</span>
+                <input
+                  type="number"
+                  min="0"
+                  aria-label="Quota RPM"
+                  value={pacingConfig?.quota?.rpm ?? ''}
+                  placeholder="600"
+                  onChange={e => updatePacingQuota({
+                    rpm: e.target.value === '' ? undefined : Math.max(0, Number(e.target.value) || 0),
+                  })}
+                />
+              </label>
+              <label>
+                <span>Estimated tokens per request</span>
+                <input
+                  type="number"
+                  min="0"
+                  aria-label="Estimated tokens per request"
+                  value={pacingConfig?.quota?.estimated_tokens_per_request ?? ''}
+                  placeholder="256"
+                  onChange={e => updatePacingQuota({
+                    estimated_tokens_per_request: e.target.value === '' ? undefined : Math.max(0, Number(e.target.value) || 0),
+                  })}
+                />
+              </label>
+              <label>
+                <span>Burst tokens</span>
+                <input
+                  type="number"
+                  min="0"
+                  aria-label="Quota burst tokens"
+                  value={pacingConfig?.quota?.burst_tokens ?? ''}
+                  placeholder="2000"
+                  onChange={e => updatePacingQuota({
+                    burst_tokens: e.target.value === '' ? undefined : Math.max(0, Number(e.target.value) || 0),
+                  })}
+                />
+              </label>
+              <label>
+                <span>Default tokens</span>
+                <input
+                  type="number"
+                  min="0"
+                  aria-label="Quota default tokens"
+                  value={pacingConfig?.quota?.default_tokens ?? ''}
+                  placeholder="128"
+                  onChange={e => updatePacingQuota({
+                    default_tokens: e.target.value === '' ? undefined : Math.max(0, Number(e.target.value) || 0),
+                  })}
+                />
+              </label>
+              <label>
+                <span>Headroom ratio</span>
+                <input
+                  type="number"
+                  min="0"
+                  max="1"
+                  step="0.05"
+                  aria-label="Quota headroom ratio"
+                  value={pacingConfig?.quota?.headroom_ratio ?? ''}
+                  placeholder="0.9"
+                  onChange={e => updatePacingQuota({
+                    headroom_ratio: e.target.value === '' ? undefined : Math.min(1, Math.max(0, Number(e.target.value) || 0)),
+                  })}
+                />
+              </label>
+              <label className="checkbox-label full-width">
+                <input
+                  type="checkbox"
+                  aria-label="Adaptive AIMD throttling"
+                  checked={Boolean(pacingConfig?.quota?.adaptive_aimd)}
+                  onChange={e => updatePacingQuota({ adaptive_aimd: e.target.checked })}
+                />
+                <span>Adaptive AIMD throttling</span>
+              </label>
+              </div>
+            </div>
           )}
         </div>
       </div>
@@ -705,31 +1256,170 @@ export function ScriptRuntimeSettingsView({
     {runtimeSectionIsActive('runlogic') && (
       <div className="section-body">
         <div className="form-grid">
-          <RuntimeCountLimit label="Iterations" value={script.config.run_logic?.iterations} onChange={value => updateField('config.run_logic', { ...script.config.run_logic, iterations: value })} help={script.config.run_logic?.workload_model === 'open' ? 'Open workloads convert this to an arrival budget multiplied by the assigned worker count.' : 'Per virtual user. Zero means no per-user iteration cap.'} />
+          <RuntimeCountLimit label="Iterations" value={script.config.run_logic?.iterations} onChange={value => updateField('config.run_logic', { ...script.config.run_logic, iterations: value })} help={pacingIsOpenWorkload ? 'Open workloads convert this to an arrival budget multiplied by the assigned worker count.' : 'Per virtual user. Zero means no per-user iteration cap.'} />
           <RuntimeCountLimit label="Global Iterations" value={script.config.run_logic?.global_iterations} onChange={value => updateField('config.run_logic', { ...script.config.run_logic, global_iterations: value })} help="Shared execution budget. Already admitted work can finish when the budget is reached." />
           <RuntimeCountLimit label="Max Transactions" value={script.config.run_logic?.max_transactions} onChange={value => updateField('config.run_logic', { ...script.config.run_logic, max_transactions: value })} help="Counts explicit business transactions and enabled auto-transactions; this is not an HTTP request count." />
           <label>
             <span>Workload Model</span>
-            <select value={script.config.run_logic?.workload_model || 'closed'}
+            <select value={canonicalWorkloadModel(script.config.run_logic?.workload_model)}
               onChange={e => updateField('config', { ...script.config, run_logic: { ...script.config.run_logic, workload_model: e.target.value }, ...(e.target.value === 'open' ? { pacing: { ...script.config.pacing, type: 'tps', tps: Number.isFinite(script.config.pacing?.tps) && (script.config.pacing?.tps ?? 0) > 0 ? script.config.pacing!.tps : 1 } } : {}) })}>
               <option value="closed">Closed VUser</option>
               <option value="open">Open arrival-rate</option>
             </select>
           </label>
-          {script.config.run_logic?.workload_model === 'open' && <>
+          {pacingIsOpenWorkload && <>
             <label>Arrival target (iterations / second)<input aria-label="Arrival target" type="number" min="0" step="any" value={script.config.pacing?.tps ?? ''} onChange={event => updateField('config.pacing', { ...script.config.pacing, type: 'tps', tps: Number(event.target.value) })} /></label>
-            <label>Maximum in-flight iterations<input aria-label="Maximum in-flight iterations" type="number" min="0" value={script.config.run_logic.max_in_flight ?? 0} onChange={event => updateField('config.run_logic', { ...script.config.run_logic, max_in_flight: Number(event.target.value) })} /><small>0 uses the engine-derived limit. Excess arrivals are shed when the limit is reached.</small></label>
+            <label>Maximum in-flight iterations<input aria-label="Maximum in-flight iterations" type="number" min="0" value={script.config.run_logic?.max_in_flight ?? 0} onChange={event => updateField('config.run_logic', { ...script.config.run_logic, max_in_flight: Number(event.target.value) })} /><small>0 uses the engine-derived limit. Excess arrivals are shed when the limit is reached.</small></label>
           </>}
           <label>
             <span>Auto-Transactions</span>
             <select value={script.config.run_logic?.auto_transactions || 'none'}
               onChange={e => updateField('config.run_logic', { ...script.config.run_logic, auto_transactions: e.target.value })}>
               <option value="none">None</option>
-              <option value="per_action">Per Action</option>
-              <option value="per_iteration">Per Iteration</option>
+              <option value="per_action">Per action</option>
+              <option value="per_iteration">Per iteration</option>
             </select>
           </label>
-          <p className="full-width">Lifecycle: init → authored actions → teardown. Imported scheduling and order values are read-only under Imported Source Runtime Settings.</p>
+          <label>
+            <span>Termination mode</span>
+            <select aria-label="Termination mode" value={script.config.run_logic?.termination_mode || ''}
+              onChange={e => updateField('config.run_logic', {
+                ...script.config.run_logic,
+                termination_mode: (e.target.value || undefined) as NonNullable<ScriptConfig['run_logic']>['termination_mode'],
+              })}>
+              <option value="">Default</option>
+              <option value="duration">Duration</option>
+              <option value="iterations">Iterations</option>
+            </select>
+          </label>
+          {script.config.run_logic?.block_scheduling && (
+            // HTTP/SOAP execution order comes from run blocks and each block's
+            // mode; the imported top-level value is preserved, not executed.
+            <p className="full-width" role="note" data-testid="run-logic-block-scheduling-notice">
+              Imported block scheduling: {script.config.run_logic.block_scheduling}. This value is preserved from the import and does not change execution order; each run block&apos;s mode below does.
+              {/* The engine's pooling gate (java_shared.go) compares the raw value exactly. */}
+              {isJavaVuserScript && script.config.run_logic.block_scheduling !== 'sequential' && (
+                <>
+                  {' On Java VUser scripts, a value other than sequential turns off shared-JVM pooling.'}{' '}
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-ghost"
+                    data-testid="run-logic-block-scheduling-reset"
+                    onClick={() => updateField('config.run_logic', { ...script.config.run_logic, block_scheduling: 'sequential' })}
+                  >
+                    Reset to sequential
+                  </button>
+                </>
+              )}
+            </p>
+          )}
+          <div className="settings-sub-group full-width" data-testid="run-logic-blocks-editor">
+            <div className="sub-header">
+              <h5>Run blocks</h5>
+              <button
+                type="button"
+                className="btn btn-sm btn-secondary"
+                onClick={() => {
+                  const defaultAction = script.actions?.[0]?.name || 'Action'
+                  updateField('config.run_logic', {
+                    ...script.config.run_logic,
+                    blocks: [
+                      ...(script.config.run_logic?.blocks || []),
+                      {
+                        name: `Block ${(script.config.run_logic?.blocks?.length || 0) + 1}`,
+                        mode: 'sequential',
+                        iterations: 1,
+                        children: [{ action: defaultAction }],
+                      },
+                    ],
+                  })
+                }}
+              >
+                Add run block
+              </button>
+            </div>
+            {(script.config.run_logic?.blocks || []).map((block, blockIdx) => (
+              <div key={`run-block-${blockIdx}`} className="pair-row" style={{ marginTop: 8 }}>
+                <input
+                  aria-label={`Run block ${blockIdx + 1} name`}
+                  value={block.name || ''}
+                  placeholder="Block name"
+                  onChange={e => {
+                    const nextBlocks = [...(script.config.run_logic?.blocks || [])]
+                    nextBlocks[blockIdx] = { ...block, name: e.target.value }
+                    updateField('config.run_logic', { ...script.config.run_logic, blocks: nextBlocks })
+                  }}
+                />
+                <select
+                  aria-label={`Run block ${blockIdx + 1} mode`}
+                  value={block.mode || 'sequential'}
+                  onChange={e => {
+                    const nextMode = e.target.value as typeof block.mode
+                    const nextBlocks = [...(script.config.run_logic?.blocks || [])]
+                    const nextChildren =
+                      nextMode === 'percentage'
+                        ? (block.children || []).map(child =>
+                            child.weight && child.weight > 0 ? child : { ...child, weight: 100 },
+                          )
+                        : block.children
+                    nextBlocks[blockIdx] = { ...block, mode: nextMode, children: nextChildren }
+                    updateField('config.run_logic', { ...script.config.run_logic, blocks: nextBlocks })
+                  }}
+                >
+                  <option value="sequential">Sequential</option>
+                  <option value="random">Random</option>
+                  <option value="percentage">Percentage</option>
+                </select>
+                <input
+                  type="number"
+                  min="0"
+                  aria-label={`Run block ${blockIdx + 1} iterations`}
+                  value={block.iterations ?? ''}
+                  placeholder="Iterations"
+                  onChange={e => {
+                    const nextBlocks = [...(script.config.run_logic?.blocks || [])]
+                    nextBlocks[blockIdx] = {
+                      ...block,
+                      iterations: e.target.value === '' ? undefined : Math.max(0, Number(e.target.value) || 0),
+                    }
+                    updateField('config.run_logic', { ...script.config.run_logic, blocks: nextBlocks })
+                  }}
+                />
+                <DraftTextInput
+                  aria-label={`Run block ${blockIdx + 1} actions`}
+                  value={formatRunBlockActions(block.children, block.mode)}
+                  normalize={raw => runBlockActionsWeightsSurviveParsing(raw, block.mode) ? formatRunBlockActions(rebuildRunBlockChildren(block.children, raw, block.mode), block.mode) : null}
+                  placeholder="Action, Checkout"
+                  onCommit={raw => {
+                    const nextBlocks = [...(script.config.run_logic?.blocks || [])]
+                    nextBlocks[blockIdx] = {
+                      ...block,
+                      children: rebuildRunBlockChildren(block.children, raw, block.mode),
+                    }
+                    updateField('config.run_logic', { ...script.config.run_logic, blocks: nextBlocks })
+                  }}
+                />
+                {(block.children || []).some(child => child.block) && (
+                  <small>Nested blocks keep their place in this block&apos;s order.</small>
+                )}
+                <button
+                  type="button"
+                  className="btn btn-sm btn-ghost"
+                  aria-label={`Remove run block ${blockIdx + 1}`}
+                  onClick={() => {
+                    const nextBlocks = (script.config.run_logic?.blocks || []).filter((_, idx) => idx !== blockIdx)
+                    updateField('config.run_logic', {
+                      ...script.config.run_logic,
+                      blocks: nextBlocks.length > 0 ? nextBlocks : undefined,
+                    })
+                  }}
+                >
+                  Remove
+                </button>
+              </div>
+            ))}
+          </div>
+          <p className="full-width">Lifecycle: init → authored actions → teardown. When run blocks are set, they decide each iteration&apos;s action order. Imported block scheduling and action sequence values are preserved under Imported Source Runtime Settings and do not change execution order.</p>
 
         </div>
       </div>
@@ -742,7 +1432,11 @@ export function ScriptRuntimeSettingsView({
       <RuntimeSectionIcon section="errors" />
       <span className="section-label">Error Handling</span>
       <span className="section-summary">
-        {script.config.error_handling?.continue_on_error ? 'Continue on error' : 'Stop on error'}
+        {script.config.error_handling?.continue_on_error === undefined
+          ? 'Defer to scenario'
+          : script.config.error_handling?.continue_on_error
+            ? 'Continue on error'
+            : 'Stop on error'}
       </span>
       <span className="chevron">{runtimeSectionIsActive('errors') ? '▾' : '▸'}</span>
     </button>
@@ -752,35 +1446,101 @@ export function ScriptRuntimeSettingsView({
         <PropertyAnalyticsFields value={script.config.results?.property_analytics} onChange={value => updateField('config.results', { ...script.config.results, property_analytics: value })} />
         <div className="form-grid">
           <div className="runtime-checkbox-list">
-            <label className="checkbox-label">
-              <input type="checkbox" checked={script.config.error_handling?.continue_on_error || false}
-                onChange={e => updateField('config.error_handling', { ...script.config.error_handling, continue_on_error: e.target.checked })} />
+            <label className="form-field">
               <span>Continue on error</span>
+              <select
+                aria-label="Continue on error"
+                value={
+                  script.config.error_handling?.continue_on_error === undefined
+                    ? ''
+                    : script.config.error_handling.continue_on_error
+                      ? 'true'
+                      : 'false'
+                }
+                onChange={e => {
+                  const raw = e.target.value
+                  const nextVal = raw === '' ? undefined : raw === 'true'
+                  updateField('config.error_handling', {
+                    ...script.config.error_handling,
+                    continue_on_error: nextVal,
+                  })
+                }}
+              >
+                <option value="">Default (defer to scenario)</option>
+                <option value="true">Continue</option>
+                <option value="false">Stop</option>
+              </select>
             </label>
             <label className="checkbox-label">
               <input type="checkbox" checked={script.config.error_handling?.snapshot_on_error || false}
                 onChange={e => updateField('config.error_handling', { ...script.config.error_handling, snapshot_on_error: e.target.checked })} />
               <span>Capture snapshot on error</span>
             </label>
+            <label className="checkbox-label">
+              <input type="checkbox" checked={script.config.error_handling?.fail_transaction_on_error_message || false}
+                onChange={e => updateField('config.error_handling', { ...script.config.error_handling, fail_transaction_on_error_message: e.target.checked })} />
+              <span>Fail transaction on error message</span>
+            </label>
           </div>
           <label>
-            <span>Max Retries</span>
+            <span>Max retries</span>
             <input type="number" value={script.config.error_handling?.max_retries || 0}
               onChange={e => updateField('config.error_handling', { ...script.config.error_handling, max_retries: Number(e.target.value) })} />
+          </label>
+          <label>
+            <span>Retry on conditions</span>
+            <DraftTextInput
+              type="text"
+              aria-label="Retry on conditions"
+              placeholder="429, 5xx, timeout, network"
+              value={(script.config.error_handling?.retry_on || []).join(', ')}
+              normalize={raw => parseCommaList(raw).join(', ')}
+              onCommit={raw => {
+                const tokens = parseCommaList(raw)
+                updateField('config.error_handling', {
+                  ...script.config.error_handling,
+                  retry_on: tokens.length > 0 ? tokens : undefined,
+                })
+              }}
+            />
+          </label>
+          <label>
+            <span>Honor Retry-After header</span>
+            <input
+              type="checkbox"
+              aria-label="Honor Retry-After header"
+              checked={script.config.error_handling?.honor_retry_after || false}
+              onChange={e => updateField('config.error_handling', { ...script.config.error_handling, honor_retry_after: e.target.checked })}
+            />
+          </label>
+          <label>
+            <span>Max Retry-After delay (ms)</span>
+            <input
+              type="number"
+              min={0}
+              aria-label="Max Retry-After delay (ms)"
+              placeholder="Default"
+              value={script.config.error_handling?.retry_after_max_ms ?? ''}
+              onChange={e => updateField('config.error_handling', {
+                ...script.config.error_handling,
+                retry_after_max_ms: e.target.value.trim() === '' ? undefined : Math.max(0, Number(e.target.value) || 0),
+              })}
+            />
           </label>
           {(script.config.error_handling?.max_retries || 0) > 0 && (
             <>
               <label>
-                <span>Retry Delay (s)</span>
+                <span>Retry delay (s)</span>
                 <SecondsFromMillisecondsInput valueMs={script.config.error_handling?.retry_delay_ms} fallbackMs={1000}
                   onChangeMs={value => updateField('config.error_handling', { ...script.config.error_handling, retry_delay_ms: value ?? 0 })} />
               </label>
               <label>
-                <span>Retry Backoff</span>
+                <span>Retry backoff</span>
                 <select value={script.config.error_handling?.retry_backoff || 'fixed'}
                   onChange={e => updateField('config.error_handling', { ...script.config.error_handling, retry_backoff: e.target.value })}>
                   <option value="fixed">Fixed</option>
                   <option value="exponential">Exponential</option>
+                  <option value="retry_after">Retry-After</option>
                 </select>
               </label>
             </>
@@ -977,7 +1737,7 @@ export function ScriptRuntimeSettingsView({
                 <input value={script.config.jms?.reply_to || ''} placeholder="orders.reply"
                   onChange={e => updateField('config.jms', { ...script.config.jms, provider: jmsProvider || script.config.jms?.provider, reply_to: e.target.value })} /></label>
               {jmsProvider === 'servicebus' && (
-                <label><span>Topic Subscription</span>
+                <label><span>Topic subscription</span>
                   <input value={script.config.jms?.subscription || ''} placeholder="orders-workers"
                     onChange={e => updateField('config.jms', { ...script.config.jms, provider: jmsProvider, subscription: e.target.value })} /></label>
               )}
@@ -1057,7 +1817,7 @@ export function ScriptRuntimeSettingsView({
               <label><span>Partition ID</span>
                 <input value={script.config.eventhubs?.partition_id || ''} placeholder="0"
                   onChange={e => updateField('config.eventhubs', { ...script.config.eventhubs, partition_id: e.target.value })} /></label>
-              <label><span>Consumer Group</span>
+              <label><span>Consumer group</span>
                 <input value={script.config.eventhubs?.consumer_group || ''} placeholder="$Default"
                   onChange={e => updateField('config.eventhubs', { ...script.config.eventhubs, consumer_group: e.target.value })} /></label>
               <label><span>Observer Start Position</span>
@@ -1182,7 +1942,7 @@ export function ScriptRuntimeSettingsView({
             <label><span>Max Open Connections</span>
               <input type="number" value={script.config.database?.max_open_conns || 1}
                 onChange={e => updateField('config.database', { ...script.config.database, max_open_conns: Number(e.target.value) })} /></label>
-            <label><span>Max Idle Connections</span>
+            <label><span>Max idle connections</span>
               <input type="number" value={script.config.database?.max_idle_conns || 0}
                 onChange={e => updateField('config.database', { ...script.config.database, max_idle_conns: Number(e.target.value) || undefined })} /></label>
             <label className="checkbox-label">
@@ -1267,8 +2027,10 @@ export function ScriptRuntimeSettingsView({
       </span>
       <span className="chevron">{runtimeSectionIsActive('http') ? '▾' : '▸'}</span>
     </button>
-    {runtimeSectionIsActive('http') && (
+    {(runtimeSectionIsActive('http') || runtimeSectionIsActive('web_runtime')) && (
       <div className="section-body">
+        {runtimeSectionIsActive('http') && (
+          <>
         <div className="http-settings-persistent-summary" role="status">
           <strong>Effective HTTP settings</strong>
           <span>{formatHTTPSettingsSummary(
@@ -1333,6 +2095,13 @@ export function ScriptRuntimeSettingsView({
           role="tabpanel"
           aria-labelledby="http-transport-tab-session_cache"
         >
+          {isSoapScript && (
+            <div className="sub-header" style={{ marginBottom: 8 }}>
+              <span className="repository-status-pill" data-testid="soap-inactive-cache-resource-badge">
+                Inactive for POST XML SOAP requests (GET/HTML cache &amp; resource policies do not apply)
+              </span>
+            </div>
+          )}
           <HttpRequestDefaultsEditor
             actions={[...(script.init || []), ...(script.actions || []), ...(script.teardown || [])]}
             newUserEachIteration={Boolean(script.config.browser_emulation?.cache?.new_user_each_iteration)}
@@ -1376,8 +2145,8 @@ export function ScriptRuntimeSettingsView({
           <h5>Connection</h5>
           <div className="form-grid">
             <HTTPReplayPolicyFields section="connection" value={script.config.http} onChange={patch => updateField('config.http', { ...script.config.http, ...patch })} />
-            <label><span>HTTP Version</span>
-              <select value={httpVersionSettings.selection} aria-invalid={!httpVersionSettings.valid}
+            <label><span>HTTP version</span>
+              <select aria-label="HTTP version" value={httpVersionSettings.selection} aria-invalid={!httpVersionSettings.valid}
                 onChange={e => {
                   const value = e.target.value
                   if (HTTP_VERSION_OPTIONS.some(option => option.value === value)) updateField('config.http', { ...script.config.http, version: value })
@@ -1389,10 +2158,10 @@ export function ScriptRuntimeSettingsView({
                 {httpVersionSettings.selection === 'existing-auto' && <option value="existing-auto" disabled>Existing automatic setting (preserved)</option>}
               </select></label>
             {!httpVersionSettings.valid && <p role="alert">This script HTTP version is unsupported. Its original value is preserved until you choose a supported setting or edit the source JSON.</p>}
-            {http3PolicyIssues(httpVersionSettings.selection, { http: script.config.http, web: script.config.web_runtime, target: script.config.base_url }).map(issue => <p key={issue} className="full-width http3-policy-issue" role="alert">{issue}</p>)}
+            {http3PolicyIssues(effectiveHTTPPolicy, { http: script.config.http, web: script.config.web_runtime, target: script.config.base_url }).map(issue => <p key={issue} className="full-width http3-policy-issue" role="alert">{issue}</p>)}
             <div className="form-hint full-width">
               Effective script policy: {httpVersionSettings.effectiveLabel}. Explicit versions are exact; required HTTP/2 never falls back to HTTP/1.1. Each request can inherit this policy or select its own policy, including Auto.
-              <HTTP3ExecutionNote policy={httpVersionSettings.selection} />
+              <HTTP3ExecutionNote policy={effectiveHTTPPolicy} />
             </div>
             <HTTPQUICSettingsFields value={script.config.http?.quic}
               disabledReason={quicPanelDisabledReason(script.config.http, script.config.web_runtime)}
@@ -1400,10 +2169,10 @@ export function ScriptRuntimeSettingsView({
             <label><span>Max Conns/Host</span>
               <input type="number" value={script.config.http?.max_conns_per_host || 100}
                 onChange={e => updateField('config.http', { ...script.config.http, max_conns_per_host: Number(e.target.value) })} /></label>
-            <label><span>Max Idle Connections</span>
+            <label><span>Max idle connections</span>
               <input type="number" min={0} value={script.config.http?.max_idle_conns ?? 4}
                 onChange={e => updateField('config.http', { ...script.config.http, max_idle_conns: Number(e.target.value) || undefined })} /></label>
-            <label><span>Max Redirects</span>
+            <label><span>Max redirects</span>
               <input type="number" value={script.config.http?.max_redirects ?? 10}
                 onChange={e => updateField('config.http', { ...script.config.http, max_redirects: Number(e.target.value) })} /></label>
             <label><span>Keep-alive</span>
@@ -1429,20 +2198,32 @@ export function ScriptRuntimeSettingsView({
           aria-labelledby="http-transport-tab-tls"
         >
           <h5>TLS / SSL</h5>
+          {tlsMaxVersionHttp3Warning && (
+            <p className="full-width http3-policy-issue" role="alert" data-testid="http-tls-max-version-h3-warning">
+              {tlsMaxVersionHttp3Warning}
+            </p>
+          )}
           <div className="form-grid">
-            <label><span>Min TLS Version</span>
-              <select value={script.config.http?.tls?.min_version || '1.2'}
+            <label><span>Min TLS version</span>
+              <select aria-label="Min TLS version" value={script.config.http?.tls?.min_version || '1.2'}
                 onChange={e => updateField('config.http', { ...script.config.http, tls: { ...script.config.http?.tls, min_version: e.target.value } })}>
                 <option value="1.0">TLS 1.0</option><option value="1.1">TLS 1.1</option>
                 <option value="1.2">TLS 1.2</option><option value="1.3">TLS 1.3</option>
               </select></label>
-            <label><span>Client Certificate File</span>
+            <label><span>Max TLS version</span>
+              <select aria-label="Max TLS version" value={script.config.http?.tls?.max_version || ''}
+                onChange={e => updateField('config.http', { ...script.config.http, tls: { ...script.config.http?.tls, max_version: e.target.value || undefined } })}>
+                <option value="">Default (TLS 1.3)</option>
+                <option value="1.0">TLS 1.0</option><option value="1.1">TLS 1.1</option>
+                <option value="1.2">TLS 1.2</option><option value="1.3">TLS 1.3</option>
+              </select></label>
+            <label><span>Client certificate file</span>
               <input type="text" value={script.config.http?.tls?.client_cert_file || ''} placeholder="/etc/apexload/certs/client.pem"
                 onChange={e => updateField('config.http', { ...script.config.http, tls: { ...script.config.http?.tls, client_cert_file: e.target.value || undefined } })} /></label>
-            <label><span>Client Key File</span>
+            <label><span>Client key file</span>
               <input type="text" value={script.config.http?.tls?.client_key_file || ''} placeholder="/etc/apexload/certs/client.key"
                 onChange={e => updateField('config.http', { ...script.config.http, tls: { ...script.config.http?.tls, client_key_file: e.target.value || undefined } })} /></label>
-            <label><span>CA Certificate File</span>
+            <label><span>CA certificate file</span>
               <input type="text" value={script.config.http?.tls?.ca_cert_file || ''} placeholder="/etc/apexload/certs/ca.pem"
                 onChange={e => updateField('config.http', { ...script.config.http, tls: { ...script.config.http?.tls, ca_cert_file: e.target.value || undefined } })} /></label>
             <div className="runtime-checkbox-list">
@@ -1455,51 +2236,52 @@ export function ScriptRuntimeSettingsView({
             <p className="new-test-inline-note">Certificate paths resolve on the generator host running the VUsers, not in the browser.</p>
           </div>
         </div>}
-        {effectiveHTTPTransportTab === 'proxy' && <div
-          id="http-transport-panel-proxy"
-          className="settings-sub-group http-transport-tab-panel"
-          role="tabpanel"
-          aria-labelledby="http-transport-tab-proxy"
-        >
-          <h5>Proxy</h5>
-          <div className="form-grid">
-            <label>
-              <span>Proxy Mode</span>
-              <select value={httpProxyMode}
-                onChange={e => updateField('config.http', { ...script.config.http, proxy_mode: e.target.value })}>
-                <option value="none">No Proxy</option>
-                <option value="system">Use system proxy</option>
-                <option value="custom">Custom proxy</option>
- <option value="pac">PAC script</option>
-              </select>
-            </label>
-            <label className="full-width"><span>PAC URL</span><input value={script.config.http?.proxy?.pac_url || ''} onChange={e => updateField('config.http', { ...script.config.http, proxy: { ...script.config.http?.proxy, pac_url: e.target.value } })} placeholder="https://proxy.example/config.pac" /></label>
-            <label className="full-width"><span>Proxy URL</span>
-              <input value={script.config.http?.proxy?.url || ''} placeholder="http://proxy:8080"
-                onChange={e => updateField('config.http', { ...script.config.http, proxy: { ...script.config.http?.proxy, url: e.target.value } })} /></label>
-            {httpProxyMode === 'custom' && (
-              <>
-                <label><span>Proxy Username</span>
-                  <input value={script.config.http?.proxy?.username || ''}
-                    onChange={e => updateField('config.http', { ...script.config.http, proxy: { ...script.config.http?.proxy, username: e.target.value } })} /></label>
-                <label><span>Proxy Password</span>
-                  <input type="password" value={script.config.http?.proxy?.password || ''}
-                    onChange={e => updateField('config.http', { ...script.config.http, proxy: { ...script.config.http?.proxy, password: e.target.value } })} /></label>
-              </>
-            )}
-            <label className="full-width"><span>Bypass Hosts</span>
-              <textarea rows={3} value={formatLineList(script.config.http?.proxy?.no_proxy)} placeholder={'localhost\n*.internal.example.com'}
-                onChange={e => updateField('config.http', { ...script.config.http, proxy: { ...script.config.http?.proxy, no_proxy: parseLineList(e.target.value) } })} /></label>
+          </>
+        )}
+        {((runtimeSectionIsActive('http') && effectiveHTTPTransportTab === 'proxy') || runtimeSectionIsActive('web_runtime')) && (
+          <div
+            id="http-transport-panel-proxy"
+            className="settings-sub-group http-transport-tab-panel"
+            {...(runtimeSectionIsActive('http') ? { role: 'tabpanel', 'aria-labelledby': 'http-transport-tab-proxy' } : {})}
+          >
+            <h5>Proxy</h5>
+            <div className="form-grid">
+              <label>
+                <span>Proxy mode</span>
+                <select aria-label="Proxy mode" value={httpProxyMode}
+                  onChange={e => updateField('config.http', { ...script.config.http, proxy_mode: e.target.value })}>
+                  <option value="none">No proxy</option>
+                  <option value="system">Use system / environment proxy</option>
+                  <option value="custom">Custom proxy</option>
+                  <option value="pac">PAC script</option>
+                </select>
+              </label>
+              <label className="full-width"><span>PAC URL</span><input value={script.config.http?.proxy?.pac_url || ''} onChange={e => updateField('config.http', { ...script.config.http, proxy: { ...script.config.http?.proxy, pac_url: e.target.value } })} placeholder="https://proxy.example/config.pac" /></label>
+              <label className="full-width"><span>Proxy URL</span>
+                <input value={script.config.http?.proxy?.url || ''} placeholder="http://proxy.example.test:8080"
+                  onChange={e => updateField('config.http', { ...script.config.http, proxy: { ...script.config.http?.proxy, url: e.target.value } })} /></label>
+              {httpProxyMode === 'custom' && (
+                <>
+                  <label><span>Proxy username</span>
+                    <input value={script.config.http?.proxy?.username || ''}
+                      onChange={e => updateField('config.http', { ...script.config.http, proxy: { ...script.config.http?.proxy, username: e.target.value } })} /></label>
+                  <label><span>Proxy password</span>
+                    <input type="password" value={script.config.http?.proxy?.password || ''}
+                      onChange={e => updateField('config.http', { ...script.config.http, proxy: { ...script.config.http?.proxy, password: e.target.value } })} /></label>
+                </>
+              )}
+              <label className="full-width"><span>Bypass hosts</span>
+                <textarea rows={3} value={formatLineList(script.config.http?.proxy?.no_proxy)} placeholder={'localhost\n*.internal.example.com'}
+                  onChange={e => updateField('config.http', { ...script.config.http, proxy: { ...script.config.http?.proxy, no_proxy: parseLineList(e.target.value) } })} /></label>
+            </div>
+            {[
+              ...scriptInactiveProxyCredentialNotes(script, 'http'),
+              ...(browserTransportTabVisible ? [] : scriptInactiveProxyCredentialNotes(script, 'browser')),
+            ].map(note => <p key={note} className="new-test-inline-note" data-inactive-proxy-credential-note>{note}</p>)}
           </div>
-          {/* The username and password are hidden outside Custom, but a secret
-              they reference stays in the script for a later switch. The
-              browser proxy's notes sit in the Browser sub-tab; a script
-              without that sub-tab shows them here. */}
-          {[
-            ...scriptInactiveProxyCredentialNotes(script, 'http'),
-            ...(browserTransportTabVisible ? [] : scriptInactiveProxyCredentialNotes(script, 'browser')),
-          ].map(note => <p key={note} className="new-test-inline-note" data-inactive-proxy-credential-note>{note}</p>)}
-        </div>}
+        )}
+        {runtimeSectionIsActive('http') && (
+          <>
         {effectiveHTTPTransportTab === 'authentication' && <div
           id="http-transport-panel-authentication"
           className="settings-sub-group http-transport-tab-panel"
@@ -1508,23 +2290,24 @@ export function ScriptRuntimeSettingsView({
         >
           <h5>Authentication</h5>
           <div className="form-grid">
-            <label><span>Auth Type</span>
-              <select value={script.config.http?.auth?.type || ''}
+            <label><span>Auth type</span>
+              <select aria-label="Auth type" value={script.config.http?.auth?.type || ''}
                 onChange={e => updateField('config.http', { ...script.config.http, auth: { ...script.config.http?.auth, type: e.target.value } })}>
                 <option value="">None</option>
                 <option value="basic">Basic</option>
-                <option value="bearer">Bearer Token</option>
+                <option value="digest">Digest</option>
+                <option value="bearer">Bearer token</option>
                 <option value="ntlm">NTLM</option>
                 <option value="negotiate">Negotiate (NTLM)</option>
                 <option value="negotiate_any">Any challenge (Basic, Digest, NTLM, Negotiate)</option>
               </select></label>
-            {['basic', 'ntlm', 'negotiate', 'negotiate_any'].includes(script.config.http?.auth?.type || '') && (
+            {['basic', 'digest', 'ntlm', 'negotiate', 'negotiate_any'].includes(script.config.http?.auth?.type || '') && (
               <>
                 <label><span>Username</span>
-                  <input value={script.config.http?.auth?.username || ''}
+                  <input aria-label="Auth username" value={script.config.http?.auth?.username || ''}
                     onChange={e => updateField('config.http', { ...script.config.http, auth: { ...script.config.http?.auth, username: e.target.value } })} /></label>
                 <label><span>Password</span>
-                  <input type="password" value={script.config.http?.auth?.password || ''}
+                  <input aria-label="Auth password" type="password" value={script.config.http?.auth?.password || ''}
                     onChange={e => updateField('config.http', { ...script.config.http, auth: { ...script.config.http?.auth, password: e.target.value } })} /></label>
                 {['ntlm', 'negotiate'].includes(script.config.http?.auth?.type || '') && (
                   <label><span>Domain</span>
@@ -1618,7 +2401,7 @@ export function ScriptRuntimeSettingsView({
             <label><span>Slow Mo (s)</span>
               <SecondsFromMillisecondsInput valueMs={script.config.browser?.slow_mo_ms} emptyWhenUndefined placeholder="0.05"
                 onChangeMs={value => updateField('config.browser', { ...script.config.browser, slow_mo_ms: value })} /></label>
-            <label><span>Capture Screenshots</span>
+            <label><span>Capture screenshots</span>
               <select value={script.config.browser?.capture_screenshots || 'per_action'}
                 onChange={e => updateField('config.browser', { ...script.config.browser, capture_screenshots: e.target.value })}>
                 <option value="off">Off</option>
@@ -1637,7 +2420,7 @@ export function ScriptRuntimeSettingsView({
               </select>
             </label>
             <label>
-              <span>Download Resources</span>
+              <span>Download resources</span>
               <select value={script.config.browser?.download_resources || 'recorded'}
                 onChange={e => updateField('config.browser', { ...script.config.browser, download_resources: e.target.value })}>
                 <option value="none">HTML only</option>
@@ -1733,6 +2516,8 @@ export function ScriptRuntimeSettingsView({
               set, ready for one; nothing needs it until then. */}
           {scriptInactiveProxyCredentialNotes(script, 'browser').map(note => <p key={note} className="new-test-inline-note" data-inactive-proxy-credential-note>{note}</p>)}
         </div>}
+          </>
+        )}
       </div>
     )}
   </div>}
@@ -1849,7 +2634,14 @@ export function ScriptRuntimeSettingsView({
           </div>
         </div>
         <div className="settings-sub-group">
-          <h5>Browser Cache</h5>
+          <div className="sub-header">
+            <h5>Browser Cache</h5>
+            {isSoapScript && (
+              <span className="repository-status-pill" data-testid="soap-inactive-browser-emulation-cache-badge">
+                Inactive for POST XML SOAP requests (GET/HTML cache &amp; non-HTML resources only)
+              </span>
+            )}
+          </div>
           <div className="http-cache-canonical-note" role="note">
             <span>Cache enablement and per-iteration cleanup are configured in HTTP Transport → Session &amp; Cache.</span>
             <button type="button" className="link-button" onClick={() => {
@@ -1972,6 +2764,10 @@ export function ScriptRuntimeSettingsView({
       onUpdateField={updateField}
       httpProxyMode={httpProxyMode}
       httpProxySummary={httpProxySummary}
+      onOpenCanonicalProxy={() => {
+        selectRuntimeSettingsSection('http')
+        setActiveHTTPTransportTab('proxy')
+      }}
     />
   )}
 
@@ -1996,6 +2792,7 @@ export function ScriptRuntimeSettingsView({
             </select>
           </label>
           <label><span>Error history buffer (bytes)</span><input type="number" min={0} max={1048576} value={script.config.log?.error_buffer_bytes ?? ''} placeholder="102400 by default" onChange={e => updateField('config.log', { ...script.config.log, error_buffer_bytes: e.target.value === '' ? undefined : Number(e.target.value) })} /></label>
+          <label><span>Max response bytes</span><input type="number" min={0} max={1048576} aria-label="Max response bytes" value={script.config.log?.max_response_bytes ?? ''} placeholder="Engine bound (4 MiB)" onChange={e => updateField('config.log', { ...script.config.log, max_response_bytes: e.target.value === '' ? undefined : Math.min(1048576, Math.max(0, Number(e.target.value) || 0)) })} /><small>Empty or 0 keeps the engine&apos;s 4 MiB response-evidence bound; a value up to 1 MiB lowers it.</small></label>
           <div className="logging-checkbox-group runtime-checkbox-list">
             <label className="checkbox-label">
               <input type="checkbox" checked={script.config.log?.on_error_only || false}
@@ -2063,6 +2860,27 @@ export function ScriptRuntimeSettingsView({
   </div>
 </div>
 </section>
+  )
 
+  if (embeddedInCanonicalEditor) {
+    return workspaceBody
+  }
+
+  return (
+    <RuntimeSettingsEditor
+      mode={editorMode ?? (debugContext ? 'debug' : 'author')}
+      protocol={script.protocol}
+      script={script}
+      baselineConfig={baselineConfig}
+      debugContext={debugContext}
+      activeSection={activeSection}
+      activeHTTPTransportTab={effectiveHTTPTransportTab}
+      onSelectSection={selectRuntimeSettingsSection}
+      onSelectHTTPTransportTab={setActiveHTTPTransportTab}
+    >
+      {workspaceBody}
+    </RuntimeSettingsEditor>
   )
 }
+
+export default ScriptRuntimeSettingsView

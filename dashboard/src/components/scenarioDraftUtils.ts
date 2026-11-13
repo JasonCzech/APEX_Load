@@ -7,6 +7,15 @@ import {
   StoredScript,
   TestSummary,
 } from '../types'
+import { type PartialRuntimeSettingsOverride } from '../types/runtimeSettings'
+import {
+  isFieldOverridden,
+  isPartialRuntimeDraft,
+  normalizeRuntimeOverrideFields,
+  overrideFieldValue,
+  resetOverrideField,
+  setOverrideField,
+} from './runtimeSettingsModel'
 
 export type ScenarioRuntimeSettings = ScenarioDraft['runtimeSettings']
 export type ScenarioDraftState = ScenarioDraft
@@ -100,7 +109,13 @@ function cloneRuntimeSettingsDraft(settings?: ScenarioRuntimeSettingsDraft): Sce
 
 export function buildRuntimeSettingsDraft(settings?: RuntimeSettingsOverride): ScenarioRuntimeSettingsDraft {
   const errorHandling = settings?.error_handling
+  const stored = settings as PartialRuntimeSettingsOverride | undefined
+  // A partial row lists exactly what it overrides, so its flat error-handling
+  // controls carry only what its section holds (never a materialized false).
+  const partial = isPartialRuntimeDraft(stored)
   return hydrateCanonicalRuntimeControls({
+    ...(stored?.soap !== undefined ? { soap: cloneValue(stored.soap) } : {}),
+    ...(partial ? { override_fields: normalizeRuntimeOverrideFields(stored?.override_fields) } : {}),
     iterations: settings?.iterations,
     pacing: cloneValue(settings?.pacing) ?? undefined,
     think_time: cloneValue(settings?.think_time) ?? undefined,
@@ -114,7 +129,7 @@ export function buildRuntimeSettingsDraft(settings?: RuntimeSettingsOverride): S
     // a script-level true. A null section is the run-only clear tombstone, which
     // is an absent section by definition.
     continue_on_error: errorHandling == null ? undefined : errorHandling.continue_on_error,
-    snapshot_on_error: errorHandling == null ? undefined : (errorHandling.snapshot_on_error ?? false),
+    snapshot_on_error: errorHandling == null ? undefined : (partial ? errorHandling.snapshot_on_error : (errorHandling.snapshot_on_error ?? false)),
     fail_transaction_on_error_message:
       errorHandling == null ? undefined : errorHandling.fail_transaction_on_error_message,
     max_retries: errorHandling?.max_retries,
@@ -138,57 +153,58 @@ export function buildRuntimeSettingsDraft(settings?: RuntimeSettingsOverride): S
   })
 }
 
-function withoutUndefinedValues<T extends object>(value: T): T | undefined {
-  const entries = Object.entries(value).filter(([, fieldValue]) => fieldValue !== undefined && fieldValue !== '')
-  return entries.length > 0 ? Object.fromEntries(entries) as T : undefined
-}
+const FLAT_ERROR_HANDLING_FIELDS = new Set<string>([
+  'continue_on_error',
+  'snapshot_on_error',
+  'fail_transaction_on_error_message',
+  'max_retries',
+  'retry_delay_ms',
+  'retry_backoff',
+  'retry_on',
+  'honor_retry_after',
+  'retry_after_max_ms',
+])
 
+/**
+ * One runtime control edit, through the runtime settings model: the draft
+ * becomes a partial row (a stored v1 row is converted without changing its
+ * meaning) and only the edited path is listed in override_fields, so the
+ * backend applies just that path instead of replacing the whole section.
+ * An empty value ('' or undefined) returns the field to inherited.
+ */
 function updateRuntimeSetting(
   settings: ScenarioRuntimeSettingsDraft,
   field: ScenarioRuntimeSettingField,
   value: ScenarioRuntimeSettings[ScenarioRuntimeSettingField],
 ): ScenarioRuntimeSettingsDraft {
-  const next: ScenarioRuntimeSettingsDraft = { ...settings, [field]: value }
-  if (field === 'iterations' && settings.run_logic !== undefined) {
-    next.run_logic = withoutUndefinedValues({ ...settings.run_logic, iterations: value as number | undefined })
+  if (field === 'override_fields') {
+    return { ...settings, override_fields: value === undefined ? undefined : normalizeRuntimeOverrideFields(value as string[]) }
   }
-  if (field === 'auto_transactions' && settings.run_logic !== undefined) {
-    next.run_logic = withoutUndefinedValues({
-      ...settings.run_logic,
-      auto_transactions: (value as string) || undefined,
-    })
+  const empty = value === undefined || value === ''
+  const edit = (path: string, next: unknown, clear = next === undefined || next === '') =>
+    (current: ScenarioRuntimeSettingsDraft) => clear ? resetOverrideField(current, path) : setOverrideField(current, path, next)
+  if (field === 'browser') {
+    const browser = (value ?? {}) as NonNullable<ScenarioRuntimeSettingsDraft['browser']>
+    return (['headless', 'device_profile', 'touch_mode', 'orientation'] as const)
+      .map(key => edit(`browser.${key}`, browser[key]))
+      .reduce((current, apply) => apply(current), settings)
   }
-  if (field === 'log_level' && settings.log !== undefined) {
-    next.log = withoutUndefinedValues({ ...settings.log, level: (value as string) || undefined })
+  if (FLAT_ERROR_HANDLING_FIELDS.has(field)) {
+    const list = Array.isArray(value) ? value : undefined
+    return edit(`error_handling.${field}`, value, empty || (list !== undefined && list.length === 0))(settings)
   }
-  if (field === 'browser' && settings.browser_config !== undefined) {
-    const browser = value as ScenarioRuntimeSettingsDraft['browser']
-    next.browser_config = withoutUndefinedValues({
-      ...settings.browser_config,
-      headless: browser?.headless,
-      device_profile: browser?.device_profile,
-      touch_mode: browser?.touch_mode,
-      orientation: browser?.orientation,
-    })
+  const path = field === 'browser_config' ? 'browser' : field
+  return edit(path, value)(settings)
+}
+
+/** The group's iteration count as its runtime settings state it, else the compact field. */
+function runtimeOwnedIterations(runtimeSettings: ScenarioRuntimeSettingsDraft | undefined, fallback: number | undefined): number | undefined {
+  if (isPartialRuntimeDraft(runtimeSettings)) {
+    return isFieldOverridden(runtimeSettings, 'run_logic.iterations')
+      ? overrideFieldValue(runtimeSettings, 'run_logic.iterations') as number | undefined
+      : fallback
   }
-  if (
-    settings.error_handling !== undefined &&
-    (field === 'continue_on_error' ||
-      field === 'snapshot_on_error' ||
-      field === 'fail_transaction_on_error_message' ||
-      field === 'max_retries' ||
-      field === 'retry_delay_ms' ||
-      field === 'retry_backoff' ||
-      field === 'retry_on' ||
-      field === 'honor_retry_after' ||
-      field === 'retry_after_max_ms')
-  ) {
-    next.error_handling = withoutUndefinedValues({
-      ...settings.error_handling,
-      [field]: value,
-    })
-  }
-  return next
+  return runtimeSettings?.run_logic !== undefined ? runtimeSettings.run_logic.iterations : fallback
 }
 
 function cloneScenarioGroup(group: ScenarioDraftGroup): ScenarioDraftGroup {
@@ -196,7 +212,7 @@ function cloneScenarioGroup(group: ScenarioDraftGroup): ScenarioDraftGroup {
   return {
     ...group,
     stages: cloneValue(group.stages),
-    iterations: runtimeSettings?.run_logic !== undefined ? runtimeSettings.run_logic.iterations : group.iterations,
+    iterations: runtimeOwnedIterations(runtimeSettings, group.iterations),
     runtimeSettings,
     assignment: cloneGroupAssignment(group.assignment),
   }
@@ -226,28 +242,26 @@ function updateScenarioGroup(group: ScenarioDraftGroup, patch: Partial<ScenarioD
 
   const iterations = patch.iterations
   const runtimeSettings = group.runtimeSettings
-  const hasCanonicalRuntimeIteration = runtimeSettings?.run_logic?.iterations !== undefined
-  const hasLegacyRuntimeIteration = runtimeSettings?.run_logic === undefined && runtimeSettings?.iterations !== undefined
   const runtimeOwnsIterations = group.iterationPayloadSource === 'runtime'
-    || hasCanonicalRuntimeIteration
-    || hasLegacyRuntimeIteration
+    || (isPartialRuntimeDraft(runtimeSettings)
+      ? isFieldOverridden(runtimeSettings, 'run_logic.iterations')
+      : runtimeSettings?.run_logic?.iterations !== undefined
+        || (runtimeSettings?.run_logic === undefined && runtimeSettings?.iterations !== undefined))
   if (!runtimeOwnsIterations) {
     return { ...group, ...patch }
   }
 
+  // The runtime settings own the iteration count: edit run_logic.iterations
+  // through the model, so the edit is listed on its own (a cleared value
+  // returns it to inherited) and never replaces the rest of run_logic.
+  const base: ScenarioRuntimeSettingsDraft = runtimeSettings ?? { log_level: '', auto_transactions: '' }
   return {
     ...group,
     ...patch,
     iterationPayloadSource: 'runtime',
-    runtimeSettings: {
-      log_level: runtimeSettings?.log_level ?? '',
-      auto_transactions: runtimeSettings?.auto_transactions ?? '',
-      ...runtimeSettings,
-      // Any edit promotes the legacy alias into the canonical section. Clearing
-      // removes both representations so a stale legacy value cannot survive.
-      iterations: undefined,
-      run_logic: withoutUndefinedValues({ ...runtimeSettings?.run_logic, iterations }),
-    },
+    runtimeSettings: iterations === undefined
+      ? resetOverrideField(base, 'run_logic.iterations')
+      : setOverrideField(base, 'run_logic.iterations', iterations),
   }
 }
 
@@ -303,9 +317,13 @@ export function buildScenarioDraftFromTest(test: TestSummary): ScenarioDraft {
   const groups = test.groups?.length
     ? test.groups.map((group, groupIndex) => {
       const runtimeSettings = group.runtime_settings ? buildRuntimeSettingsDraft(group.runtime_settings) : undefined
-      const runtimeIteration = runtimeSettings?.run_logic !== undefined
-        ? runtimeSettings.run_logic.iterations
-        : runtimeSettings?.iterations
+      const runtimeIteration = isPartialRuntimeDraft(runtimeSettings)
+        ? (isFieldOverridden(runtimeSettings, 'run_logic.iterations')
+            ? (overrideFieldValue(runtimeSettings, 'run_logic.iterations') as number | undefined) ?? 0
+            : undefined)
+        : runtimeSettings?.run_logic !== undefined
+          ? runtimeSettings.run_logic.iterations
+          : runtimeSettings?.iterations
       const explicitIteration = runtimeIteration !== undefined
         ? runtimeIteration
         : (group.iteration_override_known ? group.iteration_override : undefined)

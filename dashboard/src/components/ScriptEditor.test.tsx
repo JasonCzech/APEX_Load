@@ -12553,7 +12553,7 @@ describe('ScriptEditor', () => {
     })
 
     const usernameInput = Array.from(container.querySelectorAll('input')).find(input => input.placeholder === 'service-user') as HTMLInputElement | undefined
-    const passwordInput = Array.from(container.querySelectorAll('input')).find(input => input.placeholder === 'secret') as HTMLInputElement | undefined
+    const passwordInput = container.querySelector('input[aria-label="WS-Security password"]') as HTMLInputElement | null
     const ttlInput = Array.from(container.querySelectorAll('input')).find(input => input.type === 'number' && input.value === '30') as HTMLInputElement | undefined
     const passwordTypeSelect = Array.from(container.querySelectorAll('select')).find(select =>
       Array.from(select.options).some(option => option.value === 'text')
