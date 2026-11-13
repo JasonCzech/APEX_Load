@@ -7,7 +7,19 @@ import type {
 } from '../types'
 import type { ScenarioFormGroup, ScenarioFormState } from '../types/scenarioAuthoring'
 import { DEFAULT_GROUP_VUSERS, type ScenarioSeed } from './scenarioWizardUtils'
-import { overrideFromRuntimeDraft, runtimeDraftFromOverride } from './runtimeSettingsModel'
+import { type PartialRuntimeSettingsOverride } from '../types/runtimeSettings'
+import {
+  isFieldOverridden,
+  isPartialRuntimeDraft,
+  overrideFieldValue,
+  overrideFromRuntimeDraft,
+  resetOverrideField,
+  runtimeDraftFromOverride,
+  runtimeDraftOwnsIterations,
+  runtimeOverrideFieldPaths,
+  setOverrideField,
+  upgradeRuntimeDraftToPartial,
+} from './runtimeSettingsModel'
 import { canonicalThinkTimeType, thinkTimeConfigForType } from './thinkTimeConfig'
 
 export function cloneAssignment(
@@ -147,6 +159,29 @@ export function replaceScenarioRuntimeDefaults(
   return { ...form, runtime_settings: overrideFromRuntimeDraft(next) }
 }
 
+/**
+ * A form group after the runtime editor replaces its runtime settings. When the
+ * settings own the iteration count the compact field is cleared, so the count
+ * is never sent twice. A partial run-logic edit that leaves iterations alone
+ * keeps the group's own count by listing it as run_logic.iterations, because
+ * the draft builders read any run_logic section as owning iterations.
+ */
+export function scenarioGroupWithRuntimeSettings(
+  group: ScenarioFormGroup,
+  next: ScenarioRuntimeSettingsDraft | undefined,
+): ScenarioFormGroup {
+  let runtimeSettings = next
+  if (runtimeSettings && isPartialRuntimeDraft(runtimeSettings) && group.iterations !== undefined
+    && runtimeSettings.run_logic !== undefined && !isFieldOverridden(runtimeSettings, 'run_logic.iterations')) {
+    runtimeSettings = setOverrideField(runtimeSettings, 'run_logic.iterations', group.iterations)
+  }
+  return {
+    ...group,
+    ...(runtimeDraftOwnsIterations(runtimeSettings) ? { iterations: undefined } : {}),
+    runtimeSettings,
+  }
+}
+
 export type ScenarioErrorHandlingFlag = 'continue_on_error' | 'snapshot_on_error'
 
 const ERROR_HANDLING_KEYS = [
@@ -171,18 +206,16 @@ export function scenarioErrorHandlingFlag(form: ScenarioFormState, flag: Scenari
   return value
 }
 
-/** Sets an error-handling default (undefined clears it back to inherit). */
+/**
+ * Sets an error-handling default (undefined clears it back to inherit). Only
+ * that flag is listed in override_fields, so toggling it never replaces the
+ * scripts' retry and snapshot settings with a one-field section.
+ */
 export function withScenarioErrorHandlingFlag(form: ScenarioFormState, flag: ScenarioErrorHandlingFlag, value: boolean | undefined): ScenarioFormState {
-  const runtime = form.runtime_settings ? structuredClone(form.runtime_settings) : {}
-  const errorHandling = { ...(runtime.error_handling ?? {}) }
-  if (value === undefined) delete errorHandling[flag]
-  else errorHandling[flag] = value
-  const hasAnyErrorField = ERROR_HANDLING_KEYS.some(key => {
-    const entry = errorHandling[key]
-    return entry !== undefined && entry !== '' && (!Array.isArray(entry) || entry.length > 0)
-  })
-  runtime.error_handling = hasAnyErrorField ? errorHandling : undefined
-  return { ...form, runtime_settings: Object.values(runtime).some(entry => entry !== undefined) ? runtime : undefined }
+  const draft = runtimeDraftFromOverride(form.runtime_settings)
+  const path = `error_handling.${flag}`
+  const next = value === undefined ? resetOverrideField(draft, path) : setOverrideField(draft, path, value)
+  return { ...form, runtime_settings: overrideFromRuntimeDraft(next) }
 }
 
 const GOAL_BOUNDS = ['target_average_tps', 'min_vusers', 'max_vusers', 'p95_latency_ms', 'max_error_pct'] as const
@@ -215,6 +248,17 @@ export type ScenarioSeedRuntime = Pick<ScenarioSeed, 'pacing' | 'think_time' | '
  * (run_logic and log), else to their top-level fields.
  */
 export function seededScenarioRuntime(current: RuntimeSettingsOverride | undefined, seed: ScenarioSeedRuntime): RuntimeSettingsOverride | undefined {
+  const partialCurrent = isPartialRuntimeDraft(current as PartialRuntimeSettingsOverride | undefined)
+  const partialSeed = isPartialRuntimeDraft(seed.runtime_settings as PartialRuntimeSettingsOverride | undefined)
+  // A flag written into a v1 row that already has an error_handling section
+  // keeps that section's meaning; one written into a row without one would
+  // create a flags-only section.
+  const base = seed.runtime_settings ?? current
+  const seedsFlag = (seed.continue_on_error !== undefined || seed.snapshot_on_error !== undefined) && base?.error_handling == null
+  const carriesFlag = Boolean(seed.runtime_settings && seed.runtime_settings.error_handling == null
+    && ERROR_HANDLING_KEYS.some(key => current?.error_handling?.[key] !== undefined))
+  // A partial row stays partial, and such a flag is written as its own path.
+  if (partialCurrent || partialSeed || seedsFlag || carriesFlag) return seededPartialScenarioRuntime(current, seed)
   const runtime: RuntimeSettingsOverride = structuredClone(seed.runtime_settings ?? current ?? {})
   if (seed.runtime_settings && current) carryAuthoredRuntime(runtime, current)
   if (seed.pacing?.type) {
@@ -243,6 +287,55 @@ export function seededScenarioRuntime(current: RuntimeSettingsOverride | undefin
     runtime.error_handling = { ...(runtime.error_handling ?? {}), [flag]: seed[flag] }
   }
   return Object.values(runtime).some(entry => entry !== undefined) ? runtime : undefined
+}
+
+/**
+ * seededScenarioRuntime for partial rows: the same rules, each written as its
+ * own path. A seed's runtime_settings replaces the current defaults (a v1 seed
+ * is converted without changing its meaning), the current row's authored
+ * iterations, log level, auto transactions, error-handling flags and browser
+ * settings carry over where the seed leaves them unset, and pacing and think
+ * time fragments replace their whole section, as they do in a v1 row.
+ */
+function seededPartialScenarioRuntime(current: RuntimeSettingsOverride | undefined, seed: ScenarioSeedRuntime): RuntimeSettingsOverride | undefined {
+  const currentDraft = runtimeDraftFromOverride(current)
+  let draft = upgradeRuntimeDraftToPartial(runtimeDraftFromOverride(seed.runtime_settings ?? current))
+  if (seed.runtime_settings && currentDraft) {
+    for (const path of ['run_logic.iterations', 'log.level', 'run_logic.auto_transactions', ...ERROR_HANDLING_KEYS.map(key => `error_handling.${key}`)]) {
+      if (overrideFieldValue(draft, path) !== undefined || !isFieldOverridden(currentDraft, path)) continue
+      const value = overrideFieldValue(currentDraft, path)
+      if (value !== undefined) draft = setOverrideField(draft, path, value)
+    }
+    if (!isFieldOverridden(draft, 'browser')) {
+      for (const path of runtimeOverrideFieldPaths(currentDraft).filter(field => field === 'browser' || field.startsWith('browser.'))) {
+        draft = setOverrideField(draft, path, overrideFieldValue(currentDraft, path))
+      }
+    }
+  }
+  if (seed.pacing?.type) {
+    const pacing = overrideFieldValue(draft, 'pacing') as RuntimeSettingsOverride['pacing'] | undefined
+    const sameType = pacing?.type === seed.pacing.type
+    draft = setOverrideField(draft, 'pacing', { ...(sameType ? pacing : {}), ...seed.pacing, type: seed.pacing.type })
+  }
+  const thinkTimeType = canonicalThinkTimeType(seed.think_time?.type)
+  if (seed.think_time && thinkTimeType) {
+    const thinkTime = overrideFieldValue(draft, 'think_time') as RuntimeSettingsOverride['think_time'] | undefined
+    const sameType = canonicalThinkTimeType(thinkTime?.type ?? undefined) === thinkTimeType
+    draft = setOverrideField(draft, 'think_time', thinkTimeConfigForType({ ...(sameType ? thinkTime : {}), ...seed.think_time }, thinkTimeType))
+  }
+  if (seed.iterations !== undefined) draft = setOverrideField(draft, 'run_logic.iterations', seed.iterations)
+  if (seed.log_level !== undefined) {
+    draft = seed.log_level ? setOverrideField(draft, 'log.level', seed.log_level) : resetOverrideField(draft, 'log.level')
+  }
+  if (seed.auto_transactions !== undefined) {
+    draft = seed.auto_transactions
+      ? setOverrideField(draft, 'run_logic.auto_transactions', seed.auto_transactions)
+      : resetOverrideField(draft, 'run_logic.auto_transactions')
+  }
+  for (const flag of ['continue_on_error', 'snapshot_on_error'] as const) {
+    if (seed[flag] !== undefined) draft = setOverrideField(draft, `error_handling.${flag}`, seed[flag])
+  }
+  return overrideFromRuntimeDraft(draft)
 }
 
 // carryAuthoredRuntime keeps the current iterations, log level, auto
@@ -308,6 +401,12 @@ function scenarioGroupRuntimeDraftFromStored(
   group: StoredScenario['scripts'][number],
 ): ScenarioRuntimeSettingsDraft | undefined {
   const runtimeDraft = runtimeDraftFromOverride(group.runtime_settings)
+  if (isPartialRuntimeDraft(runtimeDraft)) {
+    // A partial row states iterations only when it lists them; otherwise the
+    // group's compact iterations become that one listed path.
+    if (group.iterations === undefined || isFieldOverridden(runtimeDraft, 'run_logic.iterations')) return runtimeDraft
+    return setOverrideField(runtimeDraft, 'run_logic.iterations', group.iterations)
+  }
   const runtimeOwnsIterations = group.runtime_settings?.run_logic !== undefined
     || group.runtime_settings?.iterations !== undefined
 

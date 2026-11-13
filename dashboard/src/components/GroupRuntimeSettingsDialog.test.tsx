@@ -9,7 +9,7 @@ import {
   changedRuntimeFieldKeys,
   effectiveRuntimeFieldValue,
 } from './groupRuntimeSettingsModel'
-import type { RuntimeSettingsOverride } from '../types/runtimeSettings'
+import type { RuntimeOverrideFieldsExtension, RuntimeSettingsOverride } from '../types/runtimeSettings'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -92,9 +92,9 @@ describe('GroupRuntimeSettingsDialog', () => {
     }
   }
 
-  it('renders inherited script Results and submits an explicit off/false/zero replacement with untouched result siblings', async () => {
+  it('renders inherited script Results and submits an explicit off/false/zero message detail while the result siblings stay inherited', async () => {
     const inherited = { message_detail: { mode: 'errors', include_resources: true, max_items: 128 }, property_analytics: [{ name: 'category', extraction: 'category', values: ['one'] }], csv_exports: [{ id: 'csv', file_name: 'detail.csv', action_name: 'Home', columns: [{ name: 'latency', metric: 'latency_ms' }] }] }
-    let patchBody: { runtime_settings: RuntimeSettingsOverride; fields: string[]; expected_revision: string } | undefined
+    let patchBody: { runtime_settings: RuntimeSettingsOverride & RuntimeOverrideFieldsExtension; fields: string[]; expected_revision: string } | undefined
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
       const url = requestUrl(input)
       if (url.includes('/runtime-settings') && init?.method === 'PATCH') { patchBody = JSON.parse(String(init.body)); return jsonResponse({}) }
@@ -120,7 +120,12 @@ describe('GroupRuntimeSettingsDialog', () => {
     await flush()
     expect(patchBody?.expected_revision).toBe('sha256:results-observed')
     expect(patchBody?.fields).toEqual(['results'])
-    expect(patchBody?.runtime_settings.results).toEqual({ ...inherited, message_detail: { mode: 'off', include_resources: false, max_items: 0 } })
+    // Partial contract: only the edited path is listed and sent, so the
+    // backend keeps csv_exports and property_analytics inherited from the script.
+    expect(patchBody?.runtime_settings.results).toEqual({ message_detail: { mode: 'off', include_resources: false, max_items: 0 } })
+    expect(patchBody?.runtime_settings.override_fields).toEqual(['results.message_detail'])
+    expect(patchBody?.runtime_settings.results).not.toHaveProperty('csv_exports')
+    expect(patchBody?.runtime_settings.results).not.toHaveProperty('property_analytics')
     expect(inherited.message_detail).toEqual({ mode: 'errors', include_resources: true, max_items: 128 })
   })
 
@@ -554,6 +559,64 @@ describe('GroupRuntimeSettingsDialog', () => {
     expect(imported.textContent).toContain('Not applicable')
     expect(imported.textContent).toContain('1 mapped')
     expect(fetchMock.mock.calls.some(([input]) => String(input).includes('/scripts/'))).toBe(false)
+  })
+
+  it('labels only the keys a partial group row lists as group overrides', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = requestUrl(input)
+      if (url.includes('/runtime-settings')) {
+        return jsonResponse({
+          test_id: 'run-1', group: 'Buyers', group_index: 0, script_id: 'script-1', protocol: 'http', status: 'RUNNING',
+          editable: false, revision: 'sha256:partial', editable_reason: 'run is RUNNING', editable_fields: [],
+          runtime_settings: {
+            run_logic: { iterations: 5 },
+            http: { request_timeout_ms: 5000 },
+            override_fields: ['run_logic.iterations', 'http.request_timeout_ms'],
+          },
+          test_runtime_settings: { auto_transactions: 'actions' },
+          effective_settings: { run_logic: { iterations: 5, auto_transactions: 'actions' }, http: { request_timeout_ms: 5000, version: '2' } },
+        })
+      }
+      if (url.includes('/dsl/config-defaults')) return jsonResponse({ config: {} })
+      return jsonResponse({})
+    })
+    await act(async () => {
+      root.render(<GroupRuntimeSettingsDialog testId="run-1" groupName="Buyers" onClose={() => {}} onSaved={() => {}} />)
+    })
+    await flush()
+    const rows = Array.from(document.querySelectorAll('.group-run-settings-summary-row'))
+    const source = (label: string) => rows.find(row => row.querySelector('td')?.textContent === label)?.querySelector('.group-run-settings-source')?.textContent
+    expect(source('Iterations')).toBe('Group override')
+    expect(source('Auto-transactions')).toBe('Scenario default')
+    expect(source('HTTP transport')).toBe('Group override (some fields)')
+    expect(source('Run logic')).toBe('Group override (some fields)')
+  })
+
+  it('labels an empty v1 section as the layer that pins it whole', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = requestUrl(input)
+      if (url.includes('/runtime-settings')) {
+        return jsonResponse({
+          test_id: 'run-1', group: 'Buyers', group_index: 0, script_id: 'script-1', protocol: 'http', status: 'RUNNING',
+          editable: false, revision: 'sha256:v1-empty', editable_reason: 'run is RUNNING', editable_fields: [],
+          runtime_settings: { pacing: {}, error_handling: {} },
+          test_runtime_settings: { think_time: {} },
+          script_settings: { pacing: { type: 'fixed_delay', delay_ms: 100 }, think_time: { type: 'random', mean_ms: 100 }, error_handling: { snapshot_on_error: true } },
+          effective_settings: {},
+        })
+      }
+      if (url.includes('/dsl/config-defaults')) return jsonResponse({ config: {} })
+      return jsonResponse({})
+    })
+    await act(async () => {
+      root.render(<GroupRuntimeSettingsDialog testId="run-1" groupName="Buyers" onClose={() => {}} onSaved={() => {}} />)
+    })
+    await flush()
+    const rows = Array.from(document.querySelectorAll('.group-run-settings-summary-row'))
+    const source = (label: string) => rows.find(row => row.querySelector('td')?.textContent === label)?.querySelector('.group-run-settings-source')?.textContent
+    expect(source('Pacing')).toBe('Group override')
+    expect(source('Error handling')).toBe('Group override')
+    expect(source('Think time')).toBe('Scenario default')
   })
 
   it('bounds the imported-source panel to the section cap with an overflow note', async () => {
