@@ -1747,6 +1747,36 @@ describe('TestExecutionArchive', () => {
     expect(onSelectAction).toHaveBeenCalledWith('Txn_17_Checkout')
   })
 
+  it('shows the archived groups effective runtime settings from the run provenance, credentials masked', async () => {
+    const report = {
+      ...archiveReport,
+      manifest: {
+        ...archiveReport.manifest,
+        provenance: {
+          ...archiveReport.manifest.provenance,
+          runtime_settings: { base_url: 'https://[REDACTED]@archived.example.test', http: { tls: { max_version: '1.2' } }, override_fields: ['base_url', 'http.tls.max_version'] },
+          groups: [{
+            name: 'buyers', script_id: 'script-1', script_name: 'Checkout Flow', protocol: 'soap', vusers: 1,
+            runtime_settings: { soap: { version: '1.2', ws_security: { username_token: { password: '[REDACTED]' } } }, env: { API: '{{secret.ORDERS_API}}' } },
+          }],
+        },
+      },
+    } as unknown as RunArchiveReport
+    await renderArchiveView('report-metadata', report)
+
+    const view = container.querySelector('[data-testid="effective-runtime-settings"]')
+    expect(view).toBeTruthy()
+    if (!view) return
+    const row = (path: string) => view.querySelector(`[data-runtime-path="${path}"]`)
+    expect(row('soap.version')?.getAttribute('data-provenance')).toBe('group_override')
+    expect(row('soap')?.textContent).toContain("Replaced whole; the script's values for this section do not apply")
+    expect(row('base_url')?.textContent).toContain('https://***@archived.example.test')
+    expect(row('http.tls.max_version')?.getAttribute('data-provenance')).toBe('scenario_default')
+    expect(row('soap.ws_security.username_token.password')?.textContent).toContain('Stored secret (hidden)')
+    expect(row('env.API')?.querySelector('code')?.textContent).toBe('{{secret.ORDERS_API}}')
+    expect(view.textContent).not.toContain('[REDACTED]')
+  })
+
   async function renderArchiveView(
     view: Parameters<typeof TestExecutionArchive>[0]['view'],
     report: RunArchiveReport = archiveReport,
