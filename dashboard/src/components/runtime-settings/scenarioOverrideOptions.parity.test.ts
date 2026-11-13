@@ -13,8 +13,12 @@ import {
 // TestConfigCatalogOptionsMatchValidators) and, for retry_on (a string list
 // the catalog leaves open), the validator message itself.
 
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
 function catalogOptions(path: string): string[] | undefined {
-  const start = catalogSource.search(new RegExp(`Path:\\s*"${path.replace(/\./g, '\\.')}"`))
+  const start = catalogSource.search(new RegExp(`Path:\\s*"${escapeRegExp(path)}"`))
   if (start < 0) return undefined
   const end = catalogSource.indexOf('\n\t},', start)
   const block = catalogSource.slice(start, end)
