@@ -1,5 +1,6 @@
 import type {
   BrowserReplayReport,
+  ScenarioRuntimeSettingsDraft,
   ScriptDebugLogLevel,
   ScriptDebugSession,
 } from '../types'
@@ -72,6 +73,14 @@ export interface ReplayOptionsState {
   afterFailure: 'test-run' | 'continue' | 'stop'
   /** The value of {{run.id}} in the session; blank uses the session's own identity. */
   runId: string
+  /**
+   * Session runtime overrides (a partial draft with override_fields), sent as
+   * runtime_overrides and applied by the controller to a clone of the script.
+   * They never touch script.config; see debugSessionOverrides.ts for the
+   * precedence against the Debug options above. Not part of
+   * DEFAULT_REPLAY_OPTIONS, so Reset session options clears them.
+   */
+  runtimeOverrides?: ScenarioRuntimeSettingsDraft
 }
 
 export interface ReplayActivityItem {
