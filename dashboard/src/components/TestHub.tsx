@@ -28,7 +28,7 @@ import { scenarioScriptReadiness } from './scenarioScriptReadiness'
 import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { flushSync } from 'react-dom'
 import LoadPlanChart from './LoadPlanChart'
-import { ApplicationRepository, DashboardAuthEffectiveAccessResource, DraftCapacityEstimate, GeneratorAssignmentSettings, GoalConfig, LoadModelSupportEntry, LoadModelTemplate, LoadModelValidationReport, LoadStageDraft, RunArchiveReport, ScenarioDataPoolBinding, ScenarioRuntimeSettingsDraft, ScenarioValidationContext, SharedDataPool, StoredScenario, StoredScript, SystemInventoryGenerator, TestSummary, TrafficProfileDeriveResponse } from '../types'
+import { ApplicationRepository, DashboardAuthEffectiveAccessResource, DraftCapacityEstimate, GeneratorAssignmentSettings, GoalConfig, LoadModelSupportEntry, LoadModelTemplate, LoadModelValidationReport, LoadStageDraft, RunArchiveReport, RuntimeSettingsOverride, ScenarioDataPoolBinding, ScenarioRuntimeSettingsDraft, ScenarioValidationContext, SharedDataPool, StoredScenario, StoredScript, SystemInventoryGenerator, TestSummary, TrafficProfileDeriveResponse } from '../types'
 import { describeValidationContextChanges, scenarioValidationContextChanges, type ValidationStaleCause } from './scriptAuthoringSession'
 import { type ScriptConfig } from '../types/scripts'
 import { useApi } from '../hooks/useApi'
@@ -46,11 +46,12 @@ import TelemetryPolicySelect from './TelemetryPolicySelect'
 import { telemetryPolicySaveIssue } from './telemetryAcceptanceChoice'
 import { SortHeader } from './SortHeader'
 import { formatBrowserRuntimeSummary } from './browserRuntimeSummary'
+import { buildRuntimeSettingsPayload } from './scenarioPayloadUtils'
 import RuntimeSettingsGroupEditor from './RuntimeSettingsGroupEditor'
 import { readImportedJavaVMParameters } from './scriptEditorImportModel'
 import GroupPlacementEditor from './GroupPlacementEditor'
-import { formatPacing, formatThinkTime, formatErrorHandling, overrideFromRuntimeDraft } from './runtimeSettingsModel'
-import { applyEffectiveRuntimeSettingsToGroups } from './runtimeSettingsApply'
+import { effectiveRuntimeSection, formatPacing, formatThinkTime, formatErrorHandling, isPartialRuntimeDraft, resolveRuntimeRowsValue, runtimeBrowserSettings, runtimeOverrideRowFromDraft, runtimeSectionSource } from './runtimeSettingsModel'
+import { applyEffectiveRuntimeSettingsToGroupsWithReport, type RuntimeApplyReport } from './runtimeSettingsApply'
 import { adaptScenarioShapeDefaults, availableScenarioModelFamilies, BROWSER_DEFAULT_GROUP_VUSERS, DEFAULT_GROUP_VUSERS, shapeFamilyFor, type ScenarioModelFamilyId,buildClosedVUserPlan, buildScenarioModelPreview, buildScenarioShapeCatalog, buildShapeStages, buildSteppedRampPlan, formatModelTimeLabel, getScenarioShapePreset, isGuidedClosedVUserOwned, MAX_STEPPED_RAMP_STEPS, remapClosedRampDownHistory, remapGoalDrivenIndexedState, ScenarioModelPreview, ScenarioSeed, ScenarioShapePreset, ScenarioSourceMode, ScenarioWizardStep, shapeStageStrategyFor, validateStageTimeline } from './scenarioWizardUtils'
 import ReplaceScenarioScriptsModal from './ReplaceScenarioScriptsModal'
 import type { ClosedVUserConfig, ClosedVUserDefinition, GoalDrivenARTConfig, GoalDrivenConfig, GoalDrivenGroupDefinition, SteppedRampConfig, SteppedRampDefinition } from '../types/goals'
@@ -89,9 +90,9 @@ import {
   cloneAssignment,
   ensureScenarioGroups,
   replaceScenarioRuntimeDefaults,
+  scenarioGroupWithRuntimeSettings,
   reseedScenarioGroups,
   runtimeSettingsFromForm,
-  scenarioErrorHandlingFlag,
   scenarioFormStateFromStoredScenario,
   seededScenarioRuntime,
   withAdaptedGoalBounds,
@@ -340,6 +341,27 @@ function scenarioSeedFromPreset(preset: ScenarioShapePreset): ScenarioSeed {
   }
 }
 
+/**
+ * A review line for pacing or think_time: the section the top layer resolves to through the shared
+ * resolver (each partial layer contributes only the paths it lists, laid over the layers below),
+ * or `inherits` when the top layer lists nothing inside it.
+ */
+function formatReviewTiming(
+  section: 'pacing' | 'think_time',
+  layers: Array<ScenarioRuntimeSettingsDraft | undefined>,
+  inherits: string,
+): string {
+  const source = runtimeSectionSource(section, layers)
+  if (source?.layer !== 0) return inherits
+  const value = effectiveRuntimeSection<unknown>(section, layers)
+  const text = section === 'pacing'
+    ? formatPacing(value as RuntimeSettingsOverride['pacing'])
+    : formatThinkTime(value as RuntimeSettingsOverride['think_time'])
+  if (text) return text
+  if (source.whole) return inherits
+  return section === 'pacing' ? 'script pacing with overridden fields' : 'script think time with overridden fields'
+}
+
 function scenarioSeedFromForm(form: ScenarioFormState): ScenarioSeed {
   return {
     duration: form.duration,
@@ -357,7 +379,7 @@ function scenarioSeedFromForm(form: ScenarioFormState): ScenarioSeed {
     goal: goalConfigFromForm(form),
     // The current runtime defaults travel as the seed's runtime_settings, so a
     // re-seed keeps them; shape adaptation reads the pacing it may replace.
-    pacing: form.runtime_settings?.pacing ? { ...form.runtime_settings.pacing } as ScenarioSeed['pacing'] : undefined,
+    pacing: form.runtime_settings?.pacing ? { ...form.runtime_settings.pacing } as ScenarioSeed['pacing'] : undefined, // runtime-row-v1-write: seed carries the authored row
     runtime_settings: form.runtime_settings ? structuredClone(form.runtime_settings) : undefined,
   }
 }
@@ -377,6 +399,26 @@ function vusersForScriptGroup(group: Pick<ScenarioFormGroup, 'vusers' | 'stages'
 /** A traffic-profile target in its own unit: "12 TPS", "30 VUsers". */
 function formatProfileLoad(value: number, runtimeTarget?: 'tps' | 'vusers') {
   return `${formatUpTo(value)} ${runtimeTarget === 'vusers' ? 'VUsers' : 'TPS'}`
+}
+
+/** The two error-handling defaults on the Advanced card: Inherit leaves each script's own
+ *  setting (continue-on-error stays on unless a layer disables it). */
+const ERROR_HANDLING_ASSURANCE_CARDS = [
+  { flag: 'continue_on_error', title: 'Continue on action errors', description: 'Keep collecting resilience evidence after request-level failures.', inheritLabel: 'Inherit (on unless a script disables it)' },
+  { flag: 'snapshot_on_error', title: 'Snapshot on error', description: 'Preserve request/response context for failed actions.', inheritLabel: "Inherit (each script's setting)" },
+] as const
+
+/**
+ * The scenario default an error-handling select shows, read through the shared row resolver: ''
+ * when the scenario row does not set it (each script's own setting applies), else 'true' or
+ * 'false'. A v1 error_handling section applies whole, so a snapshot flag it omits runs as false;
+ * an omitted continue-on-error stays on, as the scenario policy says.
+ */
+function scenarioErrorHandlingSelectValue(row: RuntimeSettingsOverride | undefined, flag: 'continue_on_error' | 'snapshot_on_error'): '' | 'true' | 'false' {
+  const { index, value } = resolveRuntimeRowsValue(`error_handling.${flag}`, [row])
+  if (index < 0) return ''
+  if (typeof value === 'boolean') return value ? 'true' : 'false'
+  return flag === 'snapshot_on_error' && !isPartialRuntimeDraft(row) ? 'false' : ''
 }
 
 function findScriptById(scripts: StoredScript[], scriptId?: string) {
@@ -601,7 +643,7 @@ function scenarioSearchText(scenario: StoredScenario) {
     ...(scenario.scripts || []).map(script => script.script_name || script.name || script.script_id),
     ...(scenario.data_pools || []).map(pool => `${pool.alias} ${pool.pool_name || pool.pool_id}`),
     ...(scenario.associated_releases || []).map(release => release.name),
-    formatBrowserRuntimeSummary(scenario.runtime_settings?.browser),
+    formatBrowserRuntimeSummary(runtimeBrowserSettings(scenario.runtime_settings)),
   ].filter(Boolean).join(' ').toLowerCase()
 }
 
@@ -2506,13 +2548,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
     setForm(prev => ({
       ...prev,
       groups: prev.groups.map((group, groupIndex) => {
-        if (groupIndex !== index) return group
-        const runtimeOwnsIterations = next?.run_logic !== undefined || next?.iterations !== undefined
-        return {
-          ...group,
-          ...(runtimeOwnsIterations ? { iterations: undefined } : {}),
-          runtimeSettings: next,
-        }
+        return groupIndex === index ? scenarioGroupWithRuntimeSettings(group, next) : group
       }),
     }))
     setLoadModelValidation(null)
@@ -2537,19 +2573,30 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
   // Apply the source group's effective runtime (engine → source script → scenario →
   // source group) to each target. Materializing before protocol filtering prevents
   // an inheriting source from accidentally turning into the target script's defaults.
-  const applyRuntimeToGroups = (sourceIndex: number, targetIndexes: number[]) => {
+  // A target with no SOAP WS-Security credentials of its own is left unchanged
+  // and reported back to the apply panel, as the backend apply refuses it.
+  const applyRuntimeToGroups = (sourceIndex: number, targetIndexes: number[]): RuntimeApplyReport => {
+    const { report } = applyEffectiveRuntimeSettingsToGroupsWithReport(
+      form.groups,
+      scripts,
+      engineDefaults,
+      runtimeSettingsFromForm(form),
+      sourceIndex,
+      targetIndexes,
+    )
     setForm(prev => ({
       ...prev,
-      groups: applyEffectiveRuntimeSettingsToGroups(
+      groups: applyEffectiveRuntimeSettingsToGroupsWithReport(
         prev.groups,
         scripts,
         engineDefaults,
         runtimeSettingsFromForm(prev),
         sourceIndex,
         targetIndexes,
-      ),
+      ).groups,
     }))
     setLoadModelValidation(null)
+    return report
   }
 
   const addScenarioGroup = () => {
@@ -3832,14 +3879,28 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
           <input type="checkbox" checked={form.resource_baseline} onChange={event => setForm({ ...form, resource_baseline: event.target.checked })} />
           <div><strong>Resource baseline windows</strong><span>Capture 5m pre/post resource evidence around the run.</span></div>
         </label>
-        <label className={`scenario-option-card ${scenarioErrorHandlingFlag(form, 'continue_on_error') !== false ? 'selected' : ''}`}>
-          <input type="checkbox" checked={scenarioErrorHandlingFlag(form, 'continue_on_error') !== false} onChange={event => setForm(withScenarioErrorHandlingFlag(form, 'continue_on_error', event.target.checked))} />
-          <div><strong>Continue on action errors</strong><span>Keep collecting resilience evidence after request-level failures.</span></div>
-        </label>
-        <label className={`scenario-option-card ${scenarioErrorHandlingFlag(form, 'snapshot_on_error') ? 'selected' : ''}`}>
-          <input type="checkbox" checked={scenarioErrorHandlingFlag(form, 'snapshot_on_error') ?? false} onChange={event => setForm(withScenarioErrorHandlingFlag(form, 'snapshot_on_error', event.target.checked))} />
-          <div><strong>Snapshot on error</strong><span>Preserve request/response context for failed actions.</span></div>
-        </label>
+        {ERROR_HANDLING_ASSURANCE_CARDS.map(card => {
+          const value = scenarioErrorHandlingSelectValue(form.runtime_settings, card.flag)
+          const enabled = card.flag === 'continue_on_error' ? value !== 'false' : value === 'true'
+          return (
+            <label key={card.flag} className={`scenario-option-card tri-state ${enabled ? 'selected' : ''}`}>
+              <div>
+                <strong>{card.title}</strong>
+                <span>{card.description}</span>
+                <select
+                  className="settings-input"
+                  aria-label={card.title}
+                  value={value}
+                  onChange={event => setForm(withScenarioErrorHandlingFlag(form, card.flag, event.target.value === '' ? undefined : event.target.value === 'true'))}
+                >
+                  <option value="">{card.inheritLabel}</option>
+                  <option value="true">Enabled</option>
+                  <option value="false">Disabled</option>
+                </select>
+              </div>
+            </label>
+          )
+        })}
       </div>
     </div>
   )
@@ -4978,7 +5039,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
                 })}
                 focusedIndex={runtimeGroupIndex}
                 onFocusChange={setRuntimeGroupIndex}
-                scenarioDefault={overrideFromRuntimeDraft(runtimeSettingsFromForm(form))}
+                scenarioDefault={runtimeOverrideRowFromDraft(runtimeSettingsFromForm(form)) as RuntimeSettingsOverride | undefined}
                 engineDefaults={engineDefaults}
                 overrides={formGroups.map(group => group.runtimeSettings)}
                 onChange={updateGroupRuntime}
@@ -5142,10 +5203,10 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
           {/* A Goal-Driven run is paced to its groups' targets, not to a default pacing. */}
           <p>{isGoalDriven
             ? `Throughput targets: ${formGroups.map((group, index) => `${group.name.trim() || `Group ${index + 1}`} ${(goalDrivenConfig.groups[goalDrivenGroupKey(index)]?.target_tps || 0).toLocaleString()} TPS`).join(', ')}; the goal controller adjusts VUsers to hold them.`
-            : `Default pacing: ${formatPacing(runtimeSettingsFromForm(form).pacing) || 'inherits script'}.`} Think time: {formatThinkTime(runtimeSettingsFromForm(form).think_time) || 'inherits script'}. Error handling: {formatErrorHandling(overrideFromRuntimeDraft(runtimeSettingsFromForm(form))?.error_handling) || 'inherits script'}.</p>
+            : `Default pacing: ${formatReviewTiming('pacing', [runtimeSettingsFromForm(form)], 'inherits script')}.`} Think time: {formatReviewTiming('think_time', [runtimeSettingsFromForm(form)], 'inherits script')}. Error handling: {formatErrorHandling(effectiveRuntimeSection<RuntimeSettingsOverride['error_handling']>('error_handling', [runtimeSettingsFromForm(form)])) || 'inherits script'}.</p>
           <p>Scenario placement: {rootAssignment.mode || 'automatic'}{rootAssignment.selected_targets?.length ? ` · Targets: ${rootAssignment.selected_targets.join(', ')}` : ''}.</p>
           <ul>{formGroups.map((group, index) => <li key={index}><strong>{group.name || `Group ${index + 1}`}</strong>: {group.iterations ? `${group.iterations} iterations` : 'duration limited'}; placement {group.assignment?.mode || 'inherits scenario'}; runtime {group.runtimeSettings ? 'group overrides configured' : 'inherits scenario defaults'}.
-            <p>Pacing: {formatPacing(group.runtimeSettings?.pacing) || 'inherits defaults'}. Think time: {formatThinkTime(group.runtimeSettings?.think_time) || 'inherits defaults'}. {group.assignment?.selected_targets?.length ? `Selected targets: ${group.assignment.selected_targets.join(', ')}` : ''}</p>
+            <p>Pacing: {formatReviewTiming('pacing', [group.runtimeSettings, runtimeSettingsFromForm(form)], 'inherits defaults')}. Think time: {formatReviewTiming('think_time', [group.runtimeSettings, runtimeSettingsFromForm(form)], 'inherits defaults')}. {group.assignment?.selected_targets?.length ? `Selected targets: ${group.assignment.selected_targets.join(', ')}` : ''}</p>
             {group.stages.length > 0 && <p>{group.stages.map(stage => `${stage.name || stage.type}: ${stage.duration} → ${stage.target_vusers} VUsers`).join(' · ')}</p>}
           </li>)}</ul>
           <button type="button" className="btn btn-secondary" onClick={() => setWizardStep('run')}>Edit runtime and placement</button>
@@ -5154,7 +5215,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
         </section>
         <NewTestReadiness projectId={activeProjectId || ''} scenario={{ id: editingId || 'authoring-draft', updated_at: '',
           scripts: formGroups.map((group, order) => ({ order, name: group.name, script_id: group.script_id, vusers: group.vusers, transaction_response_time_sla_ms: group.transactionResponseTimeSlaMs,
-            runtime_settings: group.runtimeSettings?.browser_config ? { browser_config: group.runtimeSettings.browser_config } : undefined })),
+            runtime_settings: group.runtimeSettings ? buildRuntimeSettingsPayload(group.runtimeSettings) as StoredScenario['scripts'][number]['runtime_settings'] : undefined })),
           data_pools: scenarioBindings, runtime_settings: form.runtime_settings,
         }} compact />
         <div className="data-table scenario-review-groups">

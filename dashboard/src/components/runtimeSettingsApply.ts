@@ -1,11 +1,19 @@
 import { type RuntimeSettingsOverride, type ScenarioRuntimeSettingsDraft, type StoredScript } from '../types'
 import { type ScriptConfig } from '../types/scripts'
+import { type PartialRuntimeSettingsOverride } from '../types/runtimeSettings'
 import {
+  isPartialRuntimeDraft,
   isRuntimeDraftEmpty,
   isRuntimeFieldApplicable,
-  overrideFromRuntimeDraft,
+  overrideFieldValue,
+  resetOverrideField,
   runtimeDraftFromOverride,
+  runtimeOverrideFieldPaths,
+  runtimeOverridePathWireSegments,
   runtimeOverrideFromScriptConfig,
+  runtimeOverrideRowFromDraft,
+  setOverrideField,
+  upgradeRuntimeDraftToPartial,
 } from './runtimeSettingsModel'
 
 /**
@@ -45,7 +53,65 @@ export function copyRuntimeSettingsForProtocol(
   if (!isRuntimeFieldApplicable('websocket', protocol)) copy.websocket = undefined
   if (!isRuntimeFieldApplicable('web_runtime', protocol)) copy.web_runtime = undefined
   if (!isRuntimeFieldApplicable('java_vuser', protocol)) copy.java_vuser = undefined
+  if ((protocol || '').trim().toLowerCase() !== 'soap') {
+    copy.soap = undefined
+  } else if (copy.soap?.ws_security?.username_token) {
+    // Like keepTargetSOAPCredentials: a copy never carries another group's
+    // WS-Security credentials (a masked value would not reconcile against the
+    // target's own row). keepTargetSOAPCredentials below decides what the
+    // target row lists, so the target keeps its own credentials.
+    const token = { ...copy.soap.ws_security.username_token }
+    delete token.username
+    delete token.password
+    copy.soap = { ...copy.soap, ws_security: { ...copy.soap.ws_security, username_token: token } }
+  }
   return copy
+}
+
+const SOAP_CREDENTIAL_FIELD_PATHS = [
+  'soap.ws_security.username_token.username',
+  'soap.ws_security.username_token.password',
+] as const
+
+/**
+ * keepTargetSOAPCredentials mirrors the backend helper of the same name
+ * (handlers_scenario_runtime.go). A copied row whose SOAP section carries a
+ * UsernameToken keeps only the credentials the target's own prior row listed.
+ * Every other credential stays inherited from the target's script or the
+ * scenario root: the row is converted to a partial row whose SOAP paths leave
+ * those credential leaves out, because a v1 SOAP section replaces the
+ * inherited section whole and would send an empty UsernameToken.
+ */
+function keepTargetSOAPCredentials(
+  row: ScenarioRuntimeSettingsDraft,
+  prior: ScenarioRuntimeSettingsDraft | undefined,
+): ScenarioRuntimeSettingsDraft {
+  const token = row.soap?.ws_security?.username_token
+  if (!row.soap || !token) return row
+  const ownCredential = (path: string) => {
+    const value = overrideFieldValue(prior, path)
+    return typeof value === 'string' ? value : ''
+  }
+  const [usernamePath, passwordPath] = SOAP_CREDENTIAL_FIELD_PATHS
+  const username = ownCredential(usernamePath)
+  const password = ownCredential(passwordPath)
+  const nextToken = { ...token }
+  delete nextToken.username
+  delete nextToken.password
+  if (username) nextToken.username = username
+  if (password) nextToken.password = password
+  let next: ScenarioRuntimeSettingsDraft = {
+    ...row,
+    soap: { ...row.soap, ws_security: { ...row.soap.ws_security, username_token: nextToken } },
+  }
+  const inherited = [...(username ? [] : [usernamePath]), ...(password ? [] : [passwordPath])]
+  if (inherited.length === 0) return next
+  // upgradeRuntimeDraftToPartial lists what the v1 row applied (dropping the
+  // aliases v1 shadows); each reset splits the listed SOAP section into its
+  // remaining leaves, as overrideFieldPathsExcluding does.
+  next = upgradeRuntimeDraftToPartial(next)
+  for (const path of inherited) next = resetOverrideField(next, path)
+  return next
 }
 
 type MaterializedWebSettings = NonNullable<RuntimeSettingsOverride['web_runtime']>
@@ -137,8 +203,103 @@ function overlayBrowserLegacy(
   return merged
 }
 
+function setNested(target: Record<string, unknown>, segments: string[], value: unknown) {
+  let current = target
+  for (const segment of segments.slice(0, -1)) {
+    const child = current[segment]
+    if (child === null || typeof child !== 'object' || Array.isArray(child)) current[segment] = {}
+    current = current[segment] as Record<string, unknown>
+  }
+  const leaf = segments[segments.length - 1]
+  if (value === undefined) delete current[leaf]
+  else current[leaf] = structuredClone(value)
+}
+
+/**
+ * Lay a partial (override_fields) layer over the accumulated profile: only the
+ * paths it lists replace what lower layers supplied, mirroring
+ * applyRuntimeOverridesPartial. A listed path with no value overrides to empty.
+ */
+function applyPartialRuntimeLayer(base: RuntimeSettingsOverride, layer: PartialRuntimeSettingsOverride): RuntimeSettingsOverride {
+  const next = structuredClone(base) as PartialRuntimeSettingsOverride
+  const fields = runtimeOverrideFieldPaths(layer)
+  // Fold the compact aliases a lower layer carries into their sections, so a
+  // listed leaf lands where it executes (the section wins in v1 layers).
+  const foldAliases = (section: string) => {
+    if (section === 'run_logic' && (next.iterations !== undefined || next.auto_transactions)) {
+      next.run_logic = {
+        ...(next.iterations !== undefined ? { iterations: next.iterations } : {}),
+        ...(next.auto_transactions ? { auto_transactions: next.auto_transactions } : {}),
+        ...next.run_logic,
+      }
+      next.iterations = undefined
+      next.auto_transactions = undefined
+    }
+    if (section === 'log' && next.log_level) {
+      next.log = { level: next.log_level, ...next.log }
+      next.log_level = undefined
+    }
+    if (section === 'browser' && next.browser) {
+      next.browser_config = next.browser_config ? overlayBrowserLegacy(next.browser_config, next.browser) : { ...next.browser }
+      next.browser = undefined
+    }
+  }
+  for (const path of fields) {
+    const value = overrideFieldValue(layer, path)
+    if (path === 'env') {
+      // A listed env with no keys drops the lower layers' env (mergeRuntimeSettingsPartial
+      // sets merged.Env to nil for it); otherwise the keys merge over them.
+      if (value && Object.keys(value as object).length > 0) next.env = { ...next.env, ...(value as Record<string, string>) }
+      else next.env = undefined
+      continue
+    }
+    if (path.startsWith('env.')) {
+      const key = path.slice('env.'.length)
+      const env = { ...next.env }
+      if (value === undefined) delete env[key]
+      else env[key] = value as string
+      next.env = env
+      continue
+    }
+    if (path === 'redaction_rules') {
+      next.redaction_rules = structuredClone(value as RuntimeSettingsOverride['redaction_rules'])
+      continue
+    }
+    if (path === 'java_vuser') {
+      // A listed java_vuser with no value resets the JVM settings to zero
+      // (applyJavaVuserOverrideField); a value overlays field by field.
+      next.java_vuser = value === undefined ? {} : mergeJavaVuserLayer(next.java_vuser, value as MaterializedJavaVuser) ?? next.java_vuser
+      continue
+    }
+    if (path.startsWith('java_vuser.')) {
+      const field = path.slice('java_vuser.'.length) as keyof MaterializedJavaVuser
+      const java: Record<string, unknown> = { ...next.java_vuser }
+      if (value === undefined) delete java[field]
+      else java[field] = structuredClone(value)
+      if (field === 'jvm_sharing' && value !== 'shared' && value !== 'threads') delete java.vusers_per_jvm
+      next.java_vuser = java as MaterializedJavaVuser
+      continue
+    }
+    const section = path.split('.')[0]
+    foldAliases(section)
+    if (section === 'base_url') {
+      next.base_url = value as string | undefined
+      continue
+    }
+    if ((section === 'pacing' || section === 'think_time' || section === 'error_handling') && next[section] === null) {
+      next[section] = undefined
+    }
+    const segments = runtimeOverridePathWireSegments(path)
+    if (segments) setNested(next as Record<string, unknown>, segments, value)
+  }
+  return next
+}
+
 /** Mirror mergeRuntimeSettings/applyRuntimeOverrides section precedence. */
 function applyEffectiveRuntimeLayer(base: RuntimeSettingsOverride, layer: RuntimeSettingsOverride): RuntimeSettingsOverride {
+  if (isPartialRuntimeDraft(layer as PartialRuntimeSettingsOverride)) {
+    return applyPartialRuntimeLayer(base, layer as PartialRuntimeSettingsOverride)
+  }
   const next = structuredClone(base)
 
   if (layer.run_logic) {
@@ -169,6 +330,8 @@ function applyEffectiveRuntimeLayer(base: RuntimeSettingsOverride, layer: Runtim
   if (layer.results) next.results = structuredClone(layer.results)
   if (layer.websocket) next.websocket = structuredClone(layer.websocket)
   if (layer.http) next.http = structuredClone(layer.http)
+  const soap = (layer as PartialRuntimeSettingsOverride).soap
+  if (soap) (next as PartialRuntimeSettingsOverride).soap = structuredClone(soap)
   // Whole-section replace, mirroring the Go controller's browser_emulation merge.
   if (layer.browser_emulation) next.browser_emulation = structuredClone(layer.browser_emulation)
   if (layer.web_runtime) next.web_runtime = mergeMaterializedWeb(next.web_runtime, layer.web_runtime)
@@ -214,8 +377,11 @@ export function materializeRuntimeSettingsForApply(
   const layers = [
     runtimeOverrideFromScriptConfig(engineDefaults),
     runtimeOverrideFromScriptConfig(sourceScriptConfig),
-    overrideFromRuntimeDraft(scenarioDraft),
-    overrideFromRuntimeDraft(sourceDraft),
+    // The rows the drafts are stored as, so a v1 section applied whole (an untyped
+    // pacing, `{}` error_handling) pins its zero value here exactly as it does in
+    // partialRuntimeState and at run time.
+    runtimeOverrideRowFromDraft(scenarioDraft) as RuntimeSettingsOverride | undefined,
+    runtimeOverrideRowFromDraft(sourceDraft) as RuntimeSettingsOverride | undefined,
     // The compact group field is applied after merged runtime settings by the
     // controller. Keep it as the final layer here so Apply to groups copies the
     // source group's true effective iteration value.
@@ -240,16 +406,37 @@ function findScriptById(scripts: StoredScript[], scriptId?: string) {
   return scripts.find(script => script.id === scriptId)
 }
 
-export function applyEffectiveRuntimeSettingsToGroups<T extends RuntimeApplyGroup>(
+/** What Apply to groups did not copy, so the apply panel can say why. */
+export interface RuntimeApplyReport {
+  /** Targets left unchanged: the source runs with SOAP WS-Security credentials,
+   * the target has none of its own, and credentials are never copied. */
+  missingSOAPCredentialTargets: number[]
+}
+
+function hasSOAPCredentials(settings?: ScenarioRuntimeSettingsDraft): boolean {
+  const token = settings?.soap?.ws_security?.username_token
+  return Boolean(token && (token.username || token.password))
+}
+
+/**
+ * applyEffectiveRuntimeSettingsToGroupsWithReport copies the source group's
+ * effective runtime to each target, mirroring the backend applyRuntimeToGroups
+ * (handlers_scenario_runtime.go): when the source runs with a SOAP UsernameToken
+ * and a target would end up with no credentials of its own (row, script or
+ * scenario root), that target is left unchanged and reported instead of being
+ * written with an empty UsernameToken that fails auth at run time.
+ */
+export function applyEffectiveRuntimeSettingsToGroupsWithReport<T extends RuntimeApplyGroup>(
   groups: T[],
   scripts: StoredScript[],
   engineDefaults: ScriptConfig | undefined,
   scenarioDraft: ScenarioRuntimeSettingsDraft | undefined,
   sourceIndex: number,
   targetIndexes: number[],
-): RuntimeApplyResult<T>[] {
+): { groups: RuntimeApplyResult<T>[]; report: RuntimeApplyReport } {
+  const report: RuntimeApplyReport = { missingSOAPCredentialTargets: [] }
   const sourceGroup = groups[sourceIndex]
-  if (!sourceGroup) return groups
+  if (!sourceGroup) return { groups, report }
   const sourceScriptConfig = findScriptById(scripts, sourceGroup.script_id)?.script?.config
   const effectiveSource = materializeRuntimeSettingsForApply(
     engineDefaults,
@@ -258,10 +445,12 @@ export function applyEffectiveRuntimeSettingsToGroups<T extends RuntimeApplyGrou
     sourceGroup.runtimeSettings,
     sourceGroup.iterations,
   )
+  const sourceHasSOAPCredentials = hasSOAPCredentials(effectiveSource)
 
-  return groups.map<RuntimeApplyResult<T>>((group, groupIndex) => {
+  const next = groups.map<RuntimeApplyResult<T>>((group, groupIndex) => {
     if (!targetIndexes.includes(groupIndex)) return group
-    const protocol = findScriptById(scripts, group.script_id)?.protocol
+    const targetScript = findScriptById(scripts, group.script_id)
+    const protocol = targetScript?.protocol
     const targetEnv = group.runtimeSettings?.env
     const targetRedactionRules = group.runtimeSettings?.redaction_rules
     const copied = effectiveSource ? copyRuntimeSettingsForProtocol(effectiveSource, protocol) : undefined
@@ -273,15 +462,55 @@ export function applyEffectiveRuntimeSettingsToGroups<T extends RuntimeApplyGrou
           redaction_rules: targetRedactionRules === undefined ? undefined : structuredClone(targetRedactionRules),
         }
       : undefined
+    let runtimeSettings = copied
+      ? keepTargetSOAPCredentials(
+          { ...copied, env: protectedTargetFields?.env, redaction_rules: protectedTargetFields?.redaction_rules },
+          group.runtimeSettings,
+        )
+      : protectedTargetFields
+    // A partial target lists its env keys (and redaction rules) as paths, an env.KEY with no
+    // value removing a lower layer's key. Re-protecting them as plain v1 values would merge the
+    // removed key back in, so the copy is upgraded and the target's own paths re-applied.
+    const targetEnvPaths = isPartialRuntimeDraft(group.runtimeSettings)
+      ? runtimeOverrideFieldPaths(group.runtimeSettings).filter(path => path === 'env' || path.startsWith('env.') || path === 'redaction_rules')
+      : []
+    if (targetEnvPaths.length > 0) {
+      let partial = upgradeRuntimeDraftToPartial(runtimeSettings ? { ...runtimeSettings, env: undefined, redaction_rules: undefined } : undefined)
+      partial = resetOverrideField(resetOverrideField(partial, 'env'), 'redaction_rules')
+      for (const path of targetEnvPaths) partial = setOverrideField(partial, path, overrideFieldValue(group.runtimeSettings, path))
+      runtimeSettings = partial
+    }
+    if (sourceHasSOAPCredentials && copied?.soap) {
+      const targetEffective = materializeRuntimeSettingsForApply(
+        engineDefaults,
+        targetScript?.script?.config,
+        scenarioDraft,
+        runtimeSettings,
+      )
+      if (!hasSOAPCredentials(targetEffective)) {
+        report.missingSOAPCredentialTargets.push(groupIndex)
+        return group
+      }
+    }
     return {
       ...group,
       // The copied runtime profile now owns the effective iteration value.
       // Clear the compact target field so serialization cannot emit two
       // conflicting representations.
       iterations: undefined,
-      runtimeSettings: copied
-        ? { ...copied, env: protectedTargetFields?.env, redaction_rules: protectedTargetFields?.redaction_rules }
-        : protectedTargetFields,
+      runtimeSettings,
     }
   })
+  return { groups: next, report }
+}
+
+export function applyEffectiveRuntimeSettingsToGroups<T extends RuntimeApplyGroup>(
+  groups: T[],
+  scripts: StoredScript[],
+  engineDefaults: ScriptConfig | undefined,
+  scenarioDraft: ScenarioRuntimeSettingsDraft | undefined,
+  sourceIndex: number,
+  targetIndexes: number[],
+): RuntimeApplyResult<T>[] {
+  return applyEffectiveRuntimeSettingsToGroupsWithReport(groups, scripts, engineDefaults, scenarioDraft, sourceIndex, targetIndexes).groups
 }

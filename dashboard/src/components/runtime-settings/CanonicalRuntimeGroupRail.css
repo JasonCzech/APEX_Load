@@ -1,0 +1,97 @@
+/* Canonical runtime settings header, group search, provenance legend and group rail.
+   Shared by every surface that mounts CanonicalRuntimeGroupRail (the Author view and
+   the scenario/group override editor, which does not load ScriptEditor.css). */
+.runtime-canonical-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 12px;
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-secondary);
+}
+.runtime-canonical-header-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  flex: 1 1 320px;
+  min-width: 0;
+  font-size: 12px;
+}
+.runtime-canonical-group-search {
+  box-sizing: border-box;
+  flex: 0 1 280px;
+  min-width: 0;
+  min-height: 34px;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-input);
+  color: var(--text-primary);
+  font: inherit;
+}
+.runtime-canonical-group-search:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+.runtime-canonical-provenance-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  flex-basis: 100%;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.repository-status-pill.provenance-session_override,
+.repository-status-pill.provenance-group_override {
+  background: rgba(var(--warning-rgb), 0.14);
+  color: var(--warning-text);
+}
+.repository-status-pill.provenance-scenario_default {
+  background: rgba(var(--info-rgb), 0.14);
+  color: var(--info-text);
+}
+.repository-status-pill.provenance-script {
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+.runtime-canonical-groups-rail {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  flex-basis: 100%;
+}
+.runtime-canonical-group-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 5px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+}
+.runtime-canonical-group-pill:hover {
+  border-color: var(--accent-border);
+  color: var(--text-primary);
+}
+.runtime-canonical-group-pill:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+.runtime-canonical-group-pill.active {
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+  color: var(--text-primary);
+}
+.runtime-canonical-group-index {
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}

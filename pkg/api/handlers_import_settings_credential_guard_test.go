@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http/httptest"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -479,5 +480,313 @@ func TestImportSettingsListEditsBesideUnchangedImportedCredentialElements(t *tes
 				t.Fatalf("accepted: draft=%v errs=%v", draft != nil, errs)
 			}
 		})
+	}
+}
+
+// Credential material already in an imported value is script-sourced: an edit
+// that keeps it (a new proxy port, a new base URL host) is accepted, while an
+// edit that adds or changes the material is refused.
+func TestImportSettingsEditKeepsImportedCredentialMaterial(t *testing.T) {
+	for _, tc := range []struct {
+		name, path, imported, kept, changed, added string
+	}{
+		{
+			name: "proxy userinfo", path: "config.http.proxy.url",
+			imported: "http://svc:pw@proxy.example.test:8080",
+			kept:     "http://svc:pw@proxy.example.test:9090",
+			changed:  "http://svc:Hunter2@proxy.example.test:9090",
+		},
+		{
+			name: "base url sig", path: "config.base_url",
+			imported: "https://acct.blob.example.test/c?sv=2020&sig=abc123",
+			kept:     "https://other.blob.example.test/c?sv=2020&sig=abc123",
+			changed:  "https://other.blob.example.test/c?sv=2020&sig=zzz999",
+			added:    "https://user:Hunter2@other.blob.example.test/c?sv=2020&sig=abc123",
+		},
+		// A credential-named query parameter the masker projects as
+		// name=[REDACTED] even when emptied: the kept edit must still pass.
+		{
+			name: "base url access_token query", path: "config.base_url",
+			imported: "https://a.example.test/c?access_token=abcdef123456",
+			kept:     "https://b.example.test/c?access_token=abcdef123456",
+			changed:  "https://b.example.test/c?access_token=zzzzzz999999",
+		},
+		{
+			name: "base url api_key query and path", path: "config.base_url",
+			imported: "https://a.example.test/c?api_key=abcdef123456&x=1",
+			kept:     "https://a.example.test/v2/c?api_key=abcdef123456&x=1",
+			changed:  "https://a.example.test/v2/c?api_key=zzzzzz999999&x=1",
+		},
+		{
+			name: "base url password query", path: "config.base_url",
+			imported: "https://a.example.test/c?password=abcdef123456",
+			kept:     "https://b.example.test/c?password=abcdef123456",
+			changed:  "https://b.example.test/c?password=zzzzzz999999",
+		},
+		{
+			name: "proxy url token query", path: "config.http.proxy.url",
+			imported: "http://proxy.example.test:8080/?token=abcdef123456",
+			kept:     "http://proxy.example.test:9090/?token=abcdef123456",
+			changed:  "http://proxy.example.test:9090/?token=zzzzzz999999",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			source := settingsTestScript()
+			if tc.path == "config.base_url" {
+				source.Config.BaseURL = tc.imported
+			} else {
+				source.Config.HTTP.Proxy.URL = tc.imported
+			}
+			encode := func(v string) string { raw, _ := json.Marshal(v); return string(raw) }
+			if draft, errs := applyImportSettings(cloneScriptDefinition(source), "all", []ImportSettingsChange{settingChange(tc.path, encode(tc.kept))}); len(errs) != 0 || draft == nil {
+				t.Fatalf("edit keeping imported credential material refused: %v", errs)
+			}
+			for _, refused := range []string{tc.changed, tc.added} {
+				if refused == "" {
+					continue
+				}
+				if draft, errs := applyImportSettings(cloneScriptDefinition(source), "all", []ImportSettingsChange{settingChange(tc.path, encode(refused))}); draft != nil || errs[tc.path] != "Use Credentials for sensitive values" {
+					t.Fatalf("new credential material %q accepted: errs=%v", refused, errs)
+				}
+			}
+		})
+	}
+	// A typed userinfo on a URL the import did not carry stays refused.
+	if draft, errs := applyImportSettings(settingsTestScript(), "all", []ImportSettingsChange{settingChange("config.http.proxy.url", `"http://svc:pw@proxy.example.test:9090"`)}); draft != nil || errs["config.http.proxy.url"] == "" {
+		t.Fatalf("new typed proxy userinfo accepted: errs=%v", errs)
+	}
+}
+
+// A credential-like part the masking projection hides but the detector does
+// not count (a value shorter than the detector minimum, a percent-encoded
+// name, a quoted value, a value with a space, empty-password or reference
+// userinfo) is script-sourced while it stays as imported: a host or port edit
+// passes. Changing that part, or adding one, is still refused, and so is
+// sending it back once an apply removed it.
+func TestImportSettingsEditKeepsMaskerOnlyImportedMaterial(t *testing.T) {
+	encode := func(v string) string { raw, _ := json.Marshal(v); return string(raw) }
+	for _, tc := range []struct {
+		name, path, imported, kept, changed, stripped string
+	}{
+		{"short token", "config.base_url", "https://a.example.test/c?token=ab", "https://b.example.test/c?token=ab", "https://b.example.test/c?token=cd", "https://a.example.test/c"},
+		{"short token fragment", "config.base_url", "https://a.example.test/c#token=ab", "https://b.example.test/c#token=ab", "https://b.example.test/c#token=zz", "https://a.example.test/c"},
+		{"encoded name", "config.base_url", "https://a.example.test/c?access%5Ftoken=abcdef123456", "https://b.example.test/c?access%5Ftoken=abcdef123456", "https://b.example.test/c?access%5Ftoken=zzzzzz999999", "https://a.example.test/c"},
+		{"quoted value", "config.base_url", `https://a.example.test/c?token="abcdef123456"`, `https://b.example.test/c?token="abcdef123456"`, `https://b.example.test/c?token="zzzzzz999999"`, "https://a.example.test/c"},
+		{"value with a space", "config.base_url", "https://a.example.test/c?access_token=abc def", "https://b.example.test/c?access_token=abc def", "https://b.example.test/c?access_token=abc xyz", "https://a.example.test/c"},
+		{"proxy short token", "config.http.proxy.url", "http://proxy.example.test:8080/?token=ab", "http://proxy.example.test:9090/?token=ab", "http://proxy.example.test:9090/?token=cd", "http://proxy.example.test:8080/"},
+		{"proxy empty password", "config.http.proxy.url", "http://svc:@proxy.example.test:8080", "http://svc:@proxy.example.test:9090", "http://other:@proxy.example.test:9090", "http://proxy.example.test:8080"},
+		{"base url empty password", "config.base_url", "https://svc:@a.example.test/c", "https://svc:@b.example.test/c", "https://svc:x@b.example.test/c", "https://a.example.test/c"},
+		{"proxy reference password", "config.http.proxy.url", "http://svc:{{secret.X}}@proxy.example.test:8080", "http://svc:{{secret.X}}@proxy.example.test:9090", "http://svc:pw@proxy.example.test:9090", "http://proxy.example.test:8080"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			source := settingsTestScript()
+			if tc.path == "config.base_url" {
+				source.Config.BaseURL = tc.imported
+			} else {
+				source.Config.HTTP.Proxy.URL = tc.imported
+			}
+			if draft, errs := applyImportSettings(cloneScriptDefinition(source), "all", []ImportSettingsChange{settingChange(tc.path, encode(tc.kept))}); len(errs) != 0 || draft == nil {
+				t.Fatalf("edit keeping imported material %q refused: %v", tc.kept, errs)
+			}
+			if draft, errs := applyImportSettings(cloneScriptDefinition(source), "all", []ImportSettingsChange{settingChange(tc.path, encode(tc.changed))}); draft != nil || errs[tc.path] != "Use Credentials for sensitive values" {
+				t.Fatalf("changed material %q accepted: errs=%v", tc.changed, errs)
+			}
+			// The same shape typed over a value without it is new material.
+			// Reference-only userinfo is not material: typed fresh it passes
+			// (TestImportSettingsAcceptsNewReferenceUserinfoOnMaskedURLs).
+			reference := strings.Contains(tc.kept, "{{secret.")
+			if !reference {
+				if draft, errs := applyImportSettings(settingsTestScript(), "all", []ImportSettingsChange{settingChange(tc.path, encode(tc.kept))}); draft != nil || errs[tc.path] != "Use Credentials for sensitive values" {
+					t.Fatalf("new material %q accepted: errs=%v", tc.kept, errs)
+				}
+			}
+			// Once an apply removed the part, resending the imported value is
+			// refused (importRefusesRestoring hides that Reset to imported).
+			removed, errs := applyImportSettings(cloneScriptDefinition(source), "all", []ImportSettingsChange{settingChange(tc.path, encode(tc.stripped))})
+			if removed == nil {
+				t.Fatalf("removing the material refused: %v", errs)
+			}
+			draft, errs := applyImportSettings(cloneScriptDefinition(removed), "all", []ImportSettingsChange{settingChange(tc.path, encode(tc.imported))})
+			if reference {
+				if draft == nil || len(errs) != 0 {
+					t.Fatalf("resent reference userinfo refused after removal: errs=%v", errs)
+				}
+			} else if draft != nil || errs[tc.path] != "Use Credentials for sensitive values" {
+				t.Fatalf("resent imported material accepted after removal: errs=%v", errs)
+			}
+		})
+	}
+}
+
+// A newly typed URL whose userinfo password is an exact portable credential
+// reference (raw or percent-encoded) is not credential material, so the URL
+// settings the masker hides userinfo on accept it as config.appium.server_url
+// does; a literal user name beside the reference is allowed. A literal
+// password, an empty one on a masked URL setting, a lone literal user part, or a reference userinfo beside
+// other new masked material is still refused.
+func TestImportSettingsAcceptsNewReferenceUserinfoOnMaskedURLs(t *testing.T) {
+	encode := func(v string) string { raw, _ := json.Marshal(v); return string(raw) }
+	paths := []string{"config.base_url", "config.http.proxy.url", "config.browser.proxy.server", "config.appium.server_url"}
+	for _, path := range paths {
+		for _, value := range []string{
+			"https://user:{{secret.P}}@h.example.test/x",
+			"https://user:%7B%7Bsecret.P%7D%7D@h.example.test/x",
+			"https://{{secret.U}}:{{secret.P}}@h.example.test:8443/x?page=2",
+			"https://{{secret.TOKEN}}@h.example.test/x",
+			"http://svc:{{secret.PROXY_PW}}@proxy.example.test:8080",
+		} {
+			t.Run("accepts "+path+" "+value, func(t *testing.T) {
+				draft, errs := applyImportSettings(settingsTestScript(), "all", []ImportSettingsChange{settingChange(path, encode(value))})
+				if draft == nil || len(errs) != 0 {
+					t.Fatalf("reference userinfo refused: %v", errs)
+				}
+				if got := importSettingValue(mustImportSettingTree(t, draft), strings.Split(path, ".")); got != value {
+					t.Fatalf("stored %v, want %q", got, value)
+				}
+			})
+		}
+		for _, value := range []string{
+			"https://user:Hunter2Plain@h.example.test/x",
+			"https://svc:@h.example.test/x",
+			"https://ghp_Hunter2Plain@h.example.test/x",
+			"https://{{secret.U}}:Hunter2Plain@h.example.test/x",
+			"https://user:{{Hunter2Plain}}@h.example.test/x",
+		} {
+			if value == "https://svc:@h.example.test/x" && path == "config.appium.server_url" {
+				continue // only the URL masker counts an empty password
+			}
+			t.Run("refuses "+path+" "+value, func(t *testing.T) {
+				if draft, errs := applyImportSettings(settingsTestScript(), "all", []ImportSettingsChange{settingChange(path, encode(value))}); draft != nil || errs[path] != "Use Credentials for sensitive values" {
+					t.Fatalf("literal userinfo accepted: draft=%v errs=%v", draft != nil, errs)
+				}
+			})
+		}
+	}
+	// Taking out the reference userinfo does not excuse other masked material.
+	for _, path := range paths[:3] {
+		value := "https://user:{{secret.P}}@h.example.test/x?token=ab"
+		if draft, errs := applyImportSettings(settingsTestScript(), "all", []ImportSettingsChange{settingChange(path, encode(value))}); draft != nil || errs[path] != "Use Credentials for sensitive values" {
+			t.Fatalf("%s: reference userinfo beside a new short token accepted: errs=%v", path, errs)
+		}
+	}
+}
+
+func mustImportSettingTree(t *testing.T, script *dsl.Script) map[string]any {
+	t.Helper()
+	raw, err := json.Marshal(script)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var tree map[string]any
+	if err := json.Unmarshal(raw, &tree); err != nil {
+		t.Fatal(err)
+	}
+	return tree
+}
+
+func TestImportSettingMaskedSpans(t *testing.T) {
+	for _, tc := range []struct {
+		text, projected string
+		want            []string
+		ok              bool
+	}{
+		{"a?token=ab&x=1", "a?token=[REDACTED]&x=1", []string{"ab"}, true},
+		{"http://svc:@h", "http://[REDACTED]@h", []string{"svc:"}, true},
+		{"a?t=1&t=2", "a?t=[REDACTED]&t=[REDACTED]", []string{"1", "2"}, true},
+		{"plain", "plain", nil, true},
+		{"plain", "other", nil, false},
+		{"a?t=[REDACTED]", "a?t=[REDACTED]", nil, false},
+		{"a?t=1", "b?t=[REDACTED]", nil, false},
+	} {
+		got, ok := importSettingMaskedSpans(tc.text, tc.projected)
+		if ok != tc.ok || !reflect.DeepEqual(got, tc.want) {
+			t.Errorf("importSettingMaskedSpans(%q, %q) = %q, %v; want %q, %v", tc.text, tc.projected, got, ok, tc.want, tc.ok)
+		}
+	}
+}
+
+// An imported value that itself carries a literal mask placeholder (a
+// pre-sanitized HAR or LR export) is script-sourced and stays editable: a host
+// or port edit that adds no placeholder is accepted. Adding a placeholder, or
+// sending one over a leaf the safe projection withholds, is still refused.
+func TestImportSettingsEditKeepsImportedLiteralMaskPlaceholder(t *testing.T) {
+	encode := func(v string) string { raw, _ := json.Marshal(v); return string(raw) }
+	for _, tc := range []struct{ name, path, imported, kept, added string }{
+		{"base url", "config.base_url", "https://h.example.test/x?note=[REDACTED]", "https://h2.example.test/x?note=[REDACTED]", "https://h2.example.test/x?note=[REDACTED]&k=[REDACTED]"},
+		{"proxy url", "config.http.proxy.url", "http://proxy.example.test:8080/[REDACTED]", "http://proxy.example.test:9090/[REDACTED]", "http://proxy.example.test:9090/[REDACTED]/[REDACTED]"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			source := settingsTestScript()
+			if tc.path == "config.base_url" {
+				source.Config.BaseURL = tc.imported
+			} else {
+				source.Config.HTTP.Proxy.URL = tc.imported
+			}
+			draft, errs := applyImportSettings(cloneScriptDefinition(source), "all", []ImportSettingsChange{settingChange(tc.path, encode(tc.kept))})
+			if len(errs) != 0 || draft == nil {
+				t.Fatalf("edit of an imported value with a literal placeholder refused: %v", errs)
+			}
+			if got := importSettingValue(func() map[string]any {
+				raw, _ := json.Marshal(draft)
+				var tree map[string]any
+				_ = json.Unmarshal(raw, &tree)
+				return tree
+			}(), strings.Split(tc.path, ".")); got != tc.kept {
+				t.Fatalf("saved %v, want %q", got, tc.kept)
+			}
+			if draft, errs := applyImportSettings(cloneScriptDefinition(source), "all", []ImportSettingsChange{settingChange(tc.path, encode(tc.added))}); draft != nil || errs[tc.path] == "" {
+				t.Fatalf("added mask placeholder accepted: errs=%v", errs)
+			}
+		})
+	}
+
+	// A placeholder sent over a leaf the safe projection withholds writes the
+	// mask over the hidden value, even when the imported value carried one.
+	path := []string{"config", "http", "proxy", "url"}
+	tree := map[string]any{"config": map[string]any{"http": map[string]any{"proxy": map[string]any{"url": "http://svc:hidden@proxy.example.test/[REDACTED]"}}}}
+	withheld := map[string]any{"config": map[string]any{"http": map[string]any{"proxy": map[string]any{"url": "http://svc:[REDACTED]@proxy.example.test/[REDACTED]"}}}}
+	visible := map[string]any{"config": map[string]any{"http": map[string]any{"proxy": map[string]any{"url": "http://svc:hidden@proxy.example.test/[REDACTED]"}}}}
+	prior := "http://svc:hidden@proxy.example.test/[REDACTED]"
+	next := "http://svc:[REDACTED]@proxy.example.test/[REDACTED]"
+	if !importSettingOverwritesProtectedValue(next, prior, path, tree, withheld) {
+		t.Fatal("mask placeholder over a withheld leaf accepted")
+	}
+	if importSettingOverwritesProtectedValue("http://svc:hidden@proxy2.example.test/[REDACTED]", prior, path, tree, visible) {
+		t.Fatal("edit keeping the imported literal placeholder refused")
+	}
+	if !importSettingOverwritesProtectedValue(next, prior, path, tree, visible) {
+		t.Fatal("edit adding a mask placeholder accepted")
+	}
+}
+
+// Server side of importRefusesRestoring's masked-URL rule: a kept detected
+// fragment does not excuse a dropped masker-only part beside it. Each case
+// resends the imported value over the draft value; the UI hides Reset to
+// imported exactly when this refuses.
+func TestImportSettingsResendMaskedURLNeedsEveryUnaccountedPart(t *testing.T) {
+	encode := func(v string) string { raw, _ := json.Marshal(v); return string(raw) }
+	for _, tc := range []struct {
+		path, imported, draft string
+		refused               bool
+	}{
+		{"config.base_url", "https://user:pass1234@a.example.test/c?token=ab", "https://user:pass1234@a.example.test/c", true},
+		{"config.base_url", "https://user:pass1234@a.example.test/c?token=ab", "https://other:pass1234@b.example.test/c?token=ab", true},
+		{"config.base_url", "https://user:pass1234@a.example.test/c?token=ab", "https://user:pass1234@b.example.test/c?token=ab", false},
+		{"config.http.proxy.url", "https://user:pass1234@a.example.test/c?token=ab", "https://user:pass1234@a.example.test/c", true},
+		{"config.base_url", "https://acct.blob.example.test/c?sv=2020&sig=abc123", "https://other.blob.example.test/c?sv=2020&sig=abc123", false},
+		{"config.http.proxy.url", "http://svc:pw12@proxy.example.test:8080", "http://other:pw12@proxy.example.test:9090", false},
+		{"config.base_url", "https://svc:%7B%7Bsecret.X%7D%7D@a.example.test/c", "https://a.example.test/c", false},
+		{"config.http.proxy.url", "https://svc:{{secret.X}}@a.example.test/c?token=ab", "https://a.example.test/c", true},
+	} {
+		source := settingsTestScript()
+		if tc.path == "config.base_url" {
+			source.Config.BaseURL = tc.draft
+		} else {
+			source.Config.HTTP.Proxy.URL = tc.draft
+		}
+		draft, errs := applyImportSettings(source, "all", []ImportSettingsChange{settingChange(tc.path, encode(tc.imported))})
+		if refused := draft == nil || len(errs) != 0; refused != tc.refused {
+			t.Errorf("%s: resend %q over %q refused=%v, want %v (%v)", tc.path, tc.imported, tc.draft, refused, tc.refused, errs)
+		}
 	}
 }

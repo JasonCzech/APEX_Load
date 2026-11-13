@@ -7,8 +7,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import CreateTestRuntimeOverrides from './CreateTestRuntimeOverrides'
 import RuntimeSettingsGroupEditor, { type RuntimeEditorGroup } from './RuntimeSettingsGroupEditor'
 import { type ScenarioRuntimeSettingsDraft } from '../types'
-import { editReplacementSection } from './runtimeSettingsApply'
+import { editReplacementSection, materializeRuntimeSettingsForApply } from './runtimeSettingsApply'
 import { overrideFromRuntimeDraft, runtimeDraftFromOverride } from './runtimeSettingsModel'
+import { buildRuntimeSettingsPayload } from './scenarioPayloadUtils'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -157,6 +158,42 @@ describe('RuntimeSettingsGroupEditor', () => {
     expect(valueCells).toContain('Stop on error') // error_handling engine-default descriptive label
   })
 
+  it('attributes a v1 group row\'s whole {} error_handling and untyped pacing to the group, not the script', () => {
+    const groups: RuntimeEditorGroup[] = [{
+      name: 'Checkout',
+      scriptId: 's1',
+      protocol: 'http',
+      scriptConfig: {
+        base_url: 'https://example.test',
+        pacing: { type: 'fixed_delay', delay_ms: 500 },
+        error_handling: { continue_on_error: true },
+      },
+    }]
+    const v1Row = { pacing: { delay_ms: 0 }, error_handling: {} } as unknown as ScenarioRuntimeSettingsDraft
+    act(() => {
+      root.render(
+        <RuntimeSettingsGroupEditor
+          groups={groups}
+          focusedIndex={0}
+          onFocusChange={() => {}}
+          overrides={[v1Row]}
+          onChange={() => {}}
+          onApplyToGroups={() => {}}
+        />,
+      )
+    })
+    const row = (label: string) => {
+      const tr = Array.from(container.querySelectorAll('.runtime-override-row')).find(candidate => (candidate.querySelector('td')?.textContent || '').trim() === label)
+      if (!tr) throw new Error(`summary row not found: ${label}`)
+      const cells = Array.from(tr.querySelectorAll('td')).map(td => (td.textContent || '').trim())
+      return { value: cells[1], source: cells[2] }
+    }
+    // Go v1 applies both sections whole: no pacing, and ContinueOnError=false.
+    expect(row('Pacing')).toEqual({ value: 'None', source: 'Group override' })
+    expect(row('Error handling')).toEqual({ value: 'Stop on error', source: 'Group override' })
+    expect(container.textContent || '').not.toContain('Fixed delay · 0.5 seconds')
+  })
+
   it('shows HTTP Transport + Web/HTTP tabs for http and browser groups, hidden for other protocols', () => {
     const groups: RuntimeEditorGroup[] = [
       { name: 'Api', scriptId: 's1', protocol: 'http' },
@@ -172,7 +209,7 @@ describe('RuntimeSettingsGroupEditor', () => {
 
     // Universal tabs always present.
     render(0) // http
-    expect(tabLabels()).toEqual(['Summary', 'Think Time', 'Iteration Pacing', 'Run Logic', 'Error Handling', 'HTTP Transport', 'Browser Emulation', 'Web/HTTP'])
+    expect(tabLabels()).toEqual(['Summary', 'Target & identity', 'Think Time', 'Iteration Pacing', 'Run Logic', 'Error Handling', 'HTTP Transport', 'Browser Emulation', 'Web/HTTP'])
 
     render(1) // browser — HTTP Transport (with browser emulation) + Web/HTTP still show
     expect(tabLabels()).toContain('HTTP Transport')
@@ -181,7 +218,7 @@ describe('RuntimeSettingsGroupEditor', () => {
     render(2) // grpc — protocol-specific tabs hidden
     expect(tabLabels()).not.toContain('HTTP Transport')
     expect(tabLabels()).not.toContain('Web/HTTP')
-    expect(tabLabels()).toEqual(['Summary', 'Think Time', 'Iteration Pacing', 'Run Logic', 'Error Handling'])
+    expect(tabLabels()).toEqual(['Summary', 'Target & identity', 'Think Time', 'Iteration Pacing', 'Run Logic', 'Error Handling'])
   })
 
   it('renders the browser device editor under HTTP Transport → Browser emulation for a browser group', () => {
@@ -328,6 +365,35 @@ describe('RuntimeSettingsGroupEditor', () => {
     expect(onApply).toHaveBeenCalledWith(0, [1])
   })
 
+  it('reports a target the apply left unchanged for missing SOAP credentials', () => {
+    const onApply = vi.fn(() => ({ missingSOAPCredentialTargets: [1] }))
+    act(() => {
+      root.render(
+        <RuntimeSettingsGroupEditor
+          groups={GROUPS}
+          focusedIndex={0}
+          onFocusChange={() => {}}
+          overrides={[GROUP0_OVERRIDE, undefined]}
+          onChange={() => {}}
+          onApplyToGroups={onApply}
+        />,
+      )
+    })
+    const notice = () => container.querySelector('[data-testid="runtime-apply-notice"]')
+    const applyTo = () => {
+      act(() => findButton('Apply to groups…')!.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+      const targetCheckbox = container.querySelector('.runtime-apply-target input[type="checkbox"]') as HTMLInputElement
+      act(() => targetCheckbox.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+      act(() => findButton('Apply')!.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+    }
+    applyTo()
+    expect(onApply).toHaveBeenCalledWith(0, [1])
+    expect(notice()?.textContent).toContain('no SOAP WS-Security credentials of its own')
+    onApply.mockReturnValue({ missingSOAPCredentialTargets: [] })
+    applyTo()
+    expect(notice()).toBeNull()
+  })
+
   it('notifies on focus-group change', () => {
     const onFocus = vi.fn()
     act(() => {
@@ -375,7 +441,7 @@ describe('RuntimeSettingsGroupEditor', () => {
       Array.from(s.options).some(o => o.value === 'exponential'),
     )
     expect(backoff).toBeTruthy()
-    expect(Array.from(backoff?.options || []).map(option => option.value)).toEqual(['', 'fixed', 'exponential'])
+    expect(Array.from(backoff?.options || []).map(option => option.value)).toEqual(['', 'fixed', 'exponential', 'retry_after'])
     act(() => setSelectValue(backoff!, 'fixed'))
     expect(onChange).toHaveBeenCalledWith(0, expect.objectContaining({ retry_backoff: 'fixed' }))
   })
@@ -426,7 +492,7 @@ describe('RuntimeSettingsGroupEditor', () => {
     expect(onChange).toHaveBeenCalledWith(0, expect.objectContaining({ web_runtime: expect.objectContaining({ source_ips: ['10.0.0.1', '10.0.0.2'] }) }))
   })
 
-  it('promotes the legacy log level into the log section on edit (Error Handling tab)', () => {
+  it('converts a legacy log level row to a partial row listing log.level on edit (Error Handling tab)', () => {
     const onChange = vi.fn()
     act(() => {
       root.render(
@@ -449,7 +515,9 @@ describe('RuntimeSettingsGroupEditor', () => {
     act(() => setSelectValue(logSelect, 'standard'))
     const last = onChange.mock.calls[onChange.mock.calls.length - 1][1]
     expect(last.log).toEqual({ level: 'standard' })
-    expect(last.log_level).toBe('') // legacy cleared so the section is authoritative
+    expect(last.override_fields).toEqual(['log.level'])
+    // The row is sent canonically: only log.level, no compact alias beside it.
+    expect(buildRuntimeSettingsPayload(last)).toEqual({ log: { level: 'standard' }, override_fields: ['log.level'] })
   })
 
   it('Summary Clear removes a section-backed iterations override (not just the legacy field)', () => {
@@ -482,7 +550,7 @@ describe('RuntimeSettingsGroupEditor', () => {
     expect(last.pacing).toBeTruthy() // unrelated override preserved
   })
 
-  it('Clear Iterations materializes the inherited value when run_logic keeps siblings', () => {
+  it('Clear Iterations returns only iterations to inherited and keeps run_logic siblings overridden', () => {
     const onChange = vi.fn()
     act(() => {
       root.render(
@@ -501,10 +569,16 @@ describe('RuntimeSettingsGroupEditor', () => {
     act(() => clear.dispatchEvent(new MouseEvent('click', { bubbles: true })))
     const last = onChange.mock.calls[onChange.mock.calls.length - 1][1]
     expect(last.iterations).toBeUndefined()
-    expect(last.run_logic).toEqual({ iterations: 7, workload_model: 'open' })
+    // The v1 run_logic section is split into its other fields, so they keep
+    // their whole-section meaning while iterations inherit the scenario's 7.
+    expect(last.run_logic).toEqual({ workload_model: 'open' })
+    expect(last.override_fields).toContain('run_logic.workload_model')
+    expect(last.override_fields).toContain('run_logic.global_iterations')
+    expect(last.override_fields).not.toContain('run_logic')
+    expect(last.override_fields).not.toContain('run_logic.iterations')
   })
 
-  it('Clear Auto-transactions materializes the inherited value when run_logic keeps siblings', () => {
+  it('Clear Auto-transactions returns only auto-transactions to inherited', () => {
     const onChange = vi.fn()
     act(() => {
       root.render(
@@ -523,10 +597,12 @@ describe('RuntimeSettingsGroupEditor', () => {
     act(() => clear.dispatchEvent(new MouseEvent('click', { bubbles: true })))
     const last = onChange.mock.calls[onChange.mock.calls.length - 1][1]
     expect(last.auto_transactions).toBe('')
-    expect(last.run_logic).toEqual({ auto_transactions: 'per_action', workload_model: 'open' })
+    expect(last.run_logic).toEqual({ workload_model: 'open' })
+    expect(last.override_fields).toContain('run_logic.workload_model')
+    expect(last.override_fields).not.toContain('run_logic.auto_transactions')
   })
 
-  it('Clear Log level materializes the inherited value when log keeps siblings', () => {
+  it('Clear Log level returns only the level to inherited', () => {
     const onChange = vi.fn()
     act(() => {
       root.render(
@@ -545,7 +621,9 @@ describe('RuntimeSettingsGroupEditor', () => {
     act(() => clear.dispatchEvent(new MouseEvent('click', { bubbles: true })))
     const last = onChange.mock.calls[onChange.mock.calls.length - 1][1]
     expect(last.log_level).toBe('')
-    expect(last.log).toEqual({ level: 'standard', on_error_only: true })
+    expect(last.log).toEqual({ on_error_only: true })
+    expect(last.override_fields).toContain('log.on_error_only')
+    expect(last.override_fields).not.toContain('log.level')
   })
 
   it('editing the think-time distribution on an inheriting group keeps the inherited mean (not 0)', () => {
@@ -570,12 +648,13 @@ describe('RuntimeSettingsGroupEditor', () => {
     expect(distSelect).toBeTruthy()
     act(() => setSelectValue(distSelect, 'gaussian'))
     const last = onChange.mock.calls[onChange.mock.calls.length - 1][1]
-    expect(last.think_time.type).toBe('gaussian')
-    // Must carry the inherited mean rather than silently forcing it to 0.
-    expect(last.think_time.mean_ms).toBe(800)
+    // Only the distribution is overridden; the mean keeps inheriting 800 rather
+    // than being pinned (or forced to 0).
+    expect(last.think_time).toEqual({ type: 'gaussian' })
+    expect(last.override_fields).toEqual(['think_time.type'])
   })
 
-  it('folds the legacy iterations into the run_logic section when editing workload model (Run Logic tab)', () => {
+  it('keeps a legacy iterations override listed when editing workload model (Run Logic tab)', () => {
     const onChange = vi.fn()
     act(() => {
       root.render(
@@ -594,13 +673,18 @@ describe('RuntimeSettingsGroupEditor', () => {
       Array.from(s.options).some(o => o.value === 'closed') && Array.from(s.options).some(o => o.value === 'open'),
     ) as HTMLSelectElement
     expect(workloadSelect).toBeTruthy()
-    act(() => setSelectValue(workloadSelect, 'open'))
+    act(() => setSelectValue(workloadSelect, 'closed'))
     const last = onChange.mock.calls[onChange.mock.calls.length - 1][1]
-    expect(last.run_logic).toEqual(expect.objectContaining({ iterations: 5, workload_model: 'open' }))
-    expect(last.iterations).toBeUndefined() // legacy folded into the section
+    expect(last.run_logic).toEqual({ iterations: 5, workload_model: 'closed' })
+    expect(last.override_fields).toEqual(['run_logic.iterations', 'run_logic.workload_model'])
+    // The legacy alias is folded into the section on the wire.
+    expect(buildRuntimeSettingsPayload(last)).toEqual({
+      run_logic: { iterations: 5, workload_model: 'closed' },
+      override_fields: ['run_logic.iterations', 'run_logic.workload_model'],
+    })
   })
 
-  it('folds the legacy browser device into browser_config when editing an advanced field (HTTP Transport tab)', () => {
+  it('keeps a legacy browser device override listed when editing an advanced field (HTTP Transport tab)', () => {
     const onChange = vi.fn()
     act(() => {
       root.render(
@@ -622,8 +706,13 @@ describe('RuntimeSettingsGroupEditor', () => {
     expect(engineSelect).toBeTruthy()
     act(() => setSelectValue(engineSelect, 'firefox'))
     const last = onChange.mock.calls[onChange.mock.calls.length - 1][1]
-    expect(last.browser_config).toEqual(expect.objectContaining({ device_profile: 'pixel_8', engine: 'firefox' }))
-    expect(last.browser).toBeUndefined() // legacy browser folded into browser_config
+    expect(last.browser_config).toEqual({ device_profile: 'pixel_8', engine: 'firefox' })
+    expect(last.override_fields).toEqual(['browser.device_profile', 'browser.engine'])
+    // The legacy compact block is folded into browser_config on the wire.
+    expect(buildRuntimeSettingsPayload(last)).toEqual({
+      browser_config: { device_profile: 'pixel_8', engine: 'firefox' },
+      override_fields: ['browser.device_profile', 'browser.engine'],
+    })
   })
 
   it('overrides the browser QUIC mode for a group and can return to inherit', () => {
@@ -648,9 +737,11 @@ describe('RuntimeSettingsGroupEditor', () => {
     expect(quicSelect).toBeTruthy()
     expect(quicSelect.value).toBe('')
     act(() => setSelectValue(quicSelect, 'off'))
-    expect(onChange.mock.calls[onChange.mock.calls.length - 1][1].browser_config).toEqual(expect.objectContaining({ quic: 'off' }))
+    expect(onChange.mock.calls[onChange.mock.calls.length - 1][1].browser_config).toEqual({ quic: 'off' })
+    expect(onChange.mock.calls[onChange.mock.calls.length - 1][1].override_fields).toEqual(['browser.quic'])
     act(() => setSelectValue(quicSelect, ''))
-    expect(onChange.mock.calls[onChange.mock.calls.length - 1][1].browser_config?.quic).toBeUndefined()
+    // Inherit resets the path; nothing else was overridden, so the group inherits everything.
+    expect(onChange.mock.calls[onChange.mock.calls.length - 1][1]).toBeUndefined()
   })
 
   it('warns when a group override pairs WebKit with QUIC off', () => {
@@ -939,7 +1030,7 @@ describe('RuntimeSettingsGroupEditor', () => {
     expect(secretPlaceholders.every(p => p === 'Inherit')).toBe(true)
   })
 
-  it('materializes the highest-precedence pacing replacement before changing its type', () => {
+  it('overrides only the pacing type when an inheriting group changes it', () => {
     const onChange = vi.fn()
     const groups: RuntimeEditorGroup[] = [{
       name: 'Checkout',
@@ -968,13 +1059,11 @@ describe('RuntimeSettingsGroupEditor', () => {
     const pacing = findLabeledControl<HTMLSelectElement>('Pacing', 'select')
     act(() => setSelectValue(pacing, 'random_delay'))
     const last = onChange.mock.calls[onChange.mock.calls.length - 1]?.[1]
-    expect(last.pacing).toEqual({
-      type: 'random_delay',
-      max_delay_ms: 70,
-    })
+    expect(last.pacing).toEqual({ type: 'random_delay' })
+    expect(last.override_fields).toEqual(['pacing.type'])
   })
 
-  it('materializes the highest-precedence think_time replacement and preserves false', () => {
+  it('normalizes a think-time distribution change and lists only the leaves it changes', () => {
     const onChange = vi.fn()
     const groups: RuntimeEditorGroup[] = [{
       name: 'Checkout',
@@ -1003,13 +1092,10 @@ describe('RuntimeSettingsGroupEditor', () => {
     const distribution = findLabeledControl<HTMLSelectElement>('Distribution', 'select')
     act(() => setSelectValue(distribution, 'uniform'))
     const last = onChange.mock.calls[onChange.mock.calls.length - 1]?.[1]
-    expect(last.think_time).toEqual({
-      type: 'uniform',
-      min_ms: 300,
-      max_ms: 600,
-      ignore: false,
-    })
-    expect(last.think_time).not.toHaveProperty('mean_ms')
+    // Uniform seeds its minimum from the effective mean; the inherited maximum
+    // and ignore=false keep inheriting from the scenario default.
+    expect(last.think_time).toEqual({ type: 'uniform', min_ms: 300 })
+    expect(last.override_fields).toEqual(['think_time.type', 'think_time.min_ms'])
 
     act(() => {
       root.render(
@@ -1030,15 +1116,11 @@ describe('RuntimeSettingsGroupEditor', () => {
     const minimum = findLabeledControl<HTMLInputElement>('Min (ms)', 'input')
     act(() => setInputValue(minimum, '350'))
     const edited = onChange.mock.calls[onChange.mock.calls.length - 1]?.[1]
-    expect(edited.think_time).toEqual({
-      type: 'uniform',
-      min_ms: 350,
-      max_ms: 600,
-      ignore: false,
-    })
+    expect(edited.think_time).toEqual({ type: 'uniform', min_ms: 350 })
+    expect(edited.override_fields).toEqual(['think_time.type', 'think_time.min_ms'])
   })
 
-  it('materializes the highest-precedence error_handling replacement and keeps false', () => {
+  it('lists one error_handling field and keeps continue_on_error inherited', () => {
     const onChange = vi.fn()
     const groups: RuntimeEditorGroup[] = [{
       name: 'Checkout',
@@ -1073,22 +1155,25 @@ describe('RuntimeSettingsGroupEditor', () => {
       )
     })
     clickTab('Error Handling')
-    const continueOnError = Array.from(container.querySelectorAll('label')).find(label =>
-      (label.textContent || '').includes('Continue on error'),
-    )?.querySelector('input[type="checkbox"]') as HTMLInputElement
-    expect(continueOnError.checked).toBe(false)
+    // The scenario default disables continue-on-error; the group inherits it.
+    const continueOnError = findLabeledControl<HTMLSelectElement>('Continue on error', 'select')
+    expect(continueOnError.value).toBe('')
+    expect(continueOnError.options[0].textContent).toBe('Inherit (Disabled)')
     act(() => setInputValue(findLabeledControl<HTMLInputElement>('Max retries', 'input'), '3'))
     const last = onChange.mock.calls[onChange.mock.calls.length - 1]?.[1]
-    expect(last).toEqual(expect.objectContaining({
-      continue_on_error: false,
-      max_retries: 3,
-      retry_delay_ms: 250,
-    }))
+    expect(last.max_retries).toBe(3)
+    expect(buildRuntimeSettingsPayload(last)).toEqual({
+      error_handling: { max_retries: 3 },
+      override_fields: ['error_handling.max_retries'],
+    })
+    expect(last.override_fields).toEqual(['error_handling.max_retries'])
+    // The scenario's continue_on_error=false and retry delay keep inheriting.
+    expect(last.continue_on_error).toBeUndefined()
+    expect(last.retry_delay_ms).toBeUndefined()
     expect(last.snapshot_on_error).toBeUndefined()
-    expect(last.retry_backoff).toBeUndefined()
   })
 
-  it('materializes the highest-precedence log replacement when toggling one option', () => {
+  it('lists only log.extended_options when toggling one logging option', () => {
     const onChange = vi.fn()
     const groups: RuntimeEditorGroup[] = [{
       name: 'Checkout',
@@ -1116,10 +1201,8 @@ describe('RuntimeSettingsGroupEditor', () => {
     )?.querySelector('input[type="checkbox"]') as HTMLInputElement
     act(() => advancedTrace.dispatchEvent(new MouseEvent('click', { bubbles: true })))
     const last = onChange.mock.calls[onChange.mock.calls.length - 1]?.[1]
-    expect(last.log).toEqual({
-      on_error_only: false,
-      extended_options: ['advanced_trace'],
-    })
+    expect(last.log).toEqual({ extended_options: ['advanced_trace'] })
+    expect(last.override_fields).toEqual(['log.extended_options'])
   })
 
   it('shows run-evidence redaction as off by default and writes an explicit true when enabled', () => {
@@ -1154,7 +1237,8 @@ describe('RuntimeSettingsGroupEditor', () => {
 
     act(() => checkbox.dispatchEvent(new MouseEvent('click', { bubbles: true })))
     const last = onChange.mock.calls[onChange.mock.calls.length - 1]?.[1]
-    expect(last.log).toEqual({ on_error_only: true, redact_run_evidence: true })
+    expect(last.log).toEqual({ redact_run_evidence: true })
+    expect(last.override_fields).toEqual(['log.redact_run_evidence'])
   })
 
   it('renders an inherited redact_run_evidence=false unchecked and can turn it back on', () => {
@@ -1180,10 +1264,11 @@ describe('RuntimeSettingsGroupEditor', () => {
 
     act(() => checkbox.dispatchEvent(new MouseEvent('click', { bubbles: true })))
     const last = onChange.mock.calls[onChange.mock.calls.length - 1]?.[1]
-    expect(last.log).toEqual({ level: 'standard', redact_run_evidence: true })
+    expect(last.log).toEqual({ redact_run_evidence: true })
+    expect(last.override_fields).toEqual(['log.redact_run_evidence'])
   })
 
-  it('materializes the highest-precedence run_logic replacement before editing one limit', () => {
+  it('lists only the run_logic limit an inheriting group edits', () => {
     const onChange = vi.fn()
     const groups: RuntimeEditorGroup[] = [{
       name: 'Checkout',
@@ -1222,11 +1307,8 @@ describe('RuntimeSettingsGroupEditor', () => {
     clickTab('Run Logic')
     act(() => setInputValue(findLabeledControl<HTMLInputElement>('Max transactions', 'input'), '500'))
     const last = onChange.mock.calls[onChange.mock.calls.length - 1]?.[1]
-    expect(last.run_logic).toEqual({
-      global_iterations: 200,
-      max_transactions: 500,
-      auto_transactions: 'none',
-    })
+    expect(last.run_logic).toEqual({ max_transactions: 500 })
+    expect(last.override_fields).toEqual(['run_logic.max_transactions'])
     expect(last.iterations).toBeUndefined()
   })
 
@@ -1249,22 +1331,30 @@ describe('RuntimeSettingsGroupEditor', () => {
     expect(Array.from(container.querySelectorAll('.http3-policy-issue')).map(issue => issue.textContent)).toEqual([expect.stringContaining('only https origins')])
     act(() => setInputValue(findLabeledControl<HTMLInputElement>('Handshake timeout (ms)', 'input'), '500'))
     const edited = onChange.mock.calls[onChange.mock.calls.length - 1]?.[1] as ScenarioRuntimeSettingsDraft
-    // The first edit materializes the inherited section, QUIC block included.
-    expect(edited.http).toEqual({ version: '3', quic: { broken_ttl_ms: 60000, handshake_timeout_ms: 500 } })
+    // Only the edited QUIC leaf is overridden; the version and the rest of the
+    // QUIC block keep inheriting from the script.
+    expect(edited.http).toEqual({ quic: { handshake_timeout_ms: 500 } })
+    expect(edited.override_fields).toEqual(['http.quic.handshake_timeout_ms'])
     render(edited)
     const handshake = findLabeledControl<HTMLInputElement>('Handshake timeout (ms)', 'input')
     expect(handshake.getAttribute('aria-invalid')).toBe('true')
-    // Clearing the last QUIC field removes the block.
+    // Clearing a QUIC field of a stored v1 section resets just that leaf: the
+    // section is split so its other fields keep their v1 meaning.
     render({ log_level: '', auto_transactions: '', http: { version: '3', quic: { handshake_timeout_ms: 2000 } } })
     act(() => setInputValue(findLabeledControl<HTMLInputElement>('Handshake timeout (ms)', 'input'), ''))
-    expect((onChange.mock.calls[onChange.mock.calls.length - 1]?.[1] as ScenarioRuntimeSettingsDraft).http).toEqual({ version: '3' })
+    const cleared = onChange.mock.calls[onChange.mock.calls.length - 1]?.[1] as ScenarioRuntimeSettingsDraft
+    expect(cleared.http).toEqual({ version: '3' })
+    expect(cleared.override_fields).toContain('http.version')
+    expect(cleared.override_fields).toContain('http.quic.broken_ttl_ms')
+    expect(cleared.override_fields).not.toContain('http.quic.handshake_timeout_ms')
+    expect(cleared.override_fields).not.toContain('http')
     // A custom proxy keeps requests on TCP, so the block is disabled with the reason.
     render({ log_level: '', auto_transactions: '', http: { version: 'auto+h3', proxy: { url: 'http://proxy.example:3128' } } })
     expect(container.querySelector<HTMLFieldSetElement>('fieldset.http-quic-settings')?.disabled).toBe(true)
     expect(container.querySelector('.http-quic-disabled')?.textContent).toContain('custom proxy')
   })
 
-  it('materializes only the highest-precedence HTTP replacement on the first edit', () => {
+  it('lists only the HTTP version on an inheriting group, leaving script TLS/proxy/auth inherited', () => {
     const onChange = vi.fn()
     const groups: RuntimeEditorGroup[] = [{
       name: 'Checkout',
@@ -1329,24 +1419,12 @@ describe('RuntimeSettingsGroupEditor', () => {
     expect(onChange.mock.calls[onChange.mock.calls.length - 1]?.[1].http.version).toBe('auto+h3')
     act(() => setSelectValue(version, '2'))
     const last = onChange.mock.calls[onChange.mock.calls.length - 1]?.[1]
-    expect(last.http).toEqual({
-      idle_timeout_ms: 400,
-      version: '2',
-      keep_alive: false,
-      tls: {
-        insecure_skip_verify: false,
-        ca_cert_file: 'scenario-ca.crt',
-      },
-      proxy: {
-        url: 'http://scenario-proxy',
-      },
-      auth: {
-        token: 'scenario-token',
-      },
-    })
+    // No inherited value (script, scenario or engine) is copied into the group.
+    expect(last.http).toEqual({ version: '2' })
+    expect(last.override_fields).toEqual(['http.version'])
   })
 
-  it('materializes only the highest-precedence browser_config replacement', () => {
+  it('lists only the browser field an inheriting group edits', () => {
     const onChange = vi.fn()
     const groups: RuntimeEditorGroup[] = [{
       name: 'Experience',
@@ -1398,17 +1476,13 @@ describe('RuntimeSettingsGroupEditor', () => {
     expect(reviewedJavaScript.checked).toBe(false)
     act(() => setInputValue(findLabeledControl<HTMLInputElement>('Slow-mo (ms)', 'input'), '55'))
     const last = onChange.mock.calls[onChange.mock.calls.length - 1]?.[1]
-    expect(last.browser_config).toEqual({
-      headless: false,
-      slow_mo_ms: 55,
-      viewport: { height: 900 },
-      review_policy: { allow_reviewed_javascript: false },
-    })
+    expect(last.browser_config).toEqual({ slow_mo_ms: 55 })
+    expect(last.override_fields).toEqual(['browser.slow_mo_ms'])
     expect(last.browser).toBeUndefined()
   })
 
   // Page timings and interaction evidence are the group's to choose: the
-  // first choice materializes the inherited section with the script's own.
+  // choice is one listed leaf; the script's own browser settings keep applying.
   it('turns on page timings and interaction evidence for a browser group', () => {
     const onChange = vi.fn()
     const groups: RuntimeEditorGroup[] = [{
@@ -1431,7 +1505,8 @@ describe('RuntimeSettingsGroupEditor', () => {
     expect(checkbox('Interaction evidence').checked).toBe(true)
     act(() => checkbox('Page timings and Web Vitals').click())
     const last = onChange.mock.calls[onChange.mock.calls.length - 1]?.[1]
-    expect(last.browser_config).toEqual({ engine: 'chromium', capture_interactions: true, capture_document_metrics: true })
+    expect(last.browser_config).toEqual({ capture_document_metrics: true })
+    expect(last.override_fields).toEqual(['browser.capture_document_metrics'])
   })
 
   it('does not resurrect inherited HTTP nested siblings inside an existing group section', () => {
@@ -1553,10 +1628,7 @@ describe('RuntimeSettingsGroupEditor', () => {
       .find(tab => (tab.textContent || '').startsWith('Session & Cache'))
     expect(sessionCacheTab).toBeTruthy()
     act(() => sessionCacheTab!.dispatchEvent(new MouseEvent('click', { bubbles: true })))
-    const cacheCheckbox = Array.from(container.querySelectorAll<HTMLInputElement>('input[type="checkbox"]'))
-      .find(cb => cb.closest('label')?.textContent?.includes('Simulate HTTP cache'))
-    expect(cacheCheckbox).toBeTruthy()
-    act(() => cacheCheckbox!.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+    act(() => setSelectValue(findLabeledControl<HTMLSelectElement>('HTTP cache override', 'select'), 'true'))
     const cacheWritten = onChange.mock.calls[onChange.mock.calls.length - 1]?.[1]
     expect(cacheWritten?.http).toMatchObject({ cache_enabled: true })
     expect(cacheWritten?.browser_emulation).toBeUndefined()
@@ -1595,6 +1667,261 @@ describe('RuntimeSettingsGroupEditor', () => {
     // own edits to them must survive rather than be silently discarded.
     expect(written?.browser_emulation?.language).toBe('de-DE')
     expect(written?.browser_emulation?.cache).toMatchObject({ simulate_cache: true })
+  })
+
+  describe('browser emulation identity over an inherited script section', () => {
+    const renderInherited = (browserEmulation: NonNullable<RuntimeEditorGroup['scriptConfig']>['browser_emulation']) => {
+      const onChange = vi.fn()
+      const group: RuntimeEditorGroup = {
+        name: 'Checkout',
+        scriptId: 's1',
+        protocol: 'http',
+        scriptConfig: { base_url: '', browser_emulation: browserEmulation },
+      }
+      act(() => {
+        root.render(
+          <RuntimeSettingsGroupEditor groups={[group]} focusedIndex={0} onFocusChange={() => {}} overrides={[undefined]} onChange={onChange} onApplyToGroups={() => {}} />,
+        )
+      })
+      clickTab('Browser Emulation')
+      const written = () => onChange.mock.calls[onChange.mock.calls.length - 1]?.[1] as ScenarioRuntimeSettingsDraft | undefined
+      const merged = () => materializeRuntimeSettingsForApply(undefined, group.scriptConfig, undefined, written())
+      return { written, merged }
+    }
+
+    it('switching to Custom browser writes empty browser type, version and platform instead of inheriting them', () => {
+      const { written, merged } = renderInherited({ mode: 'specific', browser_type: 'chrome', browser_version: '126', platform: 'windows' })
+      act(() => setSelectValue(container.querySelector<HTMLSelectElement>('select[aria-label="Browser emulation mode"]')!, 'custom'))
+      const draft = written()
+      expect(draft?.override_fields).toEqual(expect.arrayContaining([
+        'browser_emulation.mode',
+        'browser_emulation.browser_type',
+        'browser_emulation.browser_version',
+        'browser_emulation.platform',
+      ]))
+      expect(draft?.browser_emulation).toMatchObject({ mode: 'custom', browser_type: '', browser_version: '', platform: '' })
+      const effective = merged()?.browser_emulation
+      expect(effective?.mode).toBe('custom')
+      expect(effective?.browser_type || undefined).toBeUndefined()
+      expect(effective?.browser_version || undefined).toBeUndefined()
+      expect(effective?.platform || undefined).toBeUndefined()
+    })
+
+    it('switching to Specific browser writes an empty custom User-Agent instead of inheriting it', () => {
+      const { written, merged } = renderInherited({ mode: 'custom', custom_user_agent: 'MyAgent/1.0' })
+      act(() => setSelectValue(container.querySelector<HTMLSelectElement>('select[aria-label="Browser emulation mode"]')!, 'specific'))
+      const draft = written()
+      expect(draft?.override_fields).toEqual(expect.arrayContaining(['browser_emulation.mode', 'browser_emulation.custom_user_agent']))
+      expect(draft?.browser_emulation).toMatchObject({ mode: 'specific', custom_user_agent: '' })
+      expect(merged()?.browser_emulation?.custom_user_agent || undefined).toBeUndefined()
+    })
+
+    it('picking a browser writes empty version and platform instead of inheriting the previous browser\'s', () => {
+      const { written, merged } = renderInherited({ mode: 'specific', browser_type: 'chrome', browser_version: '126', platform: 'android' })
+      act(() => setSelectValue(container.querySelector<HTMLSelectElement>('select[aria-label="Browser type"]')!, 'safari'))
+      const draft = written()
+      expect(draft?.override_fields).toEqual(expect.arrayContaining([
+        'browser_emulation.browser_type',
+        'browser_emulation.browser_version',
+        'browser_emulation.platform',
+      ]))
+      expect(draft?.browser_emulation).toMatchObject({ mode: 'specific', browser_type: 'safari', browser_version: '', platform: '' })
+      const effective = merged()?.browser_emulation
+      expect(effective?.browser_type).toBe('safari')
+      expect(effective?.platform || undefined).toBeUndefined()
+      expect(effective?.browser_version || undefined).toBeUndefined()
+    })
+
+    // Re-renders with each written draft, so a sequence of edits builds on the last.
+    const renderStateful = (browserEmulation: NonNullable<RuntimeEditorGroup['scriptConfig']>['browser_emulation']) => {
+      const group: RuntimeEditorGroup = {
+        name: 'Checkout',
+        scriptId: 's1',
+        protocol: 'http',
+        scriptConfig: { base_url: '', browser_emulation: browserEmulation },
+      }
+      let current: ScenarioRuntimeSettingsDraft | undefined
+      const render = () => root.render(
+        <RuntimeSettingsGroupEditor groups={[group]} focusedIndex={0} onFocusChange={() => {}} overrides={[current]} onChange={(_index, next) => { current = next; render() }} onApplyToGroups={() => {}} />,
+      )
+      act(() => render())
+      clickTab('Browser Emulation')
+      const select = (label: string) => container.querySelector<HTMLSelectElement>(`select[aria-label="${label}"]`)!
+      return {
+        pick: (label: string, value: string) => act(() => setSelectValue(select(label), value)),
+        type: (label: string, value: string) => act(() => setInputValue(container.querySelector<HTMLInputElement>(`input[aria-label="${label}"]`)!, value)),
+        written: () => current,
+        merged: () => materializeRuntimeSettingsForApply(undefined, group.scriptConfig, undefined, current)?.browser_emulation,
+        // The merged identity after the script (a lower layer) changes its own browser emulation.
+        mergedOver: (browserEmulation: NonNullable<RuntimeEditorGroup['scriptConfig']>['browser_emulation']) =>
+          materializeRuntimeSettingsForApply(undefined, { base_url: '', browser_emulation: browserEmulation }, undefined, current)?.browser_emulation,
+      }
+    }
+
+    it('a Platform edit pins the inherited mode and browser with it, so a lower-layer browser change keeps the row valid', () => {
+      const ui = renderStateful({ mode: 'specific', browser_type: 'chrome', browser_version: '126', platform: 'android' })
+      ui.pick('Browser platform', 'windows')
+      expect(ui.written()?.override_fields).toEqual(expect.arrayContaining([
+        'browser_emulation.mode',
+        'browser_emulation.browser_type',
+        'browser_emulation.platform',
+      ]))
+      expect(ui.mergedOver({ mode: 'specific', browser_type: 'safari' })).toMatchObject({ mode: 'specific', browser_type: 'chrome', platform: 'windows' })
+      expect(ui.mergedOver({ mode: 'custom', custom_user_agent: 'Other/1' })).toMatchObject({ mode: 'specific', browser_type: 'chrome', platform: 'windows' })
+      expect(ui.mergedOver({ mode: 'custom', custom_user_agent: 'Other/1' })?.custom_user_agent || undefined).toBeUndefined()
+    })
+
+    it('a Version edit pins the inherited mode and browser with it', () => {
+      const ui = renderStateful({ mode: 'specific', browser_type: 'chrome', browser_version: '126' })
+      ui.pick('Browser version', '120')
+      expect(ui.written()?.override_fields).toEqual(expect.arrayContaining(['browser_emulation.mode', 'browser_emulation.browser_type', 'browser_emulation.browser_version']))
+      expect(ui.mergedOver({ mode: 'specific', browser_type: 'safari' })).toMatchObject({ browser_type: 'chrome', browser_version: '120' })
+    })
+
+    it('a Custom User-Agent edit pins the inherited custom mode with it', () => {
+      const ui = renderStateful({ mode: 'custom', custom_user_agent: 'Script/1' })
+      ui.type('Custom User-Agent', 'Group/2')
+      expect(ui.written()?.override_fields).toEqual(expect.arrayContaining(['browser_emulation.mode', 'browser_emulation.custom_user_agent']))
+      const over = ui.mergedOver({ mode: 'specific', browser_type: 'chrome', platform: 'android' })
+      expect(over).toMatchObject({ mode: 'custom', custom_user_agent: 'Group/2' })
+      expect(over?.browser_type || undefined).toBeUndefined()
+      expect(over?.platform || undefined).toBeUndefined()
+    })
+
+    it('shows an effective platform or version the browser does not offer as an invalid option', () => {
+      renderStateful({ mode: 'specific', browser_type: 'safari', browser_version: '999', platform: 'android' })
+      const platform = container.querySelector<HTMLSelectElement>('select[aria-label="Browser platform"]')!
+      expect(platform.value).toBe('android')
+      expect(platform.selectedOptions[0]?.textContent).toMatch(/not available/i)
+      const version = container.querySelector<HTMLSelectElement>('select[aria-label="Browser version"]')!
+      expect(version.value).toBe('999')
+      expect(version.selectedOptions[0]?.textContent).toMatch(/not available/i)
+    })
+
+    it('Mode > Custom after Specific inherits the custom User-Agent again rather than keeping an empty one', () => {
+      const ui = renderStateful({ mode: 'custom', custom_user_agent: 'Script/1' })
+      ui.pick('Browser emulation mode', 'specific')
+      ui.pick('Browser emulation mode', 'custom')
+      expect(ui.written()?.override_fields ?? []).not.toContain('browser_emulation.custom_user_agent')
+      expect(ui.merged()).toMatchObject({ mode: 'custom', custom_user_agent: 'Script/1' })
+    })
+
+    it('clearing the Custom User-Agent inherits the lower layer\'s User-Agent again', () => {
+      const ui = renderStateful({ mode: 'custom', custom_user_agent: 'Script/1' })
+      ui.type('Custom User-Agent', 'Group/2')
+      ui.type('Custom User-Agent', '')
+      expect(ui.written()?.override_fields ?? []).not.toContain('browser_emulation.custom_user_agent')
+      expect(ui.merged()).toMatchObject({ mode: 'custom', custom_user_agent: 'Script/1' })
+    })
+
+    it('Browser default writes an empty platform when this group overrides the browser', () => {
+      const ui = renderStateful({ mode: 'specific', browser_type: 'chrome', browser_version: '126', platform: 'android' })
+      ui.pick('Browser type', 'safari')
+      ui.pick('Browser platform', 'macos')
+      ui.pick('Browser platform', '')
+      expect(ui.written()?.override_fields).toContain('browser_emulation.platform')
+      expect(ui.written()?.browser_emulation?.platform).toBe('')
+      expect(ui.merged()).toMatchObject({ browser_type: 'safari' })
+      expect(ui.merged()?.platform || undefined).toBeUndefined()
+    })
+
+    it('Latest writes an empty version when this group overrides the browser', () => {
+      const ui = renderStateful({ mode: 'specific', browser_type: 'chrome', browser_version: '126', platform: 'android' })
+      ui.pick('Browser type', 'safari')
+      ui.pick('Browser version', '17')
+      ui.pick('Browser version', '')
+      expect(ui.written()?.override_fields).toContain('browser_emulation.browser_version')
+      expect(ui.written()?.browser_emulation?.browser_version).toBe('')
+      expect(ui.merged()).toMatchObject({ browser_type: 'safari' })
+      expect(ui.merged()?.browser_version || undefined).toBeUndefined()
+    })
+
+    it('Latest and Browser default override an inherited version and platform while the browser itself is inherited', () => {
+      const ui = renderStateful({ mode: 'specific', browser_type: 'chrome', browser_version: '126', platform: 'android' })
+      ui.pick('Browser version', '')
+      expect(ui.written()?.override_fields).toContain('browser_emulation.browser_version')
+      expect(ui.written()?.browser_emulation?.browser_version).toBe('')
+      // The browser is pinned with the version, so a lower-layer browser change cannot pair
+      // this group's version and platform with another browser.
+      expect(ui.written()?.override_fields).toEqual(expect.arrayContaining(['browser_emulation.mode', 'browser_emulation.browser_type']))
+      expect(ui.merged()).toMatchObject({ browser_type: 'chrome' })
+      expect(ui.merged()?.browser_version || undefined).toBeUndefined()
+      ui.pick('Browser platform', '')
+      expect(ui.written()?.override_fields).toContain('browser_emulation.platform')
+      expect(ui.written()?.browser_emulation?.platform).toBe('')
+      expect(ui.merged()?.platform || undefined).toBeUndefined()
+      expect(container.querySelector<HTMLSelectElement>('select[aria-label="Browser version"]')!.value).toBe('')
+      expect(container.querySelector<HTMLSelectElement>('select[aria-label="Browser platform"]')!.value).toBe('')
+    })
+
+    it('Latest and Browser default inherit again when no lower layer sets them', () => {
+      const ui = renderStateful({ mode: 'specific', browser_type: 'chrome' })
+      ui.pick('Browser version', '120')
+      ui.pick('Browser version', '')
+      expect(ui.written()?.override_fields ?? []).not.toContain('browser_emulation.browser_version')
+      ui.pick('Browser platform', 'windows')
+      ui.pick('Browser platform', '')
+      expect(ui.written()).toBeUndefined()
+    })
+
+    it('Language > Engine default overrides an inherited language to empty', () => {
+      const ui = renderStateful({ mode: 'specific', browser_type: 'chrome', language: 'de-DE' })
+      ui.pick('Browser language', '')
+      expect(ui.written()?.override_fields).toEqual(['browser_emulation.language'])
+      expect(ui.written()?.browser_emulation?.language).toBe('')
+      expect(ui.merged()?.language || undefined).toBeUndefined()
+      expect(container.querySelector<HTMLSelectElement>('select[aria-label="Browser language"]')!.value).toBe('')
+    })
+
+    it('Language > Engine default inherits again when no lower layer sets a language', () => {
+      const ui = renderStateful({ mode: 'specific', browser_type: 'chrome' })
+      ui.pick('Browser language', 'fr-FR')
+      ui.pick('Browser language', '')
+      expect(ui.written()).toBeUndefined()
+    })
+
+    it('Mode > Inherit can be picked after Browser > Engine default and inherits the identity again', () => {
+      const ui = renderStateful({ mode: 'specific', browser_type: 'chrome', browser_version: '126', language: 'de-DE' })
+      ui.pick('Browser language', 'fr-FR')
+      ui.pick('Browser type', '')
+      const modeSelect = container.querySelector<HTMLSelectElement>('select[aria-label="Browser emulation mode"]')!
+      expect(modeSelect.value).not.toBe('')
+      expect(modeSelect.selectedOptions[0]?.textContent).toBe('None (engine default)')
+      ui.pick('Browser emulation mode', '')
+      const identityPaths = ['mode', 'browser_type', 'browser_version', 'platform', 'custom_user_agent'].map(f => `browser_emulation.${f}`)
+      expect((ui.written()?.override_fields ?? []).filter(path => identityPaths.includes(path))).toEqual([])
+      expect(ui.written()?.override_fields).toEqual(['browser_emulation.language'])
+      expect(ui.merged()).toMatchObject({ mode: 'specific', browser_type: 'chrome', browser_version: '126', language: 'fr-FR' })
+      expect(container.querySelector<HTMLSelectElement>('select[aria-label="Browser emulation mode"]')!.value).toBe('')
+    })
+
+    it('Engine default overrides the script browser to the engine default identity', () => {
+      const ui = renderStateful({ mode: 'specific', browser_type: 'chrome', browser_version: '126', platform: 'android', language: 'de-DE' })
+      ui.pick('Browser type', '')
+      expect(ui.written()?.override_fields).toEqual(expect.arrayContaining([
+        'browser_emulation.mode',
+        'browser_emulation.browser_type',
+        'browser_emulation.browser_version',
+        'browser_emulation.platform',
+        'browser_emulation.custom_user_agent',
+      ]))
+      const effective = ui.merged()
+      expect(effective?.mode || undefined).toBeUndefined()
+      expect(effective?.browser_type || undefined).toBeUndefined()
+      expect(effective?.browser_version || undefined).toBeUndefined()
+      expect(effective?.platform || undefined).toBeUndefined()
+      // Language is not part of the browser identity and keeps inheriting.
+      expect(effective?.language).toBe('de-DE')
+      expect(container.querySelector<HTMLSelectElement>('select[aria-label="Browser type"]')!.value).toBe('')
+    })
+
+    it('Inherit still resets the identity paths rather than writing empties', () => {
+      const { written } = renderInherited({ mode: 'specific', browser_type: 'chrome' })
+      const modeSelect = () => container.querySelector<HTMLSelectElement>('select[aria-label="Browser emulation mode"]')!
+      act(() => setSelectValue(modeSelect(), 'custom'))
+      act(() => setSelectValue(modeSelect(), ''))
+      expect(written()).toBeUndefined()
+    })
   })
 
   it('hides the Browser Emulation tab for browser-protocol groups', () => {
@@ -1696,9 +2023,10 @@ describe('RuntimeSettingsGroupEditor', () => {
       )
     })
     clickTab('Error Handling')
-    const continueCheckbox = Array.from(container.querySelectorAll<HTMLInputElement>('input[type="checkbox"]'))
-      .find(cb => cb.closest('label')?.textContent?.includes('Continue on error'))
-    expect(continueCheckbox?.checked).toBe(true)
+    // The v1 section omits continue_on_error, which inherits the scenario policy (enabled).
+    const continueSelect = findLabeledControl<HTMLSelectElement>('Continue on error', 'select')
+    expect(continueSelect.value).toBe('')
+    expect(continueSelect.options[0].textContent).toBe('Inherit (Enabled)')
 
     const snapshotCheckbox = Array.from(container.querySelectorAll<HTMLInputElement>('input[type="checkbox"]'))
       .find(cb => cb.closest('label')?.textContent?.includes('Snapshot on error'))
@@ -1718,6 +2046,30 @@ describe('RuntimeSettingsGroupEditor', () => {
       honor_retry_after: true,
       retry_after_max_ms: 8000,
     })
+  })
+
+  it('Exchange capture > Default / inherit over a script value resets the path instead of listing an empty one', () => {
+    const group: RuntimeEditorGroup = {
+      name: 'Checkout',
+      scriptId: 's1',
+      protocol: 'http',
+      scriptConfig: { base_url: '', results: { message_detail: { mode: 'sampled', sample_rate: 0.2 } } } as RuntimeEditorGroup['scriptConfig'],
+    }
+    let current: ScenarioRuntimeSettingsDraft | undefined
+    const render = () => root.render(
+      <RuntimeSettingsGroupEditor groups={[group]} focusedIndex={0} onFocusChange={() => {}} overrides={[current]} onChange={(_index, next) => { current = next; render() }} onApplyToGroups={() => {}} />,
+    )
+    act(() => render())
+    clickTab('Error Handling')
+    const capture = () => {
+      const label = Array.from(container.querySelectorAll('label')).find(candidate => (candidate.textContent || '').startsWith('Exchange capture'))
+      return label!.querySelector('select') as HTMLSelectElement
+    }
+    act(() => setSelectValue(capture(), 'errors'))
+    expect(current?.override_fields).toContain('results.message_detail')
+    act(() => setSelectValue(capture(), ''))
+    expect(current?.override_fields ?? []).not.toContain('results.message_detail')
+    expect(capture().value).toBe('sampled')
   })
 
   it('renders MessageDetailFields and PropertyAnalyticsFields when applicableProtocols is used without focusGroup.protocol', () => {
@@ -1769,9 +2121,9 @@ describe('RuntimeSettingsGroupEditor', () => {
     const sessionCacheTab = Array.from(container.querySelectorAll('[role="tab"]'))
       .find(tab => (tab.textContent || '').startsWith('Session & Cache'))
     act(() => sessionCacheTab!.dispatchEvent(new MouseEvent('click', { bubbles: true })))
-    const cacheCheckbox = Array.from(container.querySelectorAll<HTMLInputElement>('input[type="checkbox"]'))
-      .find(cb => cb.closest('label')?.textContent?.includes('Simulate HTTP cache'))
-    expect(cacheCheckbox?.checked).toBe(true)
+    const cacheOverride = findLabeledControl<HTMLSelectElement>('HTTP cache override', 'select')
+    expect(cacheOverride.value).toBe('')
+    expect(cacheOverride.options[0].textContent).toBe('Inherit (Enabled)')
   })
 
   it('allows WebHttpTab content_checks.fail_if_found, case_insensitive, and data_formatting.auto_detect to be overridden from true to false', () => {
@@ -1829,7 +2181,7 @@ describe('RuntimeSettingsGroupEditor', () => {
     expect(afterAutoDetect?.web_runtime?.data_formatting?.auto_detect).toBe(false)
   })
 
-  it('passes engineDefaults through CreateTestRuntimeOverrides so test-level edits retain sibling engine defaults', () => {
+  it('lists only the edited path at test level instead of writing an engine-default HTTP section', () => {
     const onReplace = vi.fn()
     act(() => {
       root.render(
@@ -1857,11 +2209,89 @@ describe('RuntimeSettingsGroupEditor', () => {
     act(() => setInputValue(connectInput!, '2000'))
 
     const next = onReplace.mock.calls[onReplace.mock.calls.length - 1]?.[0]
-    expect(next?.http).toEqual({
-      version: '2',
-      connect_timeout_ms: 2000,
-      request_timeout_ms: 30000,
-      max_conns_per_host: 100,
+    // A whole engine-default http section here would replace every group's
+    // script HTTP settings; the edit is one listed leaf instead.
+    expect(next?.http).toEqual({ connect_timeout_ms: 2000 })
+    expect(buildRuntimeSettingsPayload(next)).toEqual({
+      http: { connect_timeout_ms: 2000 },
+      override_fields: ['http.connect_timeout_ms'],
+    })
+    // The engine default still shows as the inherited placeholder.
+    expect(Array.from(container.querySelectorAll<HTMLInputElement>('input[type="number"]'))
+      .find(input => input.closest('label')?.textContent?.includes('Request timeout'))?.placeholder).toContain('30000')
+  })
+
+  it('emits one listed path per edit on the scenario-defaults mount, never an engine-default section', () => {
+    const onChange = vi.fn()
+    const engineDefaults = {
+      base_url: '',
+      websocket: { callback_interval_ms: 500, read_timeout_ms: 30000 },
+      error_handling: { continue_on_error: false, max_retries: 0, retry_delay_ms: 1000 },
+      http: { request_timeout_ms: 60000, connect_timeout_ms: 30000 },
+    }
+    const render = (override?: ScenarioRuntimeSettingsDraft) => act(() => {
+      root.render(
+        <RuntimeSettingsGroupEditor
+          title="Scenario runtime defaults"
+          overrideLabel="Scenario default"
+          hideApplyPanel
+          groups={[{ name: 'Scenario defaults', scriptId: 'scenario-defaults' }]}
+          focusedIndex={0}
+          onFocusChange={() => {}}
+          engineDefaults={engineDefaults}
+          applicableProtocols={['http', 'websocket']}
+          overrides={[override]}
+          onChange={onChange}
+          onApplyToGroups={() => {}}
+        />,
+      )
+    })
+    render()
+    clickTab('Error Handling')
+    const callback = findLabeledControl<HTMLInputElement>('WebSocket callback interval (ms)', 'input')
+    act(() => setInputValue(callback, '250'))
+    let last = onChange.mock.calls[onChange.mock.calls.length - 1]?.[1] as ScenarioRuntimeSettingsDraft
+    expect(buildRuntimeSettingsPayload(last)).toEqual({ websocket: { callback_interval_ms: 250 }, override_fields: ['websocket.callback_interval_ms'] })
+
+    render(last)
+    clickTab('Error Handling')
+    act(() => setSelectValue(findLabeledControl<HTMLSelectElement>('Continue on error', 'select'), 'false'))
+    last = onChange.mock.calls[onChange.mock.calls.length - 1]?.[1] as ScenarioRuntimeSettingsDraft
+    // The scripts' retries, delays and the rest of each section keep applying.
+    expect(buildRuntimeSettingsPayload(last)).toEqual({
+      websocket: { callback_interval_ms: 250 },
+      error_handling: { continue_on_error: false },
+      override_fields: ['websocket.callback_interval_ms', 'error_handling.continue_on_error'],
+    })
+
+    // Clear on the summary row resets just that row.
+    render(last)
+    clickTab('Summary')
+    const clear = container.querySelector('button[aria-label="Clear Error handling override"]') as HTMLButtonElement
+    act(() => clear.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+    last = onChange.mock.calls[onChange.mock.calls.length - 1]?.[1] as ScenarioRuntimeSettingsDraft
+    expect(buildRuntimeSettingsPayload(last)).toEqual({ websocket: { callback_interval_ms: 250 }, override_fields: ['websocket.callback_interval_ms'] })
+  })
+
+  it('keeps a stored masked credential listed when a sibling HTTP field is edited', () => {
+    const onChange = vi.fn()
+    const stored = runtimeDraftFromOverride({
+      http: { auth: { type: 'basic', username: '[REDACTED]', password: '[REDACTED]' } },
+      override_fields: ['http.auth'],
+    })
+    act(() => {
+      root.render(
+        <RuntimeSettingsGroupEditor groups={GROUPS} focusedIndex={0} onFocusChange={() => {}} overrides={[stored, undefined]} onChange={onChange} onApplyToGroups={() => {}} />,
+      )
+    })
+    clickTab('HTTP Transport')
+    clickTab('Timeouts')
+    act(() => setInputValue(findLabeledControl<HTMLInputElement>('Request timeout (ms)', 'input'), '5000'))
+    const last = onChange.mock.calls[onChange.mock.calls.length - 1]?.[1] as ScenarioRuntimeSettingsDraft
+    // "[REDACTED]" is sent at its listed path, so the backend restores the stored value.
+    expect(buildRuntimeSettingsPayload(last)).toEqual({
+      http: { auth: { type: 'basic', username: '[REDACTED]', password: '[REDACTED]' }, request_timeout_ms: 5000 },
+      override_fields: ['http.auth', 'http.request_timeout_ms'],
     })
   })
 })

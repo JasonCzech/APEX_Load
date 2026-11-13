@@ -388,7 +388,7 @@ describe('ScriptRuntimeSettingsView Java Vuser settings', () => {
         onUpdateProtocol={vi.fn()} saveDisabled saving={false} script={script} />
     </>))
     expect(container.querySelector('.utility-list')?.textContent).toContain(`HTTP version: ${expected}`)
-    const select = Array.from(container.querySelectorAll<HTMLSelectElement>('select')).find(item => item.parentElement?.textContent?.includes('HTTP Version'))!
+    const select = Array.from(container.querySelectorAll<HTMLSelectElement>('select')).find(item => item.parentElement?.textContent?.includes('HTTP version'))!
     expect(select.value).toBe(selection)
     expect(select.getAttribute('aria-invalid')).toBe('false')
     expect(container.textContent).toContain(`Effective script policy: ${expected}`)
@@ -404,7 +404,7 @@ describe('ScriptRuntimeSettingsView Java Vuser settings', () => {
     act(() => root.render(<ScriptRuntimeSettingsView activeHTTPTransportTab="connection" activeSection="http" canEditProtocol={false}
       onSave={vi.fn()} onSelectHTTPTransportTab={vi.fn()} onSelectSection={vi.fn()} onUpdateField={onUpdateField}
       onUpdateProtocol={vi.fn()} saveDisabled saving={false} script={script} />))
-    const select = Array.from(container.querySelectorAll<HTMLSelectElement>('select')).find(item => item.parentElement?.textContent?.includes('HTTP Version'))!
+    const select = Array.from(container.querySelectorAll<HTMLSelectElement>('select')).find(item => item.parentElement?.textContent?.includes('HTTP version'))!
     expect(select.value).toBe('invalid')
     expect(select.getAttribute('aria-invalid')).toBe('true')
     expect(container.querySelector('[role="alert"]')?.textContent).toContain('original value is preserved')
@@ -485,7 +485,7 @@ describe('ScriptRuntimeSettingsView Java Vuser settings', () => {
     })
 
     const version = Array.from(container.querySelectorAll<HTMLSelectElement>('select'))
-      .find(select => select.parentElement?.textContent?.includes('HTTP Version'))
+      .find(select => select.parentElement?.textContent?.includes('HTTP version'))
     expect(version?.value).toBe('2')
     expect(Array.from(version?.options || []).map(option => option.textContent)).toEqual([
       'Auto-negotiate (HTTP/2 or HTTP/1.1)',
@@ -526,7 +526,7 @@ describe('ScriptRuntimeSettingsView Java Vuser settings', () => {
       )
     })
     const version = Array.from(container.querySelectorAll<HTMLSelectElement>('select'))
-      .find(select => select.parentElement?.textContent?.includes('HTTP Version'))
+      .find(select => select.parentElement?.textContent?.includes('HTTP version'))
     expect(version?.value).toBe('auto+h3')
     expect(version?.getAttribute('aria-invalid')).toBe('false')
     expect(container.textContent).toContain('Effective script policy: Upgrade to HTTP/3 when advertised')
@@ -826,7 +826,7 @@ describe('ScriptRuntimeSettingsView Event Hubs settings', () => {
   it('edits config.eventhubs without dropping the fields it does not touch', () => {
     const onUpdateField = renderEventHubs()
     const consumerGroup = Array.from(container.querySelectorAll<HTMLInputElement>('input'))
-      .find(input => input.closest('label')?.textContent?.includes('Consumer Group'))
+      .find(input => input.closest('label')?.textContent?.includes('Consumer group'))
     expect(consumerGroup).toBeTruthy()
     act(() => {
       const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set
@@ -1176,6 +1176,8 @@ describe('ScriptRuntimeSettingsView extracted protocol sections', () => {
     const proxyURL = Array.from(container.querySelectorAll<HTMLInputElement>('input'))
       .find(input => input.closest('label')?.textContent?.includes('Proxy URL'))
     expect(proxyURL?.value).toBe('http://proxy.example.test:8080')
+    expect(container.querySelector('[data-testid="web-runtime-canonical-proxy-note"]')?.textContent)
+      .toContain('Security, proxy & auth')
 
     const sourceIPs = container.querySelector<HTMLTextAreaElement>('textarea[aria-label="Source IP pool"]')
     expect(sourceIPs?.value).toBe('10.0.0.5')
@@ -1284,7 +1286,7 @@ describe('ScriptRuntimeSettingsView extracted protocol sections', () => {
       )
     })
     const maxIdleInput = Array.from(container.querySelectorAll<HTMLInputElement>('input[type="number"]'))
-      .find(input => input.closest('label')?.textContent?.includes('Max Idle Connections'))
+      .find(input => input.closest('label')?.textContent?.includes('Max idle connections'))
     expect(maxIdleInput?.value).toBe('4')
 
     const dbScript: ScriptDefinition = {
@@ -1717,5 +1719,696 @@ describe('ScriptRuntimeSettingsView transaction and phase SLA rules', () => {
     const addButton = Array.from(group.querySelectorAll<HTMLButtonElement>('button'))
       .find(button => button.textContent === 'Add transaction SLA rule')
     expect(addButton?.disabled).toBe(true)
+  })
+})
+
+describe('ScriptRuntimeSettingsView canonical HTTP & SOAP gaps', () => {
+  let container: HTMLDivElement
+  let root: Root
+
+  beforeEach(() => {
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+  })
+
+  afterEach(() => {
+    act(() => root.unmount())
+    container.remove()
+  })
+
+  it('edits config.http.tls.max_version and warns when HTTP/3 is paired with TLS max_version < 1.3', () => {
+    const onUpdateField = vi.fn()
+    const renderTls = (script: ScriptDefinition) => {
+      act(() => {
+        root.render(
+          <ScriptRuntimeSettingsView
+            activeHTTPTransportTab="tls"
+            activeSection="http"
+            canEditProtocol={false}
+            onSave={vi.fn()}
+            onSelectHTTPTransportTab={vi.fn()}
+            onSelectSection={vi.fn()}
+            onUpdateField={onUpdateField}
+            onUpdateProtocol={vi.fn()}
+            saveDisabled={false}
+            saving={false}
+            script={script}
+          />,
+        )
+      })
+    }
+
+    renderTls({
+      name: 'TLS max version',
+      version: '1.0.0',
+      protocol: 'http',
+      config: { base_url: 'https://example.test', http: { version: '2', tls: { min_version: '1.2' } } },
+      actions: [],
+    })
+
+    const maxTlsSelect = container.querySelector<HTMLSelectElement>('select[aria-label="Max TLS version"]')!
+    expect(maxTlsSelect).not.toBeNull()
+    expect(Array.from(maxTlsSelect.options).map(opt => opt.value)).toEqual(['', '1.0', '1.1', '1.2', '1.3'])
+    expect(container.querySelector('[data-testid="http-tls-max-version-h3-warning"]')).toBeNull()
+
+    act(() => {
+      maxTlsSelect.value = '1.2'
+      maxTlsSelect.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    expect(onUpdateField).toHaveBeenCalledWith('config.http', {
+      version: '2',
+      tls: { min_version: '1.2', max_version: '1.2' },
+    })
+
+    // Pair HTTP/3 with max_version 1.2 -> warning appears
+    renderTls({
+      name: 'TLS max version H3 conflict',
+      version: '1.0.0',
+      protocol: 'http',
+      config: { base_url: 'https://example.test', http: { version: '3', tls: { max_version: '1.2' } } },
+      actions: [],
+    })
+    const warning = container.querySelector('[data-testid="http-tls-max-version-h3-warning"]')
+    expect(warning).not.toBeNull()
+    expect(warning?.textContent).toContain('HTTP/3 (QUIC) requires TLS 1.3')
+  })
+
+  it('includes digest in config.http.auth.type options and reveals username/password inputs', () => {
+    const onUpdateField = vi.fn()
+    const renderAuth = (type: string) => {
+      act(() => {
+        root.render(
+          <ScriptRuntimeSettingsView
+            activeHTTPTransportTab="authentication"
+            activeSection="http"
+            canEditProtocol={false}
+            onSave={vi.fn()}
+            onSelectHTTPTransportTab={vi.fn()}
+            onSelectSection={vi.fn()}
+            onUpdateField={onUpdateField}
+            onUpdateProtocol={vi.fn()}
+            saveDisabled={false}
+            saving={false}
+            script={{
+              name: 'Digest auth',
+              version: '1.0.0',
+              protocol: 'http',
+              config: { base_url: 'https://example.test', http: { auth: { type } } },
+              actions: [],
+            }}
+          />,
+        )
+      })
+    }
+
+    renderAuth('basic')
+    const authTypeSelect = Array.from(container.querySelectorAll<HTMLSelectElement>('select'))
+      .find(sel => sel.closest('label')?.textContent?.includes('Auth type'))!
+    expect(Array.from(authTypeSelect.options).map(opt => opt.value)).toContain('digest')
+
+    act(() => {
+      authTypeSelect.value = 'digest'
+      authTypeSelect.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    expect(onUpdateField).toHaveBeenCalledWith('config.http', { auth: { type: 'digest' } })
+
+    renderAuth('digest')
+    const usernameInput = Array.from(container.querySelectorAll<HTMLInputElement>('input'))
+      .find(inp => inp.closest('label')?.textContent?.includes('Username'))!
+    expect(usernameInput).toBeTruthy()
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(usernameInput, 'digest-user')
+      usernameInput.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    expect(onUpdateField).toHaveBeenLastCalledWith('config.http', {
+      auth: { type: 'digest', username: 'digest-user' },
+    })
+  })
+
+  it('adds SOAP namespaces via inline prefix and URI inputs without window.prompt and badges generated body_mode', () => {
+    const onUpdateField = vi.fn()
+    const promptSpy = vi.spyOn(window, 'prompt')
+    const script: ScriptDefinition = {
+      name: 'SOAP inline namespaces',
+      version: '1.0.0',
+      protocol: 'soap',
+      config: {
+        base_url: 'https://soap.example.test',
+        soap: { version: '1.1', namespaces: { soapenv: 'http://schemas.xmlsoap.org/soap/envelope/' } },
+      },
+      actions: [],
+    }
+    act(() => {
+      root.render(
+        <ScriptRuntimeSettingsView
+          activeHTTPTransportTab="timeouts"
+          activeSection="soap"
+          canEditProtocol={false}
+          onSave={vi.fn()}
+          onSelectHTTPTransportTab={vi.fn()}
+          onSelectSection={vi.fn()}
+          onUpdateField={onUpdateField}
+          onUpdateProtocol={vi.fn()}
+          saveDisabled={false}
+          saving={false}
+          script={script}
+        />,
+      )
+    })
+
+    expect(container.querySelector('[data-testid="soap-namespaces-body-mode-badge"]')?.textContent)
+      .toContain('action.soap.body_mode is generated')
+
+    const prefixInput = container.querySelector<HTMLInputElement>('input[aria-label="Namespace prefix"]')!
+    const uriInput = container.querySelector<HTMLInputElement>('input[aria-label="Namespace URI"]')!
+    const addButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(btn => btn.textContent === 'Add namespace')!
+
+    expect(prefixInput).not.toBeNull()
+    expect(uriInput).not.toBeNull()
+    expect(addButton.disabled).toBe(true)
+
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(prefixInput, 'ord')
+      prefixInput.dispatchEvent(new Event('input', { bubbles: true }))
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(uriInput, 'https://example.test/orders')
+      uriInput.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    expect(addButton.disabled).toBe(false)
+
+    act(() => addButton.click())
+    expect(promptSpy).not.toHaveBeenCalled()
+    expect(onUpdateField).toHaveBeenCalledWith('config.soap', {
+      version: '1.1',
+      namespaces: {
+        soapenv: 'http://schemas.xmlsoap.org/soap/envelope/',
+        ord: 'https://example.test/orders',
+      },
+    })
+    promptSpy.mockRestore()
+  })
+
+  it('renders a diagnostic notice when http scripts contain soap config, and badges GET/HTML cache sections as inactive on soap scripts', () => {
+    const httpWithSoap: ScriptDefinition = {
+      name: 'HTTP with leftover SOAP',
+      version: '1.0.0',
+      protocol: 'http',
+      config: {
+        base_url: 'https://api.example.test',
+        soap: { version: '1.2', namespaces: { ord: 'urn:Order' } },
+      },
+      actions: [],
+    }
+    act(() => {
+      root.render(
+        <ScriptRuntimeSettingsView
+          activeHTTPTransportTab="timeouts"
+          activeSection="script_config"
+          canEditProtocol={false}
+          onSave={vi.fn()}
+          onSelectHTTPTransportTab={vi.fn()}
+          onSelectSection={vi.fn()}
+          onUpdateField={vi.fn()}
+          onUpdateProtocol={vi.fn()}
+          saveDisabled={false}
+          saving={false}
+          script={httpWithSoap}
+        />,
+      )
+    })
+    const ignoredNotice = container.querySelector('[data-testid="http-ignored-soap-config-notice"]')
+    expect(ignoredNotice).not.toBeNull()
+    expect(ignoredNotice?.textContent).toContain('ignored when script.protocol is http')
+
+    const soapScript: ScriptDefinition = {
+      name: 'SOAP script',
+      version: '1.0.0',
+      protocol: 'soap',
+      config: { base_url: 'https://soap.example.test', soap: { version: '1.1' } },
+      actions: [],
+    }
+    act(() => {
+      root.render(
+        <ScriptRuntimeSettingsView
+          activeHTTPTransportTab="session_cache"
+          activeSection="http"
+          canEditProtocol={false}
+          onSave={vi.fn()}
+          onSelectHTTPTransportTab={vi.fn()}
+          onSelectSection={vi.fn()}
+          onUpdateField={vi.fn()}
+          onUpdateProtocol={vi.fn()}
+          saveDisabled={false}
+          saving={false}
+          script={soapScript}
+        />,
+      )
+    })
+    expect(container.querySelector('[data-testid="soap-inactive-cache-resource-badge"]')?.textContent)
+      .toContain('Inactive for POST XML SOAP requests')
+
+    act(() => {
+      root.render(
+        <ScriptRuntimeSettingsView
+          activeHTTPTransportTab="timeouts"
+          activeSection="web_runtime"
+          canEditProtocol={false}
+          onSave={vi.fn()}
+          onSelectHTTPTransportTab={vi.fn()}
+          onSelectSection={vi.fn()}
+          onUpdateField={vi.fn()}
+          onUpdateProtocol={vi.fn()}
+          saveDisabled={false}
+          saving={false}
+          script={soapScript}
+        />,
+      )
+    })
+    expect(container.querySelector('[data-testid="soap-inactive-web-resource-badge"]')?.textContent)
+      .toContain('Inactive for POST XML SOAP requests')
+
+    act(() => {
+      root.render(
+        <ScriptRuntimeSettingsView
+          activeHTTPTransportTab="timeouts"
+          activeSection="browser_emulation"
+          canEditProtocol={false}
+          onSave={vi.fn()}
+          onSelectHTTPTransportTab={vi.fn()}
+          onSelectSection={vi.fn()}
+          onUpdateField={vi.fn()}
+          onUpdateProtocol={vi.fn()}
+          saveDisabled={false}
+          saving={false}
+          script={soapScript}
+        />,
+      )
+    })
+    expect(container.querySelector('[data-testid="soap-inactive-browser-emulation-cache-badge"]')?.textContent)
+      .toContain('Inactive for POST XML SOAP requests')
+  })
+
+  it('supports 3-state continue_on_error, retry_on / honor_retry_after / retry_after_max_ms, fail_transaction_on_error_message, and log.max_response_bytes', () => {
+    const onUpdateField = vi.fn()
+    const renderErrors = (script: ScriptDefinition) => {
+      act(() => {
+        root.render(
+          <ScriptRuntimeSettingsView
+            activeHTTPTransportTab="timeouts"
+            activeSection="errors"
+            canEditProtocol={false}
+            onSave={vi.fn()}
+            onSelectHTTPTransportTab={vi.fn()}
+            onSelectSection={vi.fn()}
+            onUpdateField={onUpdateField}
+            onUpdateProtocol={vi.fn()}
+            saveDisabled={false}
+            saving={false}
+            script={script}
+          />,
+        )
+      })
+    }
+
+    renderErrors({
+      name: 'Errors 3-state',
+      version: '1.0.0',
+      protocol: 'http',
+      config: { base_url: 'https://example.test', error_handling: { max_retries: 2 } },
+      actions: [],
+    })
+
+    const continueSelect = container.querySelector<HTMLSelectElement>('select[aria-label="Continue on error"]')!
+    expect(continueSelect.value).toBe('')
+    act(() => {
+      continueSelect.value = 'true'
+      continueSelect.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    expect(onUpdateField).toHaveBeenCalledWith('config.error_handling', {
+      max_retries: 2,
+      continue_on_error: true,
+    })
+
+    act(() => {
+      continueSelect.value = 'false'
+      continueSelect.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    expect(onUpdateField).toHaveBeenCalledWith('config.error_handling', {
+      max_retries: 2,
+      continue_on_error: false,
+    })
+
+    act(() => {
+      continueSelect.value = ''
+      continueSelect.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    expect(onUpdateField).toHaveBeenCalledWith('config.error_handling', {
+      max_retries: 2,
+      continue_on_error: undefined,
+    })
+
+    const failTxCheckbox = Array.from(container.querySelectorAll<HTMLInputElement>('input[type="checkbox"]'))
+      .find(inp => inp.closest('label')?.textContent?.includes('Fail transaction on error message'))!
+    act(() => failTxCheckbox.click())
+    expect(onUpdateField).toHaveBeenCalledWith('config.error_handling', {
+      max_retries: 2,
+      fail_transaction_on_error_message: true,
+    })
+
+    const retryOnInput = container.querySelector<HTMLInputElement>('input[aria-label="Retry on conditions"]')!
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(retryOnInput, '429, 5xx')
+      retryOnInput.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    expect(onUpdateField).toHaveBeenCalledWith('config.error_handling', {
+      max_retries: 2,
+      retry_on: ['429', '5xx'],
+    })
+
+    const honorRetryAfter = Array.from(container.querySelectorAll<HTMLInputElement>('input[type="checkbox"]'))
+      .find(inp => inp.closest('label')?.textContent?.includes('Honor Retry-After header'))!
+    act(() => honorRetryAfter.click())
+    expect(onUpdateField).toHaveBeenCalledWith('config.error_handling', {
+      max_retries: 2,
+      honor_retry_after: true,
+    })
+
+    const retryAfterMaxInput = container.querySelector<HTMLInputElement>('input[aria-label="Max Retry-After delay (ms)"]')!
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(retryAfterMaxInput, '15000')
+      retryAfterMaxInput.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    expect(onUpdateField).toHaveBeenCalledWith('config.error_handling', {
+      max_retries: 2,
+      retry_after_max_ms: 15000,
+    })
+
+    act(() => {
+      root.render(
+        <ScriptRuntimeSettingsView
+          activeHTTPTransportTab="timeouts"
+          activeSection="log"
+          canEditProtocol={false}
+          onSave={vi.fn()}
+          onSelectHTTPTransportTab={vi.fn()}
+          onSelectSection={vi.fn()}
+          onUpdateField={onUpdateField}
+          onUpdateProtocol={vi.fn()}
+          saveDisabled={false}
+          saving={false}
+          script={{
+            name: 'Log bytes',
+            version: '1.0.0',
+            protocol: 'http',
+            config: { base_url: 'https://example.test' },
+            actions: [],
+          }}
+        />,
+      )
+    })
+    const maxRespBytesInput = container.querySelector<HTMLInputElement>('input[aria-label="Max response bytes"]')!
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(maxRespBytesInput, '8192')
+      maxRespBytesInput.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    expect(onUpdateField).toHaveBeenCalledWith('config.log', {
+      max_response_bytes: 8192,
+    })
+  })
+
+  it('renders a read-only compatibility notice in Target & identity when jmeter or sampler_schedules are present', () => {
+    act(() => {
+      root.render(
+        <ScriptRuntimeSettingsView
+          activeHTTPTransportTab="timeouts"
+          activeSection="script_config"
+          canEditProtocol={false}
+          onSave={vi.fn()}
+          onSelectHTTPTransportTab={vi.fn()}
+          onSelectSection={vi.fn()}
+          onUpdateField={vi.fn()}
+          onUpdateProtocol={vi.fn()}
+          saveDisabled={false}
+          saving={false}
+          script={{
+            name: 'JMeter schedule script',
+            version: '1.0.0',
+            protocol: 'http',
+            config: {
+              base_url: 'https://example.test',
+              jmeter: { profile: 'default', source_plan_id: 'plan-1', source_group_id: 'tg-1' },
+            },
+            actions: [],
+          }}
+        />,
+      )
+    })
+    const notice = container.querySelector('[data-testid="readonly-schedule-compatibility-notice"]')
+    expect(notice).not.toBeNull()
+    expect(notice?.textContent).toContain('Read-only compatibility notice:')
+  })
+
+  it('authors quota pacing, arrival process, rate stages, run_logic.blocks, and exponential think-time bounds', () => {
+    const onUpdateField = vi.fn()
+    act(() => {
+      root.render(
+        <ScriptRuntimeSettingsView
+          activeHTTPTransportTab="timeouts"
+          activeSection="pacing"
+          canEditProtocol={false}
+          onSave={vi.fn()}
+          onSelectHTTPTransportTab={vi.fn()}
+          onSelectSection={vi.fn()}
+          onUpdateField={onUpdateField}
+          onUpdateProtocol={vi.fn()}
+          saveDisabled={false}
+          saving={false}
+          script={{
+            name: 'Quota & TPS script',
+            version: '1.0.0',
+            protocol: 'http',
+            config: {
+              base_url: 'https://example.test',
+              pacing: { type: 'quota' },
+            },
+            actions: [],
+          }}
+        />,
+      )
+    })
+
+    const tpmInput = container.querySelector<HTMLInputElement>('input[aria-label="Quota TPM"]')!
+    expect(tpmInput).not.toBeNull()
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(tpmInput, '120000')
+      tpmInput.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    expect(onUpdateField).toHaveBeenCalledWith('config.pacing', {
+      type: 'quota',
+      quota: { tpm: 120000 },
+    })
+
+    act(() => {
+      root.render(
+        <ScriptRuntimeSettingsView
+          activeHTTPTransportTab="timeouts"
+          activeSection="pacing"
+          canEditProtocol={false}
+          onSave={vi.fn()}
+          onSelectHTTPTransportTab={vi.fn()}
+          onSelectSection={vi.fn()}
+          onUpdateField={onUpdateField}
+          onUpdateProtocol={vi.fn()}
+          saveDisabled={false}
+          saving={false}
+          script={{
+            name: 'TPS arrival process script',
+            version: '1.0.0',
+            protocol: 'http',
+            config: {
+              base_url: 'https://example.test',
+              run_logic: { workload_model: 'open' },
+              pacing: { type: 'tps', tps: 25 },
+            },
+            actions: [],
+          }}
+        />,
+      )
+    })
+
+    const arrivalSelect = container.querySelector<HTMLSelectElement>('select[aria-label="Arrival process"]')!
+    act(() => {
+      arrivalSelect.value = 'poisson'
+      arrivalSelect.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    expect(onUpdateField).toHaveBeenCalledWith('config.pacing', {
+      type: 'tps',
+      tps: 25,
+      arrival_process: 'poisson',
+    })
+
+    const addStageBtn = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(btn => btn.textContent === 'Add rate stage')!
+    act(() => addStageBtn.click())
+    expect(onUpdateField).toHaveBeenCalledWith('config.pacing', {
+      type: 'tps',
+      tps: 25,
+      rate_stages: [{ duration_seconds: 30, target_tps: 25 }],
+    })
+
+    const seedInput = container.querySelector<HTMLInputElement>('input[aria-label="Arrival seed"]')!
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(seedInput, '42')
+      seedInput.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    expect(onUpdateField).toHaveBeenCalledWith('config.pacing', {
+      type: 'tps',
+      tps: 25,
+      seed: 42,
+    })
+
+    act(() => {
+      root.render(
+        <ScriptRuntimeSettingsView
+          activeHTTPTransportTab="timeouts"
+          activeSection="runlogic"
+          canEditProtocol={false}
+          onSave={vi.fn()}
+          onSelectHTTPTransportTab={vi.fn()}
+          onSelectSection={vi.fn()}
+          onUpdateField={onUpdateField}
+          onUpdateProtocol={vi.fn()}
+          saveDisabled={false}
+          saving={false}
+          script={{
+            name: 'Run logic blocks script',
+            version: '1.0.0',
+            protocol: 'http',
+            config: {
+              base_url: 'https://example.test',
+              run_logic: {
+                iterations: 2,
+                blocks: [
+                  {
+                    name: 'Weighted Block',
+                    mode: 'percentage',
+                    iterations: 1,
+                    children: [
+                      { action: 'Browse', weight: 70 },
+                      { action: 'Buy', weight: 30 },
+                    ],
+                  },
+                ],
+              },
+            },
+            actions: [],
+          }}
+        />,
+      )
+    })
+
+    const termSelect = container.querySelector<HTMLSelectElement>('select[aria-label="Termination mode"]')!
+    const termOptions = Array.from(termSelect.options).map(o => o.value)
+    expect(termOptions).toEqual(['', 'duration', 'iterations'])
+
+    // block_scheduling does not drive HTTP/SOAP execution, so it is not an editable control.
+    expect(container.querySelector('select[aria-label="Block scheduling"]')).toBeNull()
+
+    const blockActionsInput = container.querySelector<HTMLInputElement>('input[aria-label="Run block 1 actions"]')!
+    expect(blockActionsInput.value).toBe('Browse:70, Buy:30')
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(blockActionsInput, 'Browse:60, Buy:40')
+      blockActionsInput.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    expect(onUpdateField).toHaveBeenCalledWith('config.run_logic', {
+      iterations: 2,
+      blocks: [
+        {
+          name: 'Weighted Block',
+          mode: 'percentage',
+          iterations: 1,
+          children: [
+            { action: 'Browse', weight: 60 },
+            { action: 'Buy', weight: 40 },
+          ],
+        },
+      ],
+    })
+
+    const addBlockBtn = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(btn => btn.textContent === 'Add run block')!
+    act(() => addBlockBtn.click())
+    expect(onUpdateField).toHaveBeenCalledWith('config.run_logic', {
+      iterations: 2,
+      blocks: [
+        {
+          name: 'Weighted Block',
+          mode: 'percentage',
+          iterations: 1,
+          children: [
+            { action: 'Browse', weight: 70 },
+            { action: 'Buy', weight: 30 },
+          ],
+        },
+        {
+          name: 'Block 2',
+          mode: 'sequential',
+          iterations: 1,
+          children: [{ action: 'Action' }],
+        },
+      ],
+    })
+
+    act(() => {
+      root.render(
+        <ScriptRuntimeSettingsView
+          activeHTTPTransportTab="timeouts"
+          activeSection="think"
+          canEditProtocol={false}
+          onSave={vi.fn()}
+          onSelectHTTPTransportTab={vi.fn()}
+          onSelectSection={vi.fn()}
+          onUpdateField={onUpdateField}
+          onUpdateProtocol={vi.fn()}
+          saveDisabled={false}
+          saving={false}
+          script={{
+            name: 'Exponential think script',
+            version: '1.0.0',
+            protocol: 'http',
+            config: {
+              base_url: 'https://example.test',
+              think_time: {
+                type: 'exponential',
+                distribution: 'exponential',
+                mean_ms: 2000,
+                min_ms: 500,
+                max_ms: 5000,
+                multiplier: 1,
+              } as ScriptDefinition['config']['think_time'],
+            },
+            actions: [],
+          }}
+        />,
+      )
+    })
+    const minLabel = Array.from(container.querySelectorAll('label')).find(l => l.textContent?.includes('Min (s)'))
+    const maxLabel = Array.from(container.querySelectorAll('label')).find(l => l.textContent?.includes('Cap base (s)'))
+    expect(minLabel).toBeTruthy()
+    expect(maxLabel).toBeTruthy()
+
+    const distSelect = Array.from(container.querySelectorAll<HTMLSelectElement>('select'))
+      .find(s => s.closest('label')?.textContent?.includes('Distribution'))!
+    act(() => {
+      distSelect.value = 'fixed'
+      distSelect.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    const lastThinkCall = onUpdateField.mock.calls.filter(c => c[0] === 'config.think_time').pop()
+    expect(lastThinkCall?.[1]).toMatchObject({ type: 'fixed', mean_ms: 2000 })
+    expect((lastThinkCall?.[1] as { distribution?: string }).distribution).toBeUndefined()
+
+    // Script-level force is ignored at runtime, so no control authors it.
+    expect(container.querySelector('input[aria-label="Force exact think time"]')).toBeNull()
   })
 })

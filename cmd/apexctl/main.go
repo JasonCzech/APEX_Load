@@ -108,6 +108,13 @@ func runTest() {
 		fmt.Fprintf(os.Stderr, "error preparing script: %s\n", scrubCLIText(err.Error(), cliRedaction))
 		os.Exit(exitCodeUsageOrConfiguration)
 	}
+	cliRedaction = withRuntimeOverrideCredentialRedaction(cliRedaction, args.runtimeOverrides)
+	if args.runtimeOverrides != nil && args.runtimeOverrides.unknownField != "" {
+		fmt.Fprintf(os.Stderr, "warning: runtime overrides field %q is not one this apexctl knows; the controller ignores fields it does not know\n", scrubCLIText(args.runtimeOverrides.unknownField, cliRedaction))
+	}
+	if warning := runtimeOverrideServiceAccountWarning(args); warning != "" {
+		fmt.Fprintln(os.Stderr, warning)
+	}
 	goalConfig := resolveGoalConfig(script, args)
 	if args.api == "" && goalConfig != nil && len(goalConfig.TransactionRules) > 0 {
 		fmt.Fprintln(os.Stderr, "error: transaction SLA rules require --api because they are evaluated from the complete durable archive")
@@ -131,7 +138,12 @@ func runTest() {
 		client.TelemetryBudgetPolicy = args.telemetryBudgetPolicy
 		client.BrowserPolicy = args.browserPolicy
 		client.JourneyPolicy = args.journeyPolicy
+		if err := attachRuntimeOverridesToClient(client, args.runtimeOverrides); err != nil {
+			fmt.Fprintf(os.Stderr, "error: %s\n", scrubCLIText(err.Error(), cliRedaction))
+			os.Exit(exitCodeUsageOrConfiguration)
+		}
 		apiResult, runErr = client.RunPreparedTest(args.script, scriptBody, args.vusers, args.duration.String(), args.rampUp.String(), args.format, goalConfig)
+		runErr = classifyRuntimeOverrideCreateRefusal(client, runErr)
 		if apiResult != nil {
 			slaSummary = apiResult.SLASummary
 		}
@@ -168,7 +180,7 @@ func runTest() {
 	}
 
 	if runErr != nil {
-		runErr = errors.New(scrubCLIText(runErr.Error(), cliRedaction))
+		runErr = scrubRunError(runErr, cliRedaction)
 	}
 
 	var evidenceErr error
@@ -326,6 +338,21 @@ func apiTestStatus(result *ApiTestResult) string {
 	return result.Status
 }
 
+// scrubRunError rebuilds a run error from its scrubbed text, keeping the
+// input or configuration classification that decides the exit code.
+func scrubRunError(err error, rc *engine.RedactionConfig) error {
+	scrubbed := errors.New(scrubCLIText(err.Error(), rc))
+	var configurationErr *cliConfigurationError
+	if errors.As(err, &configurationErr) {
+		return &cliConfigurationError{cause: scrubbed}
+	}
+	var inputErr *cliInputError
+	if errors.As(err, &inputErr) {
+		return &cliInputError{cause: scrubbed}
+	}
+	return scrubbed
+}
+
 type runArgs struct {
 	err                      error
 	help                     bool
@@ -354,6 +381,9 @@ type runArgs struct {
 	journeyPolicyRaw         string
 	browserPolicy            *runcontract.AnalysisPolicySelection
 	journeyPolicy            *runcontract.AnalysisPolicySelection
+	runtimeOverridesRaw      string
+	runtimeOverridesFile     string
+	runtimeOverrides         *cliRuntimeOverrides
 }
 
 type envAssignments map[string]string
@@ -424,6 +454,8 @@ func parseRunArgs(args []string) runArgs {
 	flags.StringVar(&r.telemetryBudgetPolicy, "telemetry-budget-policy", "", "set the run's live telemetry budgets from this project telemetry budget policy (its ID) instead of the system threshold settings")
 	flags.StringVar(&r.browserPolicyRaw, "browser-policy", "", "pin this project browser policy revision (<id>@<revision> or project_default) for the run")
 	flags.StringVar(&r.journeyPolicyRaw, "journey-policy", "", "pin this project journey policy revision (<id>@<revision> or project_default) for the run")
+	flags.StringVar(&r.runtimeOverridesRaw, "runtime-overrides", "", "runtime settings override JSON object for the run")
+	flags.StringVar(&r.runtimeOverridesFile, "runtime-overrides-file", "", "file holding a runtime settings override JSON object for the run")
 	if err := flags.Parse(args); err != nil {
 		r.err = err
 	} else if flags.NArg() != 0 {
@@ -486,6 +518,15 @@ func parseRunArgs(args []string) runArgs {
 	r.apiKey = strings.TrimSpace(r.apiKey)
 	r.bearerToken = strings.TrimSpace(r.bearerToken)
 	r.format = strings.ToLower(strings.TrimSpace(r.format))
+	if r.err == nil {
+		if overrides, err := loadRuntimeOverrides(r.runtimeOverridesRaw, r.runtimeOverridesFile); err != nil {
+			r.err = err
+		} else if err := validateRuntimeOverridesWithFlags(overrides, r); err != nil {
+			r.err = err
+		} else {
+			r.runtimeOverrides = overrides
+		}
+	}
 	return r
 }
 
@@ -555,6 +596,23 @@ Run Flags:
                                   for the run instead of the project's default (requires --api).
   --journey-policy ID@REV         Pin this project journey policy revision (<id>@<revision> or project_default)
                                   for the run instead of the project's default (requires --api).
+  --runtime-overrides JSON        Runtime settings for the run, as the controller's runtime_settings object
+                                  (http, soap, think_time, pacing, run_logic, error_handling, log, env,
+                                  base_url, override_fields, ...; requires --api). With override_fields only
+                                  the listed fields replace the script's; without it each section given
+                                  replaces the script's whole section. Credentials in it become platform
+                                  secrets on the controller and are never printed by apexctl; a
+                                  service account or CI identity (an API key, GitHub OIDC) must
+                                  reference project secrets with {{secret.NAME}} instead, since the
+                                  controller refuses to make secrets from its credentials. A
+                                  {{secret.APEX_RUNTIME_OVERRIDE_*}} reference or a [REDACTED] credential is
+                                  refused. --env and --base-url still apply to the script and combine with
+                                  it; the same key or base URL set to different values in both is refused.
+                                  With override_fields, the [REDACTED] and conflict checks cover only the
+                                  fields the run keeps (the listed fields, and env when no env field is listed);
+                                  a listed base_url or env.KEY with no value sets it empty, so it conflicts
+                                  with a flag that sets it. A controller refusal of the overrides exits 2.
+  --runtime-overrides-file PATH   Read the --runtime-overrides JSON object from a file (use one or the other).
 
 Examples:
   apexctl run --script order-flow.json --vusers 100 --duration 5m
@@ -564,6 +622,7 @@ Examples:
   apexctl run --script order-flow.json --p95-latency-ms 800 --max-error-pct 2.5
   apexctl run --api http://localhost:8080 --script order-flow.json --transaction-rule 'Checkout|p95_duration_ms|lte|800|fail'
   apexctl run --api http://localhost:8080 --script order-flow.json --format json
+  apexctl run --api http://localhost:8080 --script order-flow.json --runtime-overrides '{"override_fields":["think_time.type"],"think_time":{"type":"none"}}'
   apexctl run --script order-flow.json --p95-latency-ms 800 --junit results.xml
   apexctl wait --api http://localhost:8080 --test <id> --junit results.xml
   apexctl github diagnostics --api http://localhost:8080

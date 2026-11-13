@@ -705,3 +705,69 @@ it('shows Java Kafka source settings as migration evidence without claiming nati
  expect(credential.importedSummary).toBe('never-display-test-credential')
  expect(groups['Not applicable'].some(row => row.label === 'group.id')).toBe(true)
 })
+
+// Provenance filter, counts and reset actions: ImportRuntimeSettingsProvenance.test.tsx.
+it('navigates all 7 canonical groups and edits SOAP and HTTP/3 runtime settings on non-LoadRunner imports', async () => {
+ const draft: ScriptDefinition = {
+  name: 'SOAP Billing Service',
+  version: '1.0',
+  protocol: 'soap',
+  config: { base_url: 'https://soap.example.test/service' },
+  actions: [],
+ }
+ const container = document.createElement('div')
+ const root = createRoot(container)
+ const selectCanonicalGroup = async (group: string) => {
+  const button = Array.from(container.querySelectorAll<HTMLButtonElement>('.import-canonical-group-nav button')).find(item =>
+   item.textContent?.startsWith(group),
+  )!
+  expect(button, `missing canonical group button ${group}`).toBeDefined()
+  await act(async () => button.click())
+ }
+ try {
+  await act(async () =>
+   root.render(
+    <ImportSettingsProvider script={draft} disabled={false} onApplied={vi.fn()} onBusyChange={vi.fn()}>
+     <ImportRuntimeSettingsTable script={draft} />
+    </ImportSettingsProvider>,
+   ),
+  )
+
+  const groupButtons = Array.from(container.querySelectorAll<HTMLButtonElement>('.import-canonical-group-nav button')).map(
+   button => button.textContent?.replace(/\d+$/, '').trim(),
+  )
+  expect(groupButtons).toEqual([
+   'All groups',
+   'Target & identity',
+   'Run logic & pacing',
+   'Think time',
+   'Transport & connections',
+   'Security, proxy & auth',
+   'Protocol behavior & session',
+   'Errors, logging & diagnostics',
+  ])
+
+  await selectCanonicalGroup('Security, proxy & auth')
+  expect(container.querySelector('.import-runtime-content')?.textContent).toContain('WS-Security username')
+  expect(container.querySelector('.import-runtime-content')?.textContent).toContain('PAC URL (bounded evaluator)')
+  expect(container.querySelector('.import-runtime-content')?.textContent).toContain('Proxy bypass hosts (NO_PROXY)')
+
+  await selectCanonicalGroup('Protocol behavior & session')
+  expect(container.querySelector('.import-runtime-content')?.textContent).toContain('SOAP protocol version')
+  expect(container.querySelector('.import-runtime-content')?.textContent).toContain('Fail action on SOAP Fault')
+  const editSoap = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Edit SOAP')!
+  await act(async () => editSoap.click())
+  const soapFaultSelect = container.querySelector<HTMLSelectElement>('[aria-label="SOAP: Fail action on SOAP Fault"]')!
+  expect(soapFaultSelect).not.toBeNull()
+  expect(Array.from(soapFaultSelect.options).map(option => option.textContent)).toEqual(['Default', 'Enabled', 'Disabled'])
+
+  await selectCanonicalGroup('Transport & connections')
+  const editHttp = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Edit HTTP')!
+  await act(async () => editHttp.click())
+  const httpVersionSelect = container.querySelector<HTMLSelectElement>('[aria-label="HTTP: HTTP version"]')!
+  expect(Array.from(httpVersionSelect.options).map(option => option.value)).toEqual(['', '1.1', '2', 'auto+h3', '3'])
+  expect(container.querySelector('[aria-label="HTTP: QUIC handshake timeout (ms)"]')).not.toBeNull()
+ } finally {
+  await act(async () => root.unmount())
+ }
+})

@@ -12,6 +12,9 @@ vi.mock('../hooks/apiClient', async importOriginal => ({
   request: mocks.request,
 }))
 
+// The table also loads the served field list (GET); these tests count the apply POSTs.
+const postCalls = () => mocks.request.mock.calls.filter(call => call[0] === '/scripts/import/settings')
+
 describe('ImportSettingsContext out-of-catalog (imported) select handling', () => {
   it('keeps an out-of-catalog (imported) option selectable and drops it from staged changes when re-selected', async () => {
     const draft: ScriptDefinition = {
@@ -88,13 +91,80 @@ describe('ImportSettingsContext out-of-catalog (imported) select handling', () =
         .find(button => button.textContent === 'Apply HTTP')!
       await act(async () => applyHttpButton.click())
 
-      expect(mocks.request).toHaveBeenCalledTimes(1)
-      const requestBody = JSON.parse(mocks.request.mock.calls[0][1].body as string) as {
+      expect(postCalls()).toHaveLength(1)
+      const requestBody = JSON.parse(postCalls()[0][1].body as string) as {
         changes: Array<{ path: string, value: unknown }>
       }
       expect(requestBody.changes).toEqual([
         { path: 'config.http.request_timeout_ms', value: 4500 },
       ])
+      expect(onApplied).toHaveBeenCalledOnce()
+    } finally {
+      await act(async () => root.unmount())
+      container.remove()
+      mocks.request.mockReset()
+    }
+  })
+
+  it('normalizes canonical Target & identity edits to category target_identity for POST /scripts/import/settings', async () => {
+    const draft: ScriptDefinition = {
+      name: 'Base URL edit draft',
+      version: '1.0',
+      protocol: 'http',
+      config: {
+        base_url: 'https://old.example.test',
+      },
+      actions: [],
+    }
+    const onApplied = vi.fn()
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+    try {
+      await act(async () => {
+        root.render(
+          <ImportSettingsProvider script={draft} disabled={false} onApplied={onApplied} onBusyChange={vi.fn()}>
+            <ImportRuntimeSettingsTable script={draft} />
+          </ImportSettingsProvider>,
+        )
+      })
+
+      const targetGroupButton = Array.from(container.querySelectorAll<HTMLButtonElement>('.import-canonical-group-nav button'))
+        .find(button => button.textContent?.startsWith('Target & identity'))!
+      await act(async () => targetGroupButton.click())
+
+      const editButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+        .find(button => button.textContent === 'Edit Target & identity')!
+      await act(async () => editButton.click())
+
+      const baseUrlInput = container.querySelector<HTMLInputElement>('input[aria-label="Target & identity: Base URL"]')!
+      expect(baseUrlInput).toBeTruthy()
+      await act(async () => {
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(baseUrlInput, 'https://new.example.test')
+        baseUrlInput.dispatchEvent(new Event('input', { bubbles: true }))
+      })
+
+      mocks.request.mockResolvedValueOnce({
+        script: {
+          ...draft,
+          config: { ...draft.config, base_url: 'https://new.example.test' },
+        },
+        findings: [],
+        readiness: { replay_ready: true, promotion_ready: true },
+        secret_binding_requirements: [],
+      })
+
+      const applyButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+        .find(button => button.textContent === 'Apply Target & identity')!
+      await act(async () => applyButton.click())
+
+      expect(postCalls()).toHaveLength(1)
+      const requestBody = JSON.parse(postCalls()[0][1].body as string) as {
+        category: string
+        changes: Array<{ path: string; value: unknown }>
+      }
+      expect(requestBody.category).toBe('target_identity')
+      expect(requestBody.changes).toEqual([{ path: 'config.base_url', value: 'https://new.example.test' }])
       expect(onApplied).toHaveBeenCalledOnce()
     } finally {
       await act(async () => root.unmount())

@@ -2,8 +2,10 @@ import { describe, expect, it } from 'vitest'
 
 import {
   applyGroupErrorHandlingDraftEdit,
+  applyGroupErrorHandlingSelect,
   buildEffectiveScenarioGroups,
   buildGroupErrorHandlingSectionForRun,
+  buildPartialGroupRunRuntimeOverride,
   buildGroupsForRunPayload,
   buildGroupEditDraft,
   buildGroupRuntimeTableValues,
@@ -19,10 +21,14 @@ import {
   generatorCanRunGroup,
   generatorDisabledReason,
   getEffectiveRuntimeDefaults,
+  groupHiddenPartialTiming,
+  groupInheritedRuntimeText,
+  groupRunOverrideWithRuntimeRow,
   groupOverrideCount,
   groupOverrideKey,
   groupPlacementSummary,
   hasOwnKey,
+  mergeRuntimeSettingsForRun,
   selectedGeneratorCapacity,
   setRuntimeBrowser,
   stagedGroupPeakVUsers,
@@ -31,6 +37,8 @@ import {
   type GroupRunOverride,
 } from './newTestRunModel'
 import { type RuntimeSettingsOverride, type StoredScenario, type SystemInventoryGenerator, type TrafficProfile } from '../types'
+import { effectiveRuntimeSection, resolveRuntimeOverrideFields } from './runtimeSettingsModel'
+import { buildEmptyRunDefaultOverrides } from './newTestRunModel'
 
 function scenarioFixture(): StoredScenario {
   return {
@@ -931,5 +939,436 @@ describe('newTestRunModel', () => {
     expect(cards.find(card => card.key === 'duration')).toMatchObject({ value: '20m', isOverridden: true })
     expect(cards.find(card => card.key === 'resource_baseline')).toMatchObject({ value: '5m before and after', isOverridden: true })
     expect(cards.find(card => card.key === 'log_level')).toMatchObject({ value: 'debug', scenarioValue: 'info', isOverridden: true })
+  })
+})
+
+describe('run-launch overlays on partial (override_fields) rows', () => {
+  type PartialRow = RuntimeSettingsOverride & { override_fields?: string[] }
+  function partialScenario(): StoredScenario {
+    const scenario = scenarioFixture()
+    scenario.runtime_settings = {
+      http: { request_timeout_ms: 5000 },
+      error_handling: { continue_on_error: false },
+      override_fields: ['http.request_timeout_ms', 'error_handling.continue_on_error'],
+    } as PartialRow as RuntimeSettingsOverride
+    scenario.scripts[0].runtime_settings = {
+      http: { connect_timeout_ms: 750 },
+      pacing: { type: 'fixed', delay_ms: 100 },
+      override_fields: ['http.connect_timeout_ms', 'pacing'],
+    } as PartialRow as RuntimeSettingsOverride
+    return scenario
+  }
+
+  it('lists every run default it applies to a partial scenario row', () => {
+    const payload = buildRuntimeSettingsForRun(partialScenario(), {
+      runtime_settings: {
+        pacing: { type: 'fixed', delay_ms: 2000 },
+        think_time: { type: 'ignore' },
+        log_level: 'debug',
+        iterations: 4,
+        auto_transactions: 'actions',
+        continue_on_error: true,
+        snapshot_on_error: true,
+      },
+    }) as PartialRow
+    expect(payload.override_fields).toEqual(expect.arrayContaining([
+      'http.request_timeout_ms',
+      'pacing',
+      'think_time',
+      'log.level',
+      'run_logic.iterations',
+      'run_logic.auto_transactions',
+      'error_handling.continue_on_error',
+      'error_handling.snapshot_on_error',
+    ]))
+    expect(payload.override_fields).toHaveLength(8)
+    expect(payload.pacing).toEqual({ type: 'fixed', delay_ms: 2000 })
+    expect(payload.log?.level).toBe('debug')
+    expect(payload.run_logic).toEqual({ iterations: 4, auto_transactions: 'actions' })
+    expect(payload.error_handling).toEqual({ continue_on_error: true, snapshot_on_error: true })
+    expect(payload.http).toEqual({ request_timeout_ms: 5000 })
+  })
+
+  it('turns a run-level clear on a partial scenario row into a reset, not a zero section', () => {
+    const payload = buildRuntimeSettingsForRun(partialScenario(), {
+      runtime_settings: { continue_on_error: null },
+    }) as PartialRow
+    expect(payload.override_fields).toEqual(['http.request_timeout_ms'])
+    expect(payload.error_handling).toBeUndefined()
+  })
+
+  it('keeps the v1 section assignment for a v1 scenario row', () => {
+    const payload = buildRuntimeSettingsForRun(scenarioFixture(), {
+      runtime_settings: { pacing: { type: 'fixed', delay_ms: 2000 } },
+    }) as PartialRow
+    expect(payload.override_fields).toBeUndefined()
+    expect(payload.pacing).toEqual({ type: 'fixed', delay_ms: 2000 })
+    expect(payload.iterations).toBe(3)
+  })
+
+  it('lists group run overrides laid over a partial group row', () => {
+    const scenario = partialScenario()
+    const group = scenario.scripts[0]
+    // The group edit dialog stores the merged row plus its edits as the overlay.
+    const overlay = mergeRuntimeSettingsForRun(group.runtime_settings) as PartialRow
+    overlay.iterations = 9
+    overlay.log_level = 'trace'
+    overlay.think_time = { type: 'ignore' }
+    overlay.error_handling = { continue_on_error: true }
+    overlay.pacing = null
+    const runtime = buildGroupsForRunPayload(scenario, { [groupOverrideKey(group)]: { runtime_settings: overlay } })?.[0].runtime_settings as PartialRow
+    expect([...(runtime.override_fields || [])].sort()).toEqual([
+      'error_handling.continue_on_error',
+      'http.connect_timeout_ms',
+      'log.level',
+      'run_logic.iterations',
+      'think_time',
+    ])
+    expect(runtime.pacing).toBeUndefined()
+    expect(runtime.http).toEqual({ connect_timeout_ms: 750 })
+    expect(runtime.run_logic).toEqual({ iterations: 9 })
+    expect(runtime.log).toEqual({ level: 'trace' })
+  })
+
+  it('keeps a run-level clear of the only listed path as a defined, empty row', () => {
+    const scenario = scenarioFixture()
+    scenario.runtime_settings = {
+      pacing: { type: 'fixed', delay_ms: 100 },
+      override_fields: ['pacing'],
+    } as PartialRow as RuntimeSettingsOverride
+    const payload = buildRuntimeSettingsForRun(scenario, { runtime_settings: { pacing: null } }) as PartialRow | undefined
+    // undefined would leave runtime_settings out of the create request, and the API would then
+    // clone the scenario's stored row back in, restoring the pacing the operator cleared.
+    expect(payload).toBeDefined()
+    expect(payload?.pacing).toBeUndefined()
+    expect(resolveRuntimeOverrideFields(payload)).not.toContain('pacing')
+    expect(payload !== undefined ? { runtime_settings: payload } : {}).toHaveProperty('runtime_settings')
+  })
+
+  it('builds a partial row listing only the edits for a group with no stored row', () => {
+    const row = buildPartialGroupRunRuntimeOverride(undefined, undefined, [
+      { path: 'run_logic.iterations', value: 7 },
+      { path: 'browser.device_profile', value: 'iphone' },
+    ]) as PartialRow
+    expect(resolveRuntimeOverrideFields(row).sort()).toEqual(['browser.device_profile', 'run_logic.iterations'])
+    const scenario = partialScenario()
+    const group = { ...scenario.scripts[0], runtime_settings: undefined }
+    scenario.scripts = [group]
+    const runtime = buildGroupsForRunPayload(scenario, { [groupOverrideKey(group)]: { runtime_settings: row } })?.[0].runtime_settings as PartialRow
+    expect(resolveRuntimeOverrideFields(runtime).sort()).toEqual(['browser.device_profile', 'run_logic.iterations'])
+    expect(runtime.run_logic).toEqual({ iterations: 7 })
+  })
+
+  it('keeps a v1 group row\'s whole sections when a partial edit is laid over it', () => {
+    const scenario = partialScenario()
+    const group = { ...scenario.scripts[0], runtime_settings: { run_logic: { iterations: 3, action_sequence: ['a'] }, pacing: { type: 'fixed', delay_ms: 100 } } as RuntimeSettingsOverride }
+    scenario.scripts = [group]
+    const row = buildPartialGroupRunRuntimeOverride(group.runtime_settings, undefined, [
+      { path: 'run_logic.iterations', value: 7 },
+      { path: 'pacing', value: undefined },
+      { path: 'log.level', value: 'debug' },
+    ])
+    const runtime = buildGroupsForRunPayload(scenario, { [groupOverrideKey(group)]: { runtime_settings: row } })?.[0].runtime_settings as PartialRow
+    expect(resolveRuntimeOverrideFields(runtime).sort()).toEqual(['log.level', 'run_logic'])
+    expect(runtime.run_logic).toEqual({ iterations: 7, action_sequence: ['a'] })
+    expect(runtime.pacing).toBeUndefined()
+  })
+
+  it('drops an Inherit of both error-handling halves over a v1 group section (no stale v1 section)', () => {
+    const scenario = scenarioFixture()
+    scenario.runtime_settings = {
+      error_handling: { snapshot_on_error: true },
+      override_fields: ['error_handling.snapshot_on_error'],
+    } as PartialRow as RuntimeSettingsOverride
+    const group = { ...scenario.scripts[0], runtime_settings: { error_handling: { continue_on_error: false } } as RuntimeSettingsOverride }
+    scenario.scripts = [group]
+    const row = buildPartialGroupRunRuntimeOverride(group.runtime_settings, undefined, [
+      { path: 'error_handling.continue_on_error', value: undefined },
+      { path: 'error_handling.snapshot_on_error', value: undefined },
+    ])
+    const runtime = buildGroupsForRunPayload(scenario, { [groupOverrideKey(group)]: { runtime_settings: row } })?.[0].runtime_settings as PartialRow
+    const fields = resolveRuntimeOverrideFields(runtime)
+    expect(fields).not.toContain('error_handling')
+    expect(fields).not.toContain('error_handling.continue_on_error')
+    expect(fields).not.toContain('error_handling.snapshot_on_error')
+    expect(runtime.error_handling?.continue_on_error).toBeUndefined()
+    // The table now reports the scenario's listed snapshot and the script's continue.
+    const table = buildGroupRuntimeTableValues(group, scenario, buildEmptyRunDefaultOverrides(), { runtime_settings: row })
+    expect(table.errorHandling).toBe('Script default / Snapshot')
+  })
+
+  it('resolves a partial group error-handling half per path over the scenario', () => {
+    const scenario = scenarioFixture()
+    scenario.runtime_settings = {
+      error_handling: { snapshot_on_error: true },
+      override_fields: ['error_handling.snapshot_on_error'],
+    } as PartialRow as RuntimeSettingsOverride
+    const group = { ...scenario.scripts[0], runtime_settings: undefined }
+    scenario.scripts = [group]
+    const override: GroupRunOverride = {
+      runtime_settings: { error_handling: { continue_on_error: true }, override_fields: ['error_handling.continue_on_error'] } as PartialRow as RuntimeSettingsOverride,
+    }
+    const runDefaults = buildEmptyRunDefaultOverrides()
+    expect(buildGroupRuntimeTableValues(group, scenario, runDefaults, override).errorHandling).toBe('Continue / Snapshot')
+    const draft = buildGroupEditDraft(group, scenario, runDefaults, override)
+    expect(draft.continue_on_error).toBe('true')
+    expect(draft.snapshot_on_error).toBe('true')
+  })
+
+  it('shows the script default for a half a partial scenario row does not list on the run-default cards', () => {
+    const scenario = scenarioFixture()
+    scenario.runtime_settings = {
+      error_handling: { continue_on_error: true },
+      override_fields: ['error_handling.continue_on_error'],
+    } as PartialRow as RuntimeSettingsOverride
+    const cards = buildRunDefaultCards(scenario, buildEmptyRunDefaultOverrides())
+    const snapshot = cards.find(card => card.key === 'snapshot_on_error')
+    const cont = cards.find(card => card.key === 'continue_on_error')
+    expect(snapshot?.isDefault).toBe(true)
+    expect(snapshot?.scenarioValue).toBe(cards.find(card => card.key === 'snapshot_on_error')?.value)
+    expect(cont?.isDefault).toBe(false)
+    expect(getEffectiveRuntimeDefaults(scenario, buildEmptyRunDefaultOverrides()).snapshot_on_error).toBeUndefined()
+  })
+
+  it('keeps the scenario device profile when a partial group lists only browser.headless', () => {
+    const scenario = scenarioFixture()
+    scenario.runtime_settings = {
+      browser_config: { device_profile: 'iphone-15' },
+      override_fields: ['browser.device_profile'],
+    } as PartialRow as RuntimeSettingsOverride
+    const group = { ...scenario.scripts[0], protocol: 'browser', runtime_settings: undefined } as typeof scenario.scripts[0]
+    scenario.scripts = [group]
+    const override: GroupRunOverride = {
+      runtime_settings: { browser_config: { headless: true }, override_fields: ['browser.headless'] } as PartialRow as RuntimeSettingsOverride,
+    }
+    const runDefaults = buildEmptyRunDefaultOverrides()
+    expect(buildGroupRuntimeTableValues(group, scenario, runDefaults, override).browser).toBe('iphone-15 · Headless')
+    expect(buildGroupEditDraft(group, scenario, runDefaults, override).browser_device_profile).toBe('iphone-15')
+  })
+
+  it('reads a reset log level off the merged row rather than the stored group', () => {
+    const scenario = partialScenario()
+    const group = { ...scenario.scripts[0], runtime_settings: { log: { level: 'debug' }, override_fields: ['log.level'] } as PartialRow as RuntimeSettingsOverride }
+    scenario.scripts = [group]
+    const row = buildPartialGroupRunRuntimeOverride(group.runtime_settings, undefined, [{ path: 'log.level', value: undefined }])
+    const table = buildGroupRuntimeTableValues(group, scenario, buildEmptyRunDefaultOverrides(), { runtime_settings: row })
+    expect(table.logLevel).toBe('Standard')
+  })
+
+  it('makes the error-handling inherit per half only for partial rows', () => {
+    const draft = { continue_on_error: 'false', snapshot_on_error: 'true' }
+    expect(applyGroupErrorHandlingSelect(draft, 'snapshot_on_error', '', true)).toEqual({ continue_on_error: 'false', snapshot_on_error: '' })
+    expect(applyGroupErrorHandlingSelect(draft, 'snapshot_on_error', '', false)).toEqual({ continue_on_error: '', snapshot_on_error: '' })
+  })
+
+  describe('partial pacing and think_time rows', () => {
+    function typedTimingScenario(): StoredScenario {
+      const scenario = scenarioFixture()
+      scenario.runtime_settings = {
+        pacing: { type: 'fixed_delay', delay_ms: 100 },
+        think_time: { type: 'random', mean_ms: 200 },
+      }
+      scenario.scripts = [{ ...scenario.scripts[0], runtime_settings: undefined }]
+      return scenario
+    }
+    const leafGroupRow = {
+      pacing: { delay_ms: 500 },
+      think_time: { mean_ms: 800 },
+      override_fields: ['pacing.delay_ms', 'think_time.mean_ms'],
+    } as PartialRow as RuntimeSettingsOverride
+
+    it('lays a group row listing only pacing.delay_ms and think_time.mean_ms over the typed scenario sections', () => {
+      const scenario = typedTimingScenario()
+      const group = { ...scenario.scripts[0], runtime_settings: leafGroupRow }
+      scenario.scripts = [group]
+      const runDefaults = buildEmptyRunDefaultOverrides()
+      const wholeGroup = { ...group, runtime_settings: { pacing: { type: 'fixed_delay', delay_ms: 500 }, think_time: { type: 'random', mean_ms: 800 } } as RuntimeSettingsOverride }
+      const table = buildGroupRuntimeTableValues(group, scenario, runDefaults)
+      expect(table.pacing).toBe(buildGroupRuntimeTableValues(wholeGroup, scenario, runDefaults).pacing)
+      expect(table.pacing).not.toBe('Script timing')
+      expect(table.thinkTime).toBe('random · 800ms')
+
+      const draft = buildGroupEditDraft(group, scenario, runDefaults)
+      expect(draft.pacingType).toBe('fixed_delay')
+      expect(draft.pacingConfig).toEqual({ type: 'fixed_delay', delay_ms: 500 })
+      expect(draft.thinkTimeMs).toBe('800')
+      expect(draft.thinkTimeConfig?.mean_ms).toBe(800)
+      expect(draft.thinkTimeConfig?.type).not.toBe('fixed')
+    })
+
+    it('keeps resolving the stored leaves after a run-dialog edit of another field', () => {
+      const scenario = typedTimingScenario()
+      const group = { ...scenario.scripts[0], runtime_settings: leafGroupRow }
+      scenario.scripts = [group]
+      const runDefaults = buildEmptyRunDefaultOverrides()
+      const override: GroupRunOverride = {
+        runtime_settings: buildPartialGroupRunRuntimeOverride(group.runtime_settings, undefined, [{ path: 'log.level', value: 'debug' }]),
+      }
+      const table = buildGroupRuntimeTableValues(group, scenario, runDefaults, override)
+      expect(table.thinkTime).toBe('random · 800ms')
+      expect(table.logLevel).not.toBe('Standard')
+      expect(buildGroupEditDraft(group, scenario, runDefaults, override).pacingType).toBe('fixed_delay')
+    })
+
+    it('keeps v1 whole-section semantics: a v1 group pacing section replaces the scenario section', () => {
+      const scenario = typedTimingScenario()
+      const group = { ...scenario.scripts[0], runtime_settings: { think_time: { mean_ms: 800 } } as RuntimeSettingsOverride }
+      scenario.scripts = [group]
+      const runDefaults = buildEmptyRunDefaultOverrides()
+      expect(buildGroupRuntimeTableValues(group, scenario, runDefaults).thinkTime).toBe('fixed · 800ms')
+    })
+
+    it('reads only the listed leaves of a partial scenario row on the run-default cards', () => {
+      const scenario = scenarioFixture()
+      scenario.runtime_settings = {
+        // The type is not listed, so the backend never applies it: the script's type runs.
+        pacing: { type: 'tps', delay_ms: 500 },
+        think_time: { type: 'random', mean_ms: 800 },
+        override_fields: ['pacing.delay_ms', 'think_time.mean_ms'],
+      } as PartialRow as RuntimeSettingsOverride
+      const runDefaults = buildEmptyRunDefaultOverrides()
+      const effective = getEffectiveRuntimeDefaults(scenario, runDefaults)
+      expect(effective.pacing).toEqual({ delay_ms: 500 })
+      expect(effective.think_time).toEqual({ mean_ms: 800 })
+      const cards = buildRunDefaultCards(scenario, runDefaults)
+      const pacing = cards.find(card => card.key === 'pacing')
+      const thinkTime = cards.find(card => card.key === 'think_time')
+      expect(pacing?.value).toBe('Script pacing · delay ms 500')
+      expect(pacing?.scenarioValue).toBe('Script pacing · delay ms 500')
+      expect(thinkTime?.value).toBe('Script think time · mean ms 800')
+      expect(thinkTime?.value).not.toContain('random')
+      expect(buildRunDefaultEditDraft('pacing', scenario, runDefaults).pacingType).toBe('')
+    })
+
+    it('shows a run-level pacing edit over a partial scenario row as the whole section', () => {
+      const scenario = scenarioFixture()
+      scenario.runtime_settings = { pacing: { delay_ms: 500 }, override_fields: ['pacing.delay_ms'] } as PartialRow as RuntimeSettingsOverride
+      const runDefaults = buildEmptyRunDefaultOverrides()
+      runDefaults.runtime_settings.pacing = { type: 'fixed_interval', interval_ms: 2000 }
+      const cards = buildRunDefaultCards(scenario, runDefaults)
+      expect(getEffectiveRuntimeDefaults(scenario, runDefaults).pacing).toEqual({ type: 'fixed_interval', interval_ms: 2000 })
+      expect(cards.find(card => card.key === 'pacing')?.scenarioValue).toBe('Script pacing · delay ms 500')
+    })
+  })
+
+  it('leaves an untouched partial group row byte-identical', () => {
+    const scenario = partialScenario()
+    const group = scenario.scripts[0]
+    expect(mergeRuntimeSettingsForRun(group.runtime_settings, { ...group.runtime_settings })).toEqual(group.runtime_settings)
+  })
+})
+
+describe('empty v1 sections keep whole-section semantics', () => {
+  it('keeps a stored v1 error_handling: {} pinned through an unrelated partial edit', () => {
+    const stored = { error_handling: {}, log: { level: 'debug' } } as RuntimeSettingsOverride
+    const row = buildPartialGroupRunRuntimeOverride(stored, undefined, [{ path: 'log.level', value: 'trace' }]) as RuntimeSettingsOverride & { override_fields?: string[] }
+    expect(row.override_fields).toEqual(expect.arrayContaining(['error_handling', 'log']))
+    expect(row.error_handling).toEqual({})
+    // The run payload merge of that (complete) partial overlay over the v1 row keeps the pin too.
+    const merged = mergeRuntimeSettingsForRun(stored, row) as RuntimeSettingsOverride & { override_fields?: string[] }
+    expect(merged.override_fields).toEqual(expect.arrayContaining(['error_handling']))
+    expect(merged.error_handling).toEqual({})
+  })
+
+  it('shows an empty v1 think_time or pacing as the zero value, not the layer below', () => {
+    const scenario = scenarioFixture()
+    scenario.runtime_settings = { think_time: { type: 'random', mean_ms: 100 }, pacing: { type: 'fixed_delay', delay_ms: 100 } }
+    const runDefaults = { runtime_settings: {} }
+    const inherited = buildGroupRuntimeTableValues(scenario.scripts[0], scenario, runDefaults)
+    const group = { ...scenario.scripts[0], runtime_settings: { think_time: {}, pacing: {} } as RuntimeSettingsOverride }
+    const values = buildGroupRuntimeTableValues(group, scenario, runDefaults)
+    expect(values.thinkTime).not.toBe(inherited.thinkTime)
+    expect(values.thinkTime).not.toContain('100')
+    expect(values.pacing).not.toBe(inherited.pacing)
+    expect(values.pacing).not.toContain('0.1')
+  })
+
+  it('reads a v1 root error_handling: {} as a pinned scenario section', () => {
+    expect(errorHandlingSectionIsPinned(effectiveRuntimeSection('error_handling', [{ error_handling: {} } as RuntimeSettingsOverride]))).toBe(true)
+  })
+})
+
+describe('groupHiddenPartialTiming', () => {
+  it('names an untyped partial group think time or pacing the dialog inherit option hides', () => {
+    const scenario = scenarioFixture()
+    scenario.runtime_settings = {}
+    const group = {
+      ...scenario.scripts[0],
+      runtime_settings: { think_time: { mean_ms: 800 }, pacing: { delay_ms: 500 }, override_fields: ['think_time.mean_ms', 'pacing.delay_ms'] } as unknown as RuntimeSettingsOverride,
+    }
+    const runDefaults = { runtime_settings: {} }
+    expect(groupHiddenPartialTiming('think_time', group, scenario, runDefaults)).toEqual({ summary: 'Script think time · mean ms 800', groupOwned: true })
+    expect(groupHiddenPartialTiming('pacing', group, scenario, runDefaults)).toEqual({ summary: 'Script timing · delay ms 500', groupOwned: true })
+    // Resetting the section path at the group drops the listed leaves.
+    const reset = buildPartialGroupRunRuntimeOverride(group.runtime_settings, undefined, [{ path: 'think_time', value: undefined }]) as RuntimeSettingsOverride & { override_fields?: string[] }
+    expect(reset.override_fields).toEqual(['pacing.delay_ms'])
+    expect(reset.think_time).toBeUndefined()
+  })
+
+  it('reports a scenario-owned leaf as not resettable at the group, and nothing for a typed section', () => {
+    const scenario = scenarioFixture()
+    scenario.runtime_settings = { think_time: { mean_ms: 800 }, override_fields: ['think_time.mean_ms'] } as unknown as RuntimeSettingsOverride
+    const runDefaults = { runtime_settings: {} }
+    expect(groupHiddenPartialTiming('think_time', scenario.scripts[0], scenario, runDefaults)?.groupOwned).toBe(false)
+    const typed = { ...scenario.scripts[0], runtime_settings: { think_time: { type: 'fixed', mean_ms: 5 }, override_fields: ['think_time'] } as RuntimeSettingsOverride }
+    expect(groupHiddenPartialTiming('think_time', typed, scenario, runDefaults)).toBeUndefined()
+  })
+})
+
+describe('group inherit options and the full runtime editor row', () => {
+  function inheritScenario(groupRuntime?: RuntimeSettingsOverride, scenarioRuntime?: RuntimeSettingsOverride): StoredScenario {
+    const scenario = scenarioFixture()
+    return {
+      ...scenario,
+      runtime_settings: scenarioRuntime,
+      scripts: [{ ...scenario.scripts[0], runtime_settings: groupRuntime }],
+    }
+  }
+  const script = { log: { level: 'extended' }, run_logic: { auto_transactions: 'per_action' } } as unknown as Parameters<typeof groupInheritedRuntimeText>[5]
+  const engine = { log: { level: 'standard' } } as unknown as Parameters<typeof groupInheritedRuntimeText>[6]
+
+  it('leaves an unset select on inherit and names the run level, then the script, then the engine', () => {
+    const runDefaults = buildEmptyRunDefaultOverrides()
+    const unset = inheritScenario()
+    expect(buildGroupEditDraft(unset.scripts[0], unset, runDefaults).log_level).toBe('')
+    expect(buildGroupEditDraft(unset.scripts[0], unset, runDefaults).auto_transactions).toBe('')
+    expect(groupInheritedRuntimeText('log_level', unset.scripts[0], unset, runDefaults, undefined, script, engine)).toBe('extended')
+    expect(groupInheritedRuntimeText('log_level', unset.scripts[0], unset, runDefaults, undefined, undefined, engine)).toBe('standard')
+    expect(groupInheritedRuntimeText('auto_transactions', unset.scripts[0], unset, runDefaults)).toBeUndefined()
+    const rootSet = inheritScenario(undefined, { log_level: 'disabled' })
+    expect(groupInheritedRuntimeText('log_level', rootSet.scripts[0], rootSet, runDefaults, undefined, script, engine)).toBe('disabled')
+  })
+
+  it('names the run level behind a value the group sets, but not behind a group row that clears it', () => {
+    const runDefaults = buildEmptyRunDefaultOverrides()
+    const groupSets = inheritScenario({ log: { level: 'extended' } }, { log_level: 'disabled' })
+    expect(buildGroupEditDraft(groupSets.scripts[0], groupSets, runDefaults).log_level).toBe('extended')
+    expect(groupInheritedRuntimeText('log_level', groupSets.scripts[0], groupSets, runDefaults, undefined, script)).toBe('disabled')
+    // A v1 log section without a level replaces the script's log section whole at run time
+    // (applyRuntimeOverrides), so neither the run level nor the script reaches it: the engine
+    // default runs.
+    const groupClears = inheritScenario({ log: { on_error_only: true } }, { log_level: 'disabled' })
+    expect(buildGroupEditDraft(groupClears.scripts[0], groupClears, runDefaults).log_level).toBe('')
+    expect(groupInheritedRuntimeText('log_level', groupClears.scripts[0], groupClears, runDefaults, undefined, script, engine)).toBe('standard')
+    expect(groupInheritedRuntimeText('log_level', groupClears.scripts[0], groupClears, runDefaults, undefined, script)).toBeUndefined()
+    // Same for a v1 run_logic section without auto_transactions.
+    const runLogicClears = inheritScenario({ run_logic: { iterations: 2 } })
+    expect(groupInheritedRuntimeText('auto_transactions', runLogicClears.scripts[0], runLogicClears, runDefaults, undefined, script, engine)).toBeUndefined()
+  })
+
+  it('stores the full editor row as the run override and submits exactly its paths', () => {
+    const scenario = inheritScenario({ http: { request_timeout_ms: 5000 }, log: { level: 'extended' } })
+    const key = groupOverrideKey(scenario.scripts[0])
+    const existing: GroupRunOverride = { vusers: 4 }
+    const row = { log: { level: 'extended' }, override_fields: ['log.level'] } as RuntimeSettingsOverride
+    const next = groupRunOverrideWithRuntimeRow(existing, row)
+    expect(next.vusers).toBe(4)
+    expect(next.runtime_settings).not.toBe(row)
+    const submitted = buildGroupsForRunPayload(scenario, { [key]: next })?.[0].runtime_settings
+    expect(resolveRuntimeOverrideFields(submitted)).toEqual(['log.level'])
+    // A row that resets everything stays an explicit empty partial row.
+    const cleared = buildGroupsForRunPayload(scenario, { [key]: groupRunOverrideWithRuntimeRow(undefined, { override_fields: [] } as RuntimeSettingsOverride) })?.[0].runtime_settings
+    expect(resolveRuntimeOverrideFields(cleared)).toEqual([])
+    expect(cleared?.http).toBeUndefined()
   })
 })

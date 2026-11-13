@@ -666,6 +666,8 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
             availableTargets={availableTargets}
             generatorInventory={generatorInventory}
             availableLabels={availableLabels}
+            testRuntimeSettings={runtimeSettings}
+            draftScope={`${revisionContext?.projectId ?? projectId ?? ''}:${revisionContext?.scenarioId ?? 'new'}`}
           />
 
 			<TransactionResponseTimeSLASettings

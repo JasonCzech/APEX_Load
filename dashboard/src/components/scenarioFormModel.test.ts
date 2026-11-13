@@ -7,9 +7,11 @@ import {
   replaceScenarioRuntimeDefaults,
   reseedScenarioGroups,
   scenarioErrorHandlingFlag,
+  scenarioGroupWithRuntimeSettings,
   seededScenarioRuntime,
   withScenarioErrorHandlingFlag,
 } from './scenarioFormModel'
+import { setOverrideField } from './runtimeSettingsModel'
 
 describe('reseedScenarioGroups', () => {
   it('preserves groups beyond the selected shape and does not invent script mappings', () => {
@@ -65,13 +67,24 @@ describe('seededScenarioRuntime', () => {
       pacing: { type: 'fixed', delay_ms: 500 },
     } as const
     const seeded = seededScenarioRuntime(structuredClone(current) as never, { runtime_settings: { pacing: { type: 'none' }, think_time: { type: 'ignore' } } as never })
+    // Carrying an error-handling flag into a seed that has no error_handling
+    // section writes a partial row: each carried value is its own path, so the
+    // scripts' retry settings are not replaced by a flags-only section.
     expect(seeded).toEqual({
       pacing: { type: 'none' },
       think_time: { type: 'ignore' },
-      iterations: 7,
-      log_level: 'debug',
-      auto_transactions: true,
+      run_logic: { iterations: 7, auto_transactions: true },
+      log: { level: 'debug' },
       error_handling: { continue_on_error: false, snapshot_on_error: true },
+      override_fields: [
+        'pacing',
+        'think_time',
+        'run_logic.iterations',
+        'log.level',
+        'run_logic.auto_transactions',
+        'error_handling.continue_on_error',
+        'error_handling.snapshot_on_error',
+      ],
     })
   })
 
@@ -144,5 +157,72 @@ describe('scenarioErrorHandlingFlag & withScenarioErrorHandlingFlag', () => {
 
     const roundTripped = replaceScenarioRuntimeDefaults(optedOut, runtimeSettingsFromForm(optedOut))
     expect(roundTripped.runtime_settings?.error_handling).toEqual(optedOut.runtime_settings?.error_handling)
+  })
+})
+
+describe('partial runtime overrides in the scenario form', () => {
+  const form = (runtime?: object) => ({ name: '', duration: '1m', start_delay: '', groups: [], scenario_mode: 'vuser_driven', script_shakeout: false, resource_baseline: false, runtime_settings: runtime }) as unknown as ScenarioFormState
+
+  it('toggles an Advanced error-handling default as its own path, never a flags-only section', () => {
+    const disabled = withScenarioErrorHandlingFlag(form(), 'continue_on_error', false)
+    expect(disabled.runtime_settings).toEqual({ error_handling: { continue_on_error: false }, override_fields: ['error_handling.continue_on_error'] })
+    expect(scenarioErrorHandlingFlag(disabled, 'continue_on_error')).toBe(false)
+    const snapshot = withScenarioErrorHandlingFlag(disabled, 'snapshot_on_error', true)
+    expect(snapshot.runtime_settings).toEqual({
+      error_handling: { continue_on_error: false, snapshot_on_error: true },
+      override_fields: ['error_handling.continue_on_error', 'error_handling.snapshot_on_error'],
+    })
+    // Back to inherit removes the path; continue-on-error is then on by default.
+    const inherited = withScenarioErrorHandlingFlag(snapshot, 'continue_on_error', undefined)
+    expect(inherited.runtime_settings).toEqual({ error_handling: { snapshot_on_error: true }, override_fields: ['error_handling.snapshot_on_error'] })
+    expect(scenarioErrorHandlingFlag(inherited, 'continue_on_error')).toBe(true)
+    // A stored v1 row is converted on the toggle without changing what it applies.
+    const legacy = withScenarioErrorHandlingFlag(form({ http: { version: '2' } }), 'continue_on_error', false)
+    expect(legacy.runtime_settings).toEqual({
+      http: { version: '2' },
+      error_handling: { continue_on_error: false },
+      override_fields: ['http', 'error_handling.continue_on_error'],
+    })
+  })
+
+  it('seeds a template\'s error-handling flags as their own paths when no section exists', () => {
+    expect(seededScenarioRuntime(undefined, { continue_on_error: true, snapshot_on_error: true })).toEqual({
+      error_handling: { continue_on_error: true, snapshot_on_error: true },
+      override_fields: ['error_handling.continue_on_error', 'error_handling.snapshot_on_error'],
+    })
+    // A v1 base that already has an error_handling section keeps v1 semantics.
+    expect(seededScenarioRuntime({ error_handling: { max_retries: 2 } }, { continue_on_error: true })).toEqual({
+      error_handling: { max_retries: 2, continue_on_error: true },
+    })
+    // A partial base stays partial and lists what the seed writes.
+    const partial = { http: { request_timeout_ms: 5 }, override_fields: ['http.request_timeout_ms'] }
+    expect(seededScenarioRuntime(partial as never, { pacing: { type: 'fixed_delay', delay_ms: 100 } as never, iterations: 4 })).toEqual({
+      http: { request_timeout_ms: 5 },
+      pacing: { type: 'fixed_delay', delay_ms: 100 },
+      run_logic: { iterations: 4 },
+      override_fields: ['http.request_timeout_ms', 'pacing', 'run_logic.iterations'],
+    })
+  })
+
+  it('keeps a group\'s own iterations when a partial run-logic edit leaves them alone', () => {
+    const group = { name: 'g', script_id: 's', vusers: 1, ramp_up: '', ramp_down: '', stages: [], initialization: 'at_runtime' as const, iterations: 3 }
+    const next = scenarioGroupWithRuntimeSettings(group, setOverrideField(undefined, 'run_logic.workload_model', 'open'))
+    expect(next.iterations).toBeUndefined()
+    expect(next.runtimeSettings?.override_fields).toEqual(['run_logic.workload_model', 'run_logic.iterations'])
+    expect(next.runtimeSettings?.run_logic).toEqual({ workload_model: 'open', iterations: 3 })
+    // An edit outside run_logic leaves the compact field where it is.
+    const http = scenarioGroupWithRuntimeSettings(group, setOverrideField(undefined, 'http.version', '2'))
+    expect(http.iterations).toBe(3)
+    expect(http.runtimeSettings?.override_fields).toEqual(['http.version'])
+  })
+
+  it('folds a stored group\'s compact iterations into a partial row as one listed path', () => {
+    const stored = {
+      id: 'scenario', created_at: '', updated_at: '', script_count: 1, name: 'S', duration: '1m',
+      scripts: [{ script_id: 's', vusers: 1, iterations: 6, runtime_settings: { http: { version: '2' }, override_fields: ['http.version'] } }],
+    } as unknown as Parameters<typeof scenarioFormStateFromStoredScenario>[0]
+    const runtime = scenarioFormStateFromStoredScenario(stored, 's').groups[0].runtimeSettings
+    expect(runtime?.override_fields).toEqual(['http.version', 'run_logic.iterations'])
+    expect(runtime?.run_logic).toEqual({ iterations: 6 })
   })
 })

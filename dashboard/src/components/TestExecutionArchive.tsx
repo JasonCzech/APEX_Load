@@ -53,6 +53,7 @@ import {
 } from '../utils/snapshotFormatUtils'
 import { copyTextToClipboard } from '../utils/clipboardUtils'
 import { formatBrowserRuntimeSummary } from './browserRuntimeSummary'
+import { runtimeBrowserSettings } from './runtimeSettingsModel'
 import { formatTimeCompact } from '../utils/timeUtils'
 import {
   ARCHIVE_PAGE_SIZE_OPTIONS,
@@ -908,7 +909,7 @@ export default function TestExecutionArchive({
     soapFaultTimelineEntries: buildArchiveFaultTimelineEntries(archiveReport?.soap_fault_timeline),
     soapPayloadTimelineEntries: buildArchivePayloadTimelineEntries(archiveReport?.soap_payload_timeline),
     summaryTimelineEntries: buildArchiveSummaryTimelineEntries(archiveReport?.summary_timeline),
-    runtimeBrowserSummary: formatBrowserRuntimeSummary(archiveReport?.manifest.provenance?.runtime_settings?.browser),
+    runtimeBrowserSummary: formatBrowserRuntimeSummary(runtimeBrowserSettings(archiveReport?.manifest.provenance?.runtime_settings)),
   }), [archiveReport])
   const soapOperationEntries = archiveSOAPOperationEntries.length > 0
     ? archiveSOAPOperationEntries

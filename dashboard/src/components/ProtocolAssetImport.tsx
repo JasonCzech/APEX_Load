@@ -2987,6 +2987,7 @@ export default function ProtocolAssetImport({ kind, initialFile, initialComparis
             onParameterizationApplied={handleParameterizationApplied}
             onTransportApplied={savedResult || asyncAPISelectedScriptSaved ? undefined : handleTransportApplied}
             onSettingsBusyChange={setSettingsEditing}
+            settingsIdentity={String(selectedScriptIndex)}
             onSettingsApplied={updated => {
               if (!result) return
               advanceReviewGeneration()

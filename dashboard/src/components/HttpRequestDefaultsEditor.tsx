@@ -22,6 +22,12 @@ interface HttpRequestDefaultsEditorProps {
   onChange: (patch: Partial<HTTPConfig>) => void
   onNewUserEachIterationChange?: (enabled: boolean) => void
   originLabel?: string
+  /**
+   * Hide the two-state cookie jar, clear-cookies, HTTP cache and trace context
+   * controls. The scenario/group override editor sets it and renders its own
+   * three-state (Inherit / Enabled / Disabled) controls for those paths.
+   */
+  hideBooleanPolicyControls?: boolean
   section: 'request' | 'session'
   value: HTTPConfig
 }
@@ -342,6 +348,7 @@ export default function HttpRequestDefaultsEditor({
   onChange,
   onNewUserEachIterationChange,
   originLabel,
+  hideBooleanPolicyControls = false,
   section,
   value,
 }: HttpRequestDefaultsEditorProps) {
@@ -523,6 +530,7 @@ export default function HttpRequestDefaultsEditor({
             <div><h5 id="session-policy-heading">Cookie Jar & Cache Lifecycle</h5><p>Control state learned from responses independently from pinned cookies.</p></div>
           </div>
           <div className="scenario-option-grid">
+            {!hideBooleanPolicyControls && (<>
             <label className={`scenario-option-card ${value.cookies_enabled !== false ? 'selected' : ''}`}>
               <input type="checkbox" checked={value.cookies_enabled !== false} onChange={event => onChange({ cookies_enabled: event.target.checked })} />
               <div><strong>Enable cookie jar</strong><span>Store and send cookies learned from server responses.</span></div>
@@ -535,6 +543,7 @@ export default function HttpRequestDefaultsEditor({
               <input type="checkbox" checked={Boolean(value.cache_enabled)} onChange={event => onChange({ cache_enabled: event.target.checked })} />
               <div><strong>Simulate HTTP cache</strong><span>Maintain a bounded per-VUser response cache.</span></div>
             </label>
+            </>)}
             <label className={`scenario-option-card ${newUserEachIteration ? 'selected' : ''}`}>
               <input type="checkbox" checked={newUserEachIteration} onChange={event => onNewUserEachIterationChange?.(event.target.checked)} />
               <div><strong>Simulate a new user each iteration</strong><span>Clear both learned cookies and simulated cache before the next iteration.</span></div>
@@ -656,8 +665,10 @@ export default function HttpRequestDefaultsEditor({
           <label className="full-width"><span>User-Agent</span><input value={value.user_agent || ''} onChange={event => onChange({ user_agent: event.target.value || undefined })} placeholder="Mozilla/5.0 …" /></label>
           <label><span>Accept-Encoding</span><input value={value.accept_encoding || ''} onChange={event => onChange({ accept_encoding: event.target.value || undefined })} placeholder="gzip, deflate, br" /></label>
           <label><span>Accept-Language</span><input value={value.accept_language || ''} onChange={event => onChange({ accept_language: event.target.value || undefined })} placeholder="en-US,en;q=0.9" /></label>
+          {!hideBooleanPolicyControls && (<>
           <label><span>Trace context</span><select value={value.traceparent === false ? 'false' : 'true'} onChange={event => onChange({ traceparent: event.target.value === 'true' })}><option value="true">Generate / propagate</option><option value="false">Disabled</option></select></label>
           <label><span>Generated trace sampling</span><select value={value.traceparent_sampled === false ? 'false' : 'true'} onChange={event => onChange({ traceparent_sampled: event.target.value === 'true' })}><option value="true">Sampled</option><option value="false">Not sampled</option></select></label>
+          </>)}
         </div>
       </section>
 

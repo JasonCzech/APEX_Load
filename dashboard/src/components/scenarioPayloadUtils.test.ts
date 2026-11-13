@@ -5,6 +5,10 @@ import type { GoalConfig } from '../types/goals'
 
 import { buildGroupAssignmentPayload, buildCreateTestPayload, buildGoalConfigPayload, buildScenarioGroupPayloads, buildScenarioUpsertPayload } from './scenarioPayloadUtils'
 import { buildInitialScenarioDraft, buildScenarioDraftFromTest, scenarioDraftReducer } from './scenarioDraftUtils'
+import { materializeRuntimeSettingsForApply } from './runtimeSettingsApply'
+import { applyRuntimeOverrideEdit, runtimeDraftFromOverride } from './runtimeSettingsModel'
+import { scenarioDraftFromForm, scenarioUpsertPayload } from './scenarioAssembly'
+import { emptyScenarioForm, replaceScenarioRuntimeDefaults, runtimeSettingsFromForm, scenarioFormStateFromStoredScenario } from './scenarioFormModel'
 
 describe('scenarioPayloadUtils', () => {
   it.each([true, false])('clears only an originally present revision-root runtime (%s)', hadRuntime => {
@@ -1632,4 +1636,79 @@ it('preserves all 9 ErrorHandlingConfig fields across round-trip payload generat
   })
   expect(payload.runtime_settings?.error_handling).toEqual(fullErrorHandling)
   expect(payload.groups?.[0].runtime_settings?.error_handling).toEqual(fullErrorHandling)
+})
+
+describe('partial runtime overrides in scenario payloads', () => {
+  const scriptConfig = {
+    base_url: '',
+    http: {
+      request_timeout_ms: 300,
+      default_headers: { 'X-Script': 'yes' },
+      tls: { client_cert_file: 'script.crt' },
+      proxy: { url: 'http://script-proxy' },
+      auth: { type: 'bearer', token: '{{secret.script_token}}' },
+    },
+  }
+  const engineDefaults = { base_url: '', http: { request_timeout_ms: 60000, connect_timeout_ms: 30000 } }
+
+  it('sends one HTTP leaf for a scenario-default edit and keeps every group\'s script HTTP settings', () => {
+    // The scenario-defaults editor edits the form's runtime_settings through the model.
+    const form = { ...emptyScenarioForm('script'), name: 'Checkout' }
+    const edited = applyRuntimeOverrideEdit(runtimeSettingsFromForm(form), 'http', { request_timeout_ms: 5000 })
+    const nextForm = replaceScenarioRuntimeDefaults(form, edited)
+    const storedGroupRow = { http: { version: '2' } }
+    nextForm.groups = [{ ...nextForm.groups[0], runtimeSettings: runtimeDraftFromOverride(storedGroupRow) }]
+
+    const payload = scenarioUpsertPayload(scenarioDraftFromForm(nextForm))
+    expect(payload.runtime_settings).toEqual({ http: { request_timeout_ms: 5000 }, override_fields: ['http.request_timeout_ms'] })
+    // A group row nobody edited is sent byte-for-byte as stored (v1).
+    expect(payload.groups[0].runtime_settings).toEqual(storedGroupRow)
+
+    // Execution mirror (engine → script → scenario → group): the scenario edit
+    // lands on the timeout alone; the script's headers, TLS, proxy and auth stay.
+    const scenarioLayer = runtimeDraftFromOverride(payload.runtime_settings)
+    const effective = materializeRuntimeSettingsForApply(engineDefaults, scriptConfig, scenarioLayer)
+    expect(effective?.http).toEqual({ ...scriptConfig.http, request_timeout_ms: 5000 })
+  })
+
+  it('sends a test-level continue-on-error toggle as its own path', () => {
+    const draft = scenarioDraftReducer(buildInitialScenarioDraft(undefined, []), { type: 'setRuntimeSettingField', field: 'continue_on_error', value: false })
+    const payload = buildCreateTestPayload({
+      duration: '1m', startDelay: '', scenarioMode: 'vuser_driven', scriptShakeout: false, resourceBaseline: false,
+      groups: draft.groups, goalConfig: {}, runtimeSettings: draft.runtimeSettings,
+    })
+    expect(payload.runtime_settings).toEqual({ error_handling: { continue_on_error: false }, override_fields: ['error_handling.continue_on_error'] })
+    const effective = materializeRuntimeSettingsForApply(undefined, { base_url: '', error_handling: { max_retries: 3, retry_delay_ms: 20 } }, runtimeDraftFromOverride(payload.runtime_settings))
+    expect([effective?.continue_on_error, effective?.max_retries, effective?.retry_delay_ms]).toEqual([false, 3, 20])
+  })
+
+  it('keeps a stored SOAP section and partial row through a scenario round trip', () => {
+    const stored = { soap: { version: '1.2', ws_security: { username_token: { username: '[REDACTED]', password: '[REDACTED]' } } }, override_fields: ['soap.version', 'soap.ws_security.username_token'] }
+    const [group] = buildScenarioGroupPayloads([{ name: 'soap', scriptId: 'script', vusers: 1, rampUp: '', rampDown: '', initialization: 'at_runtime', runtimeSettings: runtimeDraftFromOverride(stored) }])
+    expect(group.runtime_settings).toEqual(stored)
+    const v1 = { soap: { version: '1.1' } }
+    const [legacy] = buildScenarioGroupPayloads([{ name: 'soap', scriptId: 'script', vusers: 1, rampUp: '', rampDown: '', initialization: 'at_runtime', runtimeSettings: runtimeDraftFromOverride(v1) }])
+    expect(legacy.runtime_settings).toEqual(v1)
+  })
+})
+
+describe('stored v1 runtime rows round-trip through the scenario form', () => {
+  // v1 applies every non-nil section whole (applyRuntimeOverrides), `{}` and an
+  // untyped pacing included, so a save that leaves runtime untouched must resend them.
+  it.each([
+    [{ think_time: {} }],
+    [{ error_handling: {} }],
+    [{ pacing: { delay_ms: 500 } }],
+    [{ pacing: {} }],
+  ])('keeps %j on the group and the scenario row', row => {
+    const stored = {
+      id: 'scenario', created_at: '', updated_at: '', script_count: 1, name: 'S', duration: '1m',
+      runtime_settings: structuredClone(row),
+      scripts: [{ script_id: 's', vusers: 1, runtime_settings: structuredClone(row) }],
+    } as unknown as Parameters<typeof scenarioFormStateFromStoredScenario>[0]
+    const form = scenarioFormStateFromStoredScenario(stored, 's')
+    const payload = scenarioUpsertPayload(scenarioDraftFromForm(form))
+    expect(payload.groups[0].runtime_settings).toEqual(row)
+    expect(payload.runtime_settings).toEqual(row)
+  })
 })

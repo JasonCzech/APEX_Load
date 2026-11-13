@@ -85,6 +85,8 @@ func TestConfigCatalogDefaultsMatchRuntimeBehavior(t *testing.T) {
 		{"config.http.accept_encoding", nil},
 		{"config.http.accept_language", nil},
 		{"config.error_handling.continue_on_error", nil},
+		// A plain bool the runtime leaves off unless the script sets it.
+		{"config.error_handling.snapshot_on_error", false},
 	} {
 		if got := catalogEntry(t, tc.path).Default; got != tc.want {
 			t.Errorf("%s: Default = %#v, want %#v", tc.path, got, tc.want)
@@ -316,6 +318,60 @@ func TestConfigCatalogOptionsMatchValidators(t *testing.T) {
 		if len(networkModeRejected(candidate)) == 0 && !slices.Contains(networkOptions, candidate) {
 			t.Errorf("network_simulation.mode omits validator-accepted %q (options %v)", candidate, networkOptions)
 		}
+	}
+	// Web runtime string enums are selects offering exactly the values
+	// validateWebRuntimeIssues accepts, plus the unset value.
+	webRuntimeEnums := []struct {
+		path       string
+		accepted   []string
+		candidates []string
+		probe      func(value string) *Script
+	}{
+		{"config.web_runtime.network_simulation.preset", []string{"56k", "dsl", "t1", "10mbps"}, []string{"56k", "dsl", "t1", "10mbps", "3g", "lte", "cable"}, func(value string) *Script {
+			script := &Script{}
+			script.Config.WebRuntime.NetworkSimulation = NetworkSimulationConfig{Mode: "preset", Preset: value}
+			return script
+		}},
+		{"config.web_runtime.streaming.mode", []string{"adaptive", "fixed"}, []string{"adaptive", "fixed", "abr", "constant"}, func(value string) *Script {
+			script := &Script{}
+			script.Config.WebRuntime.Streaming.Mode = value
+			script.Config.WebRuntime.Streaming.FixedBitrateKbps = 512
+			return script
+		}},
+		{"config.web_runtime.streaming.bandwidth_estimation", []string{"rolling", "instant"}, []string{"rolling", "instant", "ewma", "average"}, func(value string) *Script {
+			script := &Script{}
+			script.Config.WebRuntime.Streaming.BandwidthEstimation = value
+			return script
+		}},
+	}
+	for _, tc := range webRuntimeEnums {
+		meta := catalogEntry(t, tc.path)
+		if meta.Type != ConfigFieldTypeSelect {
+			t.Errorf("%s: type %q, want select", tc.path, meta.Type)
+		}
+		if want := append([]string{""}, tc.accepted...); !slices.Equal(meta.Options, want) {
+			t.Errorf("%s: options %v, want %v", tc.path, meta.Options, want)
+		}
+		for _, candidate := range tc.candidates {
+			accepted := true
+			for _, issue := range validateWebRuntimeIssues(tc.probe(candidate)) {
+				if strings.HasPrefix(issue, tc.path+" ") {
+					accepted = false
+				}
+			}
+			if accepted != slices.Contains(meta.Options, candidate) {
+				t.Errorf("%s: validator accepts %q = %v, but catalog options %v", tc.path, candidate, accepted, meta.Options)
+			}
+		}
+	}
+}
+
+// config.think_time.force is honoured only on an action's think_time (the
+// replay loop reads action.ThinkTime.Force), so the catalog must say so.
+func TestConfigCatalogThinkTimeForceIsActionLevel(t *testing.T) {
+	description := catalogEntry(t, "config.think_time.force").Description
+	if !strings.Contains(strings.ToLower(description), "action-level think time") {
+		t.Errorf("config.think_time.force description %q must say it only applies to action-level think time", description)
 	}
 }
 

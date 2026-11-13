@@ -4,7 +4,7 @@ import { HTTPReplayPolicyFields } from './HTTPReplayPolicyFields'
 import ThinkTimePercentageInputs from './ThinkTimePercentageInputs'
 import TabList from './ux/TabList'
 import { handleTabKey } from './tabKeyboard'
-import { useId, useState } from 'react'
+import { useId, useState, type ReactNode } from 'react'
 
 import { type RuntimeSettingsOverride, type ScenarioRuntimeSettingsDraft } from '../types'
 import { type ScriptActionDefinition, type ScriptConfig } from '../types/scripts'
@@ -12,20 +12,30 @@ import { inheritedPlaceholder as inh } from './runtimeFieldParsers'
 import {
   EMPTY_RUNTIME_DRAFT,
   HTTP_VERSION_OPTIONS,
-  errorHandlingFromDraft,
+  applyRuntimeOverrideDiff,
+  applyRuntimeOverrideEdit,
   formatEffectiveRuntimeField,
+  isFieldOverridden,
   isRuntimeDraftEmpty,
   isRuntimeFieldApplicable,
+  overlayRuntimeOverrideSection,
+  overrideFieldValue,
   overrideFromRuntimeDraft,
+  resetOverrideField,
+  resolveRuntimeRowsValue,
+  effectiveRuntimeValue,
+  runtimeOverrideFieldPaths,
   runtimeDraftFromOverride,
   runtimeOverrideFromScriptConfig,
+  runtimeOverrideRowFromDraft,
   RUNTIME_FIELD_SOURCE_LABEL,
+  setOverrideField,
   type RuntimeFieldKey,
 } from './runtimeSettingsModel'
-import { editReplacementSection, materializeRuntimeSettingsForApply } from './runtimeSettingsApply'
+import { materializeRuntimeSettingsForApply, type RuntimeApplyReport } from './runtimeSettingsApply'
 import { HTTP3ExecutionNote } from './HTTP3ExecutionNote'
 import { HTTPQUICSettingsFields } from './HTTPQUICSettingsFields'
-import { http3PolicyIssues, patchQUICConfig, quicPanelDisabledReason } from './httpQUICModel'
+import { http3PolicyIssues, quicPanelDisabledReason } from './httpQUICModel'
 import { useBrowserEmulationCatalog } from '../hooks/useBrowserEmulationCatalog'
 import WebHttpTab from './runtimeTabs/WebHttpTab'
 import { JavaEnvSettingsFields, type JavaEnvSettingsValue } from './JavaEnvSettingsFields'
@@ -51,6 +61,41 @@ import {
   countPinnedCookieErrors,
   formatHTTPSettingsSummary,
 } from './httpRequestDefaultsModel'
+import AuthHostsField from './AuthHostsField'
+import SoapOverrideTab from './runtimeTabs/SoapOverrideTab'
+import { canonicalPacingType, canonicalWorkloadModel } from './runtimeWorkspaceModel'
+import { scriptHasLLMActions, type HTTPTransportTabId, type RuntimeSettingsSectionId } from './scriptEditorRuntimeSettingsModel'
+import { CanonicalRuntimeGroupRail } from './runtime-settings/CanonicalRuntimeGroupRail'
+import {
+  getCanonicalGroupDestinationForPaths,
+  getCanonicalGroupForSection,
+  getRuntimeFieldLocation,
+  getTlsMaxVersionHttp3Warning,
+  isHttpLikeRuntimeProtocol,
+  normalizeRuntimeProtocol,
+  type CanonicalRuntimeGroupId,
+  type RuntimeValueProvenance,
+} from './runtime-settings/canonicalRuntimeTaxonomy'
+import {
+  MaskedTextOverrideInput,
+  RuntimeOverrideField,
+  RuntimeOverridePanelList,
+  SecretOverrideInput,
+  TriStateOverrideSelect,
+} from './runtime-settings/ScenarioOverrideFields'
+import { provenanceLabel } from './runtime-settings/scenarioOverrideValues'
+import {
+  ARRIVAL_PROCESS_OPTIONS,
+  LOG_MAX_RESPONSE_BYTES,
+  MAX_ARRIVAL_BURSTINESS,
+  PACING_TYPE_OPTIONS,
+  RETRY_BACKOFF_OPTIONS,
+  RETRY_ON_OPTIONS,
+  TERMINATION_MODE_OPTIONS,
+  THINK_TIME_DISTRIBUTION_OPTIONS,
+  THINK_TIME_TYPE_OPTIONS,
+  TLS_VERSION_OPTIONS,
+} from './runtime-settings/scenarioOverrideOptions'
 
 export interface RuntimeEditorGroup {
   name: string
@@ -78,18 +123,30 @@ export interface RuntimeSettingsGroupEditorProps {
   /** Per-group overrides, aligned to `groups`. */
   overrides: Array<ScenarioRuntimeSettingsDraft | undefined>
   onChange: (index: number, next: ScenarioRuntimeSettingsDraft | undefined) => void
-  onApplyToGroups: (sourceIndex: number, targetIndexes: number[]) => void
+  /** May return what it did not copy, which the apply panel then reports. */
+  onApplyToGroups: (sourceIndex: number, targetIndexes: number[]) => void | RuntimeApplyReport
   /** Overrides the panel heading (single-target mounts such as the scenario root). */
   title?: string
   description?: string
   /** Hides the Apply-to-groups panel — for mounts that edit one settings object. */
   hideApplyPanel?: boolean
   hideGroupSelector?: boolean
+  /** Badge label for the layer this mount edits (e.g. "Test override", "Run override"). */
   overrideLabel?: string
+  /** Badge label for the `scenarioDefault` row (e.g. "Test override" when the
+   *  Command Center passes the test's runtime settings there). */
+  scenarioDefaultLabel?: string
+  /** Badge label for values no override row sets. A mount that stands for many
+   *  groups with no single script (test- or scenario-wide) defaults to
+   *  "Script or engine default", since each group's script still applies. */
+  inheritedDefaultLabel?: string
   /** Section applicability protocols. A scenario- or test-wide mount passes every
    *  member protocol so a section applicable to at least one group stays editable;
    *  unset falls back to the focus group's own protocol. */
   applicableProtocols?: string[]
+  /** Scenario- or test-wide mounts: whether any member group runs LLM actions,
+   *  which gates the LLM quota editor. Unset offers the editor. */
+  scopeUsesLLMActions?: boolean
 }
 
 const FIELD_LABELS: Record<RuntimeFieldKey, string> = {
@@ -138,6 +195,7 @@ const SUMMARY_FIELDS: RuntimeFieldKey[] = [
  */
 type RuntimeTabId =
   | 'summary'
+  | 'target'
   | 'think_time'
   | 'pacing'
   | 'run_logic'
@@ -145,10 +203,26 @@ type RuntimeTabId =
   | 'http_transport'
   | 'browser_emulation'
   | 'web_http'
+  | 'soap'
   | 'java_env'
 
 /** Nested sub-tabs within the HTTP Transport tab (mirrors the Script Editor). */
 type HttpSubTabId = 'request_defaults' | 'session_cache' | 'timeouts' | 'connection' | 'tls' | 'proxy' | 'authentication' | 'browser_emulation'
+
+const HTTP_SUBTAB_TRANSPORT: Record<HttpSubTabId, HTTPTransportTabId> = {
+  request_defaults: 'request_defaults',
+  session_cache: 'session_cache',
+  timeouts: 'timeouts',
+  connection: 'connection',
+  tls: 'tls',
+  proxy: 'proxy',
+  authentication: 'authentication',
+  browser_emulation: 'browser',
+}
+
+function httpSubTabForTransport(tab?: HTTPTransportTabId): HttpSubTabId {
+  return (Object.keys(HTTP_SUBTAB_TRANSPORT) as HttpSubTabId[]).find(id => HTTP_SUBTAB_TRANSPORT[id] === tab) ?? 'request_defaults'
+}
 
 type HTTPSettings = NonNullable<ScenarioRuntimeSettingsDraft['http']>
 type BrowserSettings = NonNullable<ScenarioRuntimeSettingsDraft['browser_config']>
@@ -158,6 +232,142 @@ type LogSettings = NonNullable<RuntimeSettingsOverride['log']>
 type RunLogicSettings = NonNullable<RuntimeSettingsOverride['run_logic']>
 type ThinkTimeSettings = NonNullable<RuntimeSettingsOverride['think_time']>
 type PacingSettings = NonNullable<RuntimeSettingsOverride['pacing']>
+type SOAPSettings = NonNullable<ScenarioRuntimeSettingsDraft['soap']>
+
+/** Pacing fields the open-workload scheduler and LLM quota read (pkg/dsl PacingConfig). */
+interface PacingRateStage {
+  duration_seconds?: number
+  target_tps?: number
+  end_tps?: number
+}
+interface PacingQuota {
+  tpm?: number
+  rpm?: number
+  estimated_tokens_per_request?: number
+  burst_tokens?: number
+  default_tokens?: number
+  headroom_ratio?: number
+  adaptive_aimd?: boolean
+}
+type ExtendedPacing = Partial<PacingSettings> & {
+  arrival_process?: string
+  burstiness?: number
+  seed?: number
+  rate_stages?: PacingRateStage[]
+  quota?: PacingQuota
+}
+
+/**
+ * The leaves that belong to the pacing type, which Pacing: Inherit returns to
+ * inherited. The LLM quota and open-workload arrival leaves apply in every
+ * pacing mode and keep their own reset actions.
+ */
+const PACING_TYPE_PATHS = [
+  'pacing.type',
+  'pacing.delay_ms',
+  'pacing.min_delay_ms',
+  'pacing.max_delay_ms',
+  'pacing.interval_ms',
+  'pacing.min_interval_ms',
+  'pacing.max_interval_ms',
+  'pacing.tps',
+] as const
+
+/**
+ * Tri-state override paths whose Go field is a plain bool (not *bool). The
+ * server stores false by dropping the value (omitempty) while override_fields
+ * keeps the path, so a covered path with no value reads back as Disabled.
+ */
+const PLAIN_BOOL_OVERRIDE_PATHS: ReadonlySet<string> = new Set([
+  'error_handling.honor_retry_after',
+  'http.tls.insecure_skip_verify',
+  'pacing.quota.adaptive_aimd',
+])
+
+/**
+ * The leaves that belong to the think time type, which Distribution: Inherit
+ * returns to inherited. The multiplier, limit and ignore leaves apply to every
+ * type and keep their own reset actions; the random distribution is reset only
+ * where the type change forced it (see thinkTimeTypeResetPaths).
+ */
+const THINK_TIME_TYPE_PATHS = [
+  'think_time.type',
+  'think_time.mean_ms',
+  'think_time.std_ms',
+  'think_time.min_ms',
+  'think_time.max_ms',
+  'think_time.min_percent',
+  'think_time.max_percent',
+] as const
+
+/** The Author section each tab edits, so the canonical rail tracks and opens the right tab. */
+const TAB_SECTION: Record<RuntimeTabId, RuntimeSettingsSectionId> = {
+  summary: 'script_config',
+  target: 'script_config',
+  think_time: 'think',
+  pacing: 'pacing',
+  run_logic: 'runlogic',
+  error_handling: 'errors',
+  http_transport: 'http',
+  browser_emulation: 'browser_emulation',
+  web_http: 'web_runtime',
+  soap: 'soap',
+  java_env: 'java_vuser',
+}
+
+const SECTION_TAB: Partial<Record<RuntimeSettingsSectionId, RuntimeTabId>> = {
+  script_config: 'target',
+  imported_source: 'target',
+  runlogic: 'run_logic',
+  pacing: 'pacing',
+  think: 'think_time',
+  errors: 'error_handling',
+  log: 'error_handling',
+  http: 'http_transport',
+  browser_emulation: 'browser_emulation',
+  web_runtime: 'web_http',
+  soap: 'soap',
+  java_vuser: 'java_env',
+}
+
+/** The tab (and HTTP sub-tab) whose controls render an override path, for its panel list. */
+const TAB_PATH_ROOTS: Partial<Record<RuntimeTabId, readonly string[]>> = {
+  target: ['base_url'],
+  think_time: ['think_time'],
+  pacing: ['pacing'],
+  run_logic: ['run_logic'],
+  error_handling: ['error_handling', 'log', 'results'],
+  http_transport: ['http', 'browser'],
+  browser_emulation: ['browser_emulation'],
+  web_http: ['web_runtime'],
+  soap: ['soap'],
+  java_env: ['java_vuser'],
+}
+
+const QUOTA_NUMBER_FIELDS: ReadonlyArray<[keyof Omit<PacingQuota, 'adaptive_aimd'>, string, number | undefined]> = [
+  ['tpm', 'Tokens per minute (TPM)', undefined],
+  ['rpm', 'Requests per minute (RPM)', undefined],
+  ['estimated_tokens_per_request', 'Estimated tokens per request', undefined],
+  ['burst_tokens', 'Burst tokens', undefined],
+  ['default_tokens', 'Default tokens', undefined],
+  ['headroom_ratio', 'Headroom ratio', 1],
+]
+
+function hasValue(value: unknown): boolean {
+  return value !== undefined && value !== null && value !== '' && !(Array.isArray(value) && value.length === 0)
+}
+
+function pathUnder(path: string, root: string): boolean {
+  return path === root || path.startsWith(`${root}.`)
+}
+
+/** Mode select value for a mode this group overrides to empty (Browser > Engine default). */
+const BROWSER_IDENTITY_LEAVES = ['mode', 'browser_type', 'browser_version', 'platform', 'custom_user_agent'] as const
+type BrowserIdentityLeaf = (typeof BROWSER_IDENTITY_LEAVES)[number]
+const ENGINE_DEFAULT_MODE_OPTION = '__engine_default__'
+const MULTI_GROUP_INHERITED_LABEL = 'Script or engine default'
+/** The HTTP cache toggle writes both switches once browser emulation sets simulate_cache. */
+const HTTP_CACHE_PATHS = ['http.cache_enabled', 'browser_emulation.cache.simulate_cache'] as const
 
 function groupLabel(group: RuntimeEditorGroup, index: number): string {
   return group.name || `Group ${index + 1}`
@@ -178,13 +388,21 @@ export default function RuntimeSettingsGroupEditor({
   hideApplyPanel,
   hideGroupSelector,
   overrideLabel,
+  scenarioDefaultLabel,
+  inheritedDefaultLabel,
   applicableProtocols,
+  scopeUsesLLMActions,
 }: RuntimeSettingsGroupEditorProps) {
   const tabPrefix = useId()
   const [applyOpen, setApplyOpen] = useState(false)
   const [applyTargets, setApplyTargets] = useState<number[]>([])
+  const [applyNotice, setApplyNotice] = useState<string | null>(null)
   const [rawActiveTab, setRawActiveTab] = useState<RuntimeTabId>('summary')
   const [rawHttpSubTab, setRawHttpSubTab] = useState<HttpSubTabId>('request_defaults')
+  const [railSearch, setRailSearch] = useState('')
+  // The canonical group pill the user clicked and the tab it opened; it stays
+  // active while that tab is shown (a tab shared by two groups keeps the pill).
+  const [railPin, setRailPin] = useState<{ groupId: CanonicalRuntimeGroupId; tab: RuntimeTabId; sub: HttpSubTabId } | null>(null)
 
   // Derived above the empty-groups early return below, because the catalog hook
   // that depends on them must run on every render (Rules of Hooks).
@@ -216,7 +434,9 @@ export default function RuntimeSettingsGroupEditor({
   }
 
   const draft = overrides[index] ?? EMPTY_RUNTIME_DRAFT
-  const groupOverride = overrideFromRuntimeDraft(overrides[index])
+  // The stored row the group draft describes (an untyped pacing and `{}` sections
+  // kept), so the Summary reads it the way the backend applies it.
+  const groupOverride = runtimeOverrideRowFromDraft(overrides[index]) as RuntimeSettingsOverride | undefined
   const scriptDefault = runtimeOverrideFromScriptConfig(focusGroup.scriptConfig)
   const engineDefault = runtimeOverrideFromScriptConfig(engineDefaults)
 
@@ -259,131 +479,227 @@ export default function RuntimeSettingsGroupEditor({
     },
   )
   const inheritedWeb = structuredClone(inheritedOverride?.web_runtime ?? {})
-  // web_runtime overlays populated top-level units on the lower layer, so the
-  // shaping a group runs with is its own unit where set, else the inherited one.
-  const effectiveWebRuntimeForHTTP3: typeof inheritedWeb = { ...inheritedWeb }
-  for (const [key, value] of Object.entries(draft.web_runtime ?? {})) {
-    if (value !== undefined) (effectiveWebRuntimeForHTTP3 as Record<string, unknown>)[key] = value
-  }
   const inheritedIterations = inheritedRunLogic.iterations ?? inheritedOverride?.iterations
 
-  const currentError = errorHandlingFromDraft(draft)
-
-  const hasLegacyLog = Boolean(draft.log_level)
-  const currentLog: LogSettings | undefined = draft.log
-    ? structuredClone(draft.log)
-    : hasLegacyLog
-      ? { ...structuredClone(inheritedLog), level: draft.log_level }
-      : undefined
-
-  const hasLegacyRunLogic = draft.iterations !== undefined || Boolean(draft.auto_transactions)
-  const currentRunLogic: RunLogicSettings | undefined = draft.run_logic
-    ? structuredClone(draft.run_logic)
-    : hasLegacyRunLogic
-      ? {
-          ...structuredClone(inheritedRunLogic),
-          ...(draft.iterations !== undefined ? { iterations: draft.iterations } : {}),
-          ...(draft.auto_transactions ? { auto_transactions: draft.auto_transactions } : {}),
-        }
-      : undefined
-
-  const hasLegacyBrowser = Boolean(draft.browser)
-  const currentBrowser: BrowserSettings | undefined = draft.browser_config
-    ? structuredClone(draft.browser_config)
-    : hasLegacyBrowser
-      ? { ...structuredClone(inheritedBrowser), ...structuredClone(draft.browser) }
-      : undefined
-
-  const effectiveThink = draft.think_time ?? inheritedThink
-  const effectiveError = currentError ?? inheritedError
-  const effectiveLog = currentLog ?? inheritedLog
-  const effectiveHttp = draft.http ?? inheritedHttp
-  const effectiveBrowser = currentBrowser ?? inheritedBrowser
+  // Each section's effective value is the inherited section with the paths this
+  // layer overrides laid over it (a v1 whole-section override replaces it).
+  const effectiveThink: Partial<ThinkTimeSettings> = overlayRuntimeOverrideSection(inheritedThink, overrides[index], 'think_time') ?? {}
+  const effectiveError: ErrorHandlingSettings = overlayRuntimeOverrideSection(inheritedError, overrides[index], 'error_handling') ?? {}
+  const effectiveLog: LogSettings = overlayRuntimeOverrideSection(inheritedLog, overrides[index], 'log') ?? {}
+  const effectiveHttp: HTTPSettings = overlayRuntimeOverrideSection(inheritedHttp, overrides[index], 'http') ?? {}
+  const effectiveBrowser: BrowserSettings = overlayRuntimeOverrideSection(inheritedBrowser, overrides[index], 'browser') ?? {}
+  // web_runtime overlays populated top-level units on the lower layer, so the
+  // shaping a group runs with is its own unit where set, else the inherited one.
+  const effectiveWebRuntimeForHTTP3: typeof inheritedWeb = overlayRuntimeOverrideSection(inheritedWeb, overrides[index], 'web_runtime') ?? {}
 
   const browserApplicable = fieldApplicable('browser')
   const httpApplicable = fieldApplicable('http')
   const webRuntimeApplicable = fieldApplicable('web_runtime')
   const javaVuserApplicable = fieldApplicable('java_vuser')
+  const soapApplicable = (applicableProtocols && applicableProtocols.length > 0 ? applicableProtocols : [focusGroup.protocol])
+    .some(protocol => normalizeRuntimeProtocol(protocol) === 'soap')
   const browserEmulationApplicable = fieldApplicable('browser_emulation')
 
-  // Browser emulation replaces as a whole section (mirrors the Go controller).
   const inheritedBrowserEmulation: BrowserEmulationSettings = structuredClone(inheritedOverride?.browser_emulation ?? {})
-  const effectiveBrowserEmulation: BrowserEmulationSettings = draft.browser_emulation ?? inheritedBrowserEmulation
+  const effectiveBrowserEmulation: BrowserEmulationSettings =
+    overlayRuntimeOverrideSection(inheritedBrowserEmulation, overrides[index], 'browser_emulation') ?? {}
   const selectedEmulationBrowser = browserEmulationCatalog.browsers.find(
     browser => browser.type === effectiveBrowserEmulation.browser_type,
   )
+  // An effective version or platform the selected browser does not offer (a lower
+  // layer changed its browser under this group's pick) is shown as itself, marked
+  // unavailable, rather than as 'Latest' / 'Browser default'.
+  const unavailableEmulationVersion = selectedEmulationBrowser && effectiveBrowserEmulation.browser_version
+    && !(selectedEmulationBrowser.versions || []).includes(effectiveBrowserEmulation.browser_version)
+    ? effectiveBrowserEmulation.browser_version
+    : ''
+  const unavailableEmulationPlatform = selectedEmulationBrowser && effectiveBrowserEmulation.platform
+    && !(selectedEmulationBrowser.platforms || []).includes(effectiveBrowserEmulation.platform)
+    ? effectiveBrowserEmulation.platform
+    : ''
 
-  // The Java Env override replaces the whole section: seed the editor from the
-  // group override when present, else from the inherited (script/scenario) value.
   const inheritedJava: RuntimeJavaVuserSettings = structuredClone(inheritedOverride?.java_vuser ?? {})
-  const effectiveJava: JavaEnvSettingsValue = draft.java_vuser ?? inheritedJava
+  const effectiveJava: JavaEnvSettingsValue = overlayRuntimeOverrideSection(inheritedJava, overrides[index], 'java_vuser') ?? {}
 
-  const patch = (next: Partial<ScenarioRuntimeSettingsDraft>) => {
-    const merged: ScenarioRuntimeSettingsDraft = { ...EMPTY_RUNTIME_DRAFT, ...draft, ...next }
-    onChange(index, isRuntimeDraftEmpty(merged) ? undefined : merged)
+  const inheritedSoap: SOAPSettings = structuredClone((inheritedOverride as { soap?: SOAPSettings } | undefined)?.soap ?? {})
+  const effectiveSoap: SOAPSettings = overlayRuntimeOverrideSection(inheritedSoap, overrides[index], 'soap') ?? {}
+  const inheritedPacingExt = inheritedPacing as ExtendedPacing
+  const effectivePacing: ExtendedPacing = overlayRuntimeOverrideSection(inheritedPacingExt, overrides[index], 'pacing') ?? {}
+  const effectiveRunLogic: Partial<RunLogicSettings> = overlayRuntimeOverrideSection(inheritedRunLogic, overrides[index], 'run_logic') ?? {}
+  const inheritedBaseURL = scenarioDefault?.base_url || focusGroup.scriptConfig?.base_url || engineDefaults?.base_url || ''
+
+  // Provenance of one field: this layer when it lists the path, else the
+  // scenario default row, else the script, else the engine default. The
+  // scenario-defaults mount edits the scenario row itself, so its own layer
+  // reads as Scenario default.
+  const groupProvenance: RuntimeValueProvenance = overrideLabel === RUNTIME_FIELD_SOURCE_LABEL.scenario ? 'scenario_default' : 'group_override'
+  const groupBadgeLabel = overrideLabel || provenanceLabel(groupProvenance)
+  const scenarioBadgeLabel = scenarioDefaultLabel || RUNTIME_FIELD_SOURCE_LABEL.scenario
+  // A test- or scenario-wide mount has no script of its own: an unset field
+  // resolves to each member group's script default, else the engine default.
+  const multiGroupWithoutScript = !focusGroup.scriptConfig && Boolean(applicableProtocols && applicableProtocols.length > 0)
+  const engineBadgeLabel = inheritedDefaultLabel
+    || (multiGroupWithoutScript ? MULTI_GROUP_INHERITED_LABEL : RUNTIME_FIELD_SOURCE_LABEL.engine)
+  const badgeLabelFor = (provenance: RuntimeValueProvenance): string | undefined => {
+    if (provenance === groupProvenance) return groupBadgeLabel
+    if (provenance === 'scenario_default') return scenarioBadgeLabel
+    if (provenance === 'engine_default') return engineBadgeLabel
+    return undefined
+  }
+  const summarySourceLabel = (source: keyof typeof RUNTIME_FIELD_SOURCE_LABEL): string => {
+    if (source === 'group') return groupBadgeLabel
+    if (source === 'scenario') return scenarioBadgeLabel
+    if (source === 'engine') return engineBadgeLabel
+    return RUNTIME_FIELD_SOURCE_LABEL[source]
+  }
+  const overrideRows = [groupOverride, scenarioDefault]
+  const fieldSource = (path: string): RuntimeValueProvenance => {
+    const row = resolveRuntimeRowsValue(path, overrideRows).index
+    if (row === 0) return groupProvenance
+    if (row === 1) return 'scenario_default'
+    return effectiveRuntimeValue(path, { script: focusGroup.scriptConfig, engine: engineDefaults }).provenance
+  }
+  const overridden = (path: string) => isFieldOverridden(overrides[index], path)
+  const overrideValue = (path: string) => overrideFieldValue(overrides[index], path)
+  const listedPaths = runtimeOverrideFieldPaths(overrides[index])
+  /** This layer's boolean override, or undefined when it sets no value. A
+   *  covered path with no value (a v1 section that omits it, or a listed path
+   *  left empty) on a *bool field is applied as nil, which is the field's
+   *  default, not false: several fields (keep-alive, continue on error...)
+   *  default on. A plain bool field has no nil: the server drops false
+   *  (omitempty), so a covered path with no value is an explicit Disabled. */
+  const boolOverride = (path: string): boolean | undefined => {
+    if (!overridden(path)) return undefined
+    const value = overrideValue(path)
+    if (value === undefined) return PLAIN_BOOL_OVERRIDE_PATHS.has(path) ? false : undefined
+    return Boolean(value)
+  }
+  /** This layer covers `path` (a v1 whole section, or a listed path) without
+   *  setting it: the field takes its default, not the lower layers' value. */
+  const coveredWithoutValue = (path: string): boolean =>
+    overridden(path) && overrideValue(path) === undefined
+  /** What a tri-state's Inherit resolves to: the lower layers, or (when this
+   *  layer covers the field with no value) what the effective section yields. */
+  const triInherited = (paths: string | string[], inheritedValue: boolean, sectionValue: boolean): boolean =>
+    ([] as string[]).concat(paths).some(coveredWithoutValue) ? sectionValue : inheritedValue
+  /** This layer's string override, or undefined while it inherits. A covered
+   *  path with no value (a v1 whole section that omits it, or a listed path or
+   *  section ancestor that leaves it empty) is applied as "", so it reads as an
+   *  explicit clear, as in SoapOverrideTab and coveredWithoutValue. */
+  const stringOverride = (path: string): string | undefined => {
+    if (!overridden(path)) return undefined
+    const value = overrideValue(path)
+    return value === undefined || value === null ? '' : String(value)
+  }
+  // Paths a tab renders with its own control; the tab's panel list shows the
+  // rest of its overridden fields, so every override has a reset action.
+  const inlinePaths = new Set<string>()
+  /** `alsoPaths` are further override paths the control writes: the field reads
+   *  as overridden (with this layer's provenance) when any of them is listed. */
+  const field = (path: string, label: string, control: ReactNode, wide?: boolean, onReset?: () => void, alsoPaths: string[] = []) => {
+    inlinePaths.add(path)
+    const overriddenPath = [path, ...alsoPaths].find(candidate => overridden(candidate))
+    const provenance = fieldSource(overriddenPath ?? path)
+    return (
+      <RuntimeOverrideField
+        key={path}
+        path={path}
+        label={label}
+        provenance={provenance}
+        badgeLabel={badgeLabelFor(provenance)}
+        overridden={overriddenPath !== undefined}
+        onReset={onReset ?? (() => resetPaths(path))}
+        wide={wide}
+      >
+        {control}
+      </RuntimeOverrideField>
+    )
   }
 
-  const editedHttp = (next: Partial<NonNullable<ScenarioRuntimeSettingsDraft['http']>>) => {
-    const hasCurrentSection = draft.http !== undefined
-    const current = hasCurrentSection ? draft.http : inheritedHttp
-    const topLevelNext = { ...next }
-    delete topLevelNext.tls
-    delete topLevelNext.proxy
-    delete topLevelNext.auth
-    delete topLevelNext.quic
-    const edited = editReplacementSection<HTTPSettings>(current, topLevelNext, inheritedHttp) as HTTPSettings
+  // Every edit goes through the runtime settings model, which lists exactly the
+  // paths a control changes in override_fields (converting a stored v1 row
+  // first, without changing its meaning). The backend then applies only those
+  // paths, so editing one field never pins — or wipes — the rest of a section
+  // the group inherits from its script.
+  const commit = (next: ScenarioRuntimeSettingsDraft) => {
+    onChange(index, isRuntimeDraftEmpty(next) ? undefined : next)
+  }
+  const editSection = (section: string, next: object) => {
+    commit(applyRuntimeOverrideEdit(overrides[index], section, next as Record<string, unknown>))
+  }
+  const resetPaths = (...paths: string[]) => {
+    commit(paths.reduce<ScenarioRuntimeSettingsDraft | undefined>((current, path) => resetOverrideField(current, path), overrides[index]) ?? { ...EMPTY_RUNTIME_DRAFT })
+  }
 
-    if (Object.prototype.hasOwnProperty.call(next, 'tls')) {
-      const tls = editReplacementSection(
-        hasCurrentSection ? (draft.http?.tls ?? {}) : inheritedHttp.tls,
-        next.tls,
-        inheritedHttp.tls,
-      )
-      if (Object.keys(tls).length > 0) edited.tls = tls
-      else delete edited.tls
+  const patchHttp = (next: Partial<HTTPSettings>) => {
+    const leaves: Record<string, unknown> = { ...next }
+    // The request-defaults editor folds the default_headers map into the
+    // ordered list and clears the map; that clear is an explicit empty map,
+    // not a return to the inherited headers (which the list now carries).
+    const clearsHeaderMap = Object.prototype.hasOwnProperty.call(next, 'default_headers')
+      && next.default_headers === undefined
+      && next.default_header_list !== undefined
+    if (clearsHeaderMap) delete leaves.default_headers
+    let updated = applyRuntimeOverrideEdit(overrides[index], 'http', leaves)
+    if (clearsHeaderMap) updated = setOverrideField(updated, 'http.default_headers', undefined)
+    commit(updated)
+  }
+
+  const patchQuic = (next: Record<string, unknown>) => {
+    const leaves: Record<string, unknown> = {}
+    for (const [key, value] of Object.entries(next)) leaves[key] = value === '' ? undefined : value
+    editSection('http.quic', leaves)
+  }
+
+  // A distribution change normalizes the effective think time for that type
+  // (default percentages, dropping fields the type does not use); only the
+  // leaves that change are overridden.
+  const patchThinkTime = (next: Partial<ThinkTimeSettings>) => {
+    if (next.type === undefined) {
+      editSection('think_time', next)
+      return
     }
-    if (Object.prototype.hasOwnProperty.call(next, 'proxy')) {
-      const proxy = editReplacementSection(
-        hasCurrentSection ? (draft.http?.proxy ?? {}) : inheritedHttp.proxy,
-        next.proxy,
-        inheritedHttp.proxy,
-      )
-      if (Object.keys(proxy).length > 0) edited.proxy = proxy
-      else delete edited.proxy
+    const normalized = thinkTimeConfigForType({ ...effectiveThink, ...next }, next.type || 'fixed') as unknown as Record<string, unknown>
+    const before = effectiveThink as Record<string, unknown>
+    const leaves: Record<string, unknown> = { ...next }
+    for (const key of new Set([...Object.keys(before), ...Object.keys(normalized)])) {
+      if (key in leaves || key === 'distribution') continue
+      if (JSON.stringify(before[key]) !== JSON.stringify(normalized[key])) leaves[key] = normalized[key]
     }
-    if (Object.prototype.hasOwnProperty.call(next, 'quic')) {
-      // The QUIC block layers like tls: an emptied block removes the key.
-      if (next.quic && Object.keys(next.quic).length > 0) edited.quic = structuredClone(next.quic)
-      else delete edited.quic
+    // The engine samples exponentially whenever distribution is exponential,
+    // whatever the type, so a type change drops the distribution as the Author
+    // editor does: only uniform keeps a uniform distribution. A distribution
+    // from a lower layer is cleared with an explicit empty; this layer's resets.
+    const nextType = canonicalThinkTimeType(next.type)
+    const effectiveDistribution = String(before.distribution ?? '').trim().toLowerCase()
+    const keepsDistribution = 'distribution' in leaves
+      || effectiveDistribution === ''
+      || nextType === 'exponential'
+      || (nextType === 'uniform' && effectiveDistribution === 'uniform')
+    let updated = applyRuntimeOverrideEdit(overrides[index], 'think_time', leaves)
+    if (!keepsDistribution) {
+      const inheritedDistribution = (inheritedThink as { distribution?: string }).distribution
+      updated = hasValue(inheritedDistribution)
+        ? setOverrideField(updated, 'think_time.distribution', undefined)
+        : resetOverrideField(updated, 'think_time.distribution')
     }
-    if (Object.prototype.hasOwnProperty.call(next, 'auth')) {
-      const auth = editReplacementSection(
-        hasCurrentSection ? (draft.http?.auth ?? {}) : inheritedHttp.auth,
-        next.auth,
-        inheritedHttp.auth,
-      )
-      if (Object.keys(auth).length > 0) edited.auth = auth
-      else delete edited.auth
-    }
-    return edited
+    commit(updated)
   }
 
-  const patchHttp = (next: Partial<NonNullable<ScenarioRuntimeSettingsDraft['http']>>) => {
-    patch({ http: editedHttp(next) })
+  // Distribution: Inherit resets the type leaves. A type change forced the
+  // random distribution when it cleared it (an explicit empty) or paired it with
+  // the exponential type; a distribution the user chose on its own is kept.
+  const thinkTimeTypeResetPaths = (): string[] => {
+    const paths: string[] = [...THINK_TIME_TYPE_PATHS]
+    if (overridden('think_time.distribution')) {
+      const distribution = String(overrideValue('think_time.distribution') ?? '').trim().toLowerCase()
+      const type = canonicalThinkTimeType(String(overrideValue('think_time.type') ?? ''))
+      if (distribution === '' || (distribution === 'exponential' && type === 'exponential')) paths.push('think_time.distribution')
+    }
+    return paths
   }
 
-  // think_time / pacing carry the full DSL config. Clearing routes through the
-  // type select (Inherit), which sets the whole section undefined.
-  const patchThinkTime = (next: Partial<NonNullable<ScenarioRuntimeSettingsDraft['think_time']>>) => {
-    const edited = editReplacementSection(draft.think_time, next, inheritedThink)
-    patch({ think_time: thinkTimeConfigForType({ ...edited, type: effectiveThink.type }, edited.type || 'fixed') })
-  }
-
-  const patchPacing = (next: Partial<NonNullable<ScenarioRuntimeSettingsDraft['pacing']>>) => {
-    const edited = editReplacementSection(draft.pacing, next, inheritedPacing)
-    const effective = { type: edited.type || 'none', ...edited }
-    patch({ pacing: effective })
-  }
+  const patchPacing = (next: Partial<PacingSettings>) => editSection('pacing', next)
 
   const toggleLogOption = (option: string, on: boolean) => {
     const current = effectiveLog.extended_options ?? []
@@ -391,110 +707,103 @@ export default function RuntimeSettingsGroupEditor({
     patchLog({ extended_options: nextOptions })
   }
 
-  // patchLog/patchRunLogic edit the full section, promoting the legacy single-field
-  // values (log_level / iterations / auto_transactions) into the section and clearing
-  // them — so a section override always carries every field (section-replace safe) and
-  // the legacy shim is never double-emitted alongside it.
-  const patchLog = (next: Partial<NonNullable<ScenarioRuntimeSettingsDraft['log']>>) => {
-    const effective = editReplacementSection(currentLog, next, inheritedLog)
-    patch({ log: effective, log_level: '' })
-  }
-
-  const patchRunLogic = (next: Partial<NonNullable<ScenarioRuntimeSettingsDraft['run_logic']>>) => {
-    const effective = editReplacementSection(currentRunLogic, next, inheritedRunLogic)
-    patch({ run_logic: effective, iterations: undefined, auto_transactions: '' })
-  }
-
-  const patchErrorHandling = (next: Partial<ErrorHandlingSettings>) => {
-    const effective = editReplacementSection(currentError, next, inheritedError)
-    const hasAny = Object.values(effective).some(
-      value => value !== undefined && value !== '' && (!Array.isArray(value) || value.length > 0),
-    )
-    patch({
-      continue_on_error: effective.continue_on_error,
-      snapshot_on_error: effective.snapshot_on_error,
-      fail_transaction_on_error_message: effective.fail_transaction_on_error_message,
-      max_retries: effective.max_retries,
-      retry_delay_ms: effective.retry_delay_ms,
-      retry_backoff: effective.retry_backoff,
-      retry_on: effective.retry_on,
-      honor_retry_after: effective.honor_retry_after,
-      retry_after_max_ms: effective.retry_after_max_ms,
-      error_handling: hasAny ? effective : undefined,
-    })
-  }
-
-  const patchBrowserConfig = (next: Partial<NonNullable<ScenarioRuntimeSettingsDraft['browser_config']>>) => {
-    const hasCurrentSection = currentBrowser !== undefined
-    const topLevelNext = { ...next }
-    delete topLevelNext.viewport
-    delete topLevelNext.review_policy
-    const edited = editReplacementSection<BrowserSettings>(currentBrowser, topLevelNext, inheritedBrowser) as BrowserSettings
-
-    if (Object.prototype.hasOwnProperty.call(next, 'viewport')) {
-      const viewport = editReplacementSection(
-        hasCurrentSection ? (currentBrowser?.viewport ?? {}) : inheritedBrowser.viewport,
-        next.viewport,
-        inheritedBrowser.viewport,
-      )
-      if (Object.keys(viewport).length > 0) edited.viewport = viewport
-      else delete edited.viewport
+  const patchLog = (next: Partial<LogSettings>) => editSection('log', next)
+  const patchRunLogic = (next: Partial<RunLogicSettings>) => editSection('run_logic', next)
+  // Open workloads require TPS pacing at a positive rate, so choosing Open
+  // also overrides pacing to TPS where the effective pacing is not.
+  const setWorkloadModel = (model: string | undefined) => {
+    let next = applyRuntimeOverrideEdit(overrides[index], 'run_logic', { workload_model: model })
+    if (model === 'open') {
+      const pacingPatch: Record<string, unknown> = {}
+      if (canonicalPacingType(effectivePacing.type) !== 'tps') pacingPatch.type = 'tps'
+      if (!(Number.isFinite(effectivePacing.tps) && (effectivePacing.tps ?? 0) > 0)) pacingPatch.tps = 1
+      if (Object.keys(pacingPatch).length > 0) next = applyRuntimeOverrideEdit(next, 'pacing', pacingPatch)
     }
-    if (Object.prototype.hasOwnProperty.call(next, 'review_policy')) {
-      const reviewPolicy = editReplacementSection(
-        hasCurrentSection ? (currentBrowser?.review_policy ?? {}) : inheritedBrowser.review_policy,
-        next.review_policy,
-        inheritedBrowser.review_policy,
-      )
-      if (Object.keys(reviewPolicy).length > 0) edited.review_policy = reviewPolicy
-      else delete edited.review_policy
-    }
-    patch({ browser_config: edited, browser: undefined })
+    commit(next)
   }
+  const patchErrorHandling = (next: Partial<ErrorHandlingSettings>) => editSection('error_handling', next)
+  // retry_on is one override leaf: a toggle writes the whole effective list. An
+  // empty list is no filter (the engine retries every failed step), so the last
+  // ticked condition cannot be unticked on its own: the user picks
+  // 'Any error (no filter)' explicitly, or sets Max retries to 0 to stop retrying.
+  const effectiveRetryOn = (effectiveError.retry_on ?? []).map(condition => condition.trim().toLowerCase())
+  const retryOnAnyError = effectiveRetryOn.length === 0
+  const writeRetryOn = (next: string[]) => {
+    if (next.length === 0 && !(inheritedError.retry_on?.length)) resetPaths('error_handling.retry_on')
+    else commit(setOverrideField(overrides[index], 'error_handling.retry_on', next))
+  }
+  const toggleRetryOn = (condition: string, on: boolean) => {
+    const next = on ? Array.from(new Set([...effectiveRetryOn, condition])) : effectiveRetryOn.filter(item => item !== condition)
+    if (next.length === 0) return
+    writeRetryOn(next)
+  }
+  const patchBrowserConfig = (next: Partial<BrowserSettings>) => editSection('browser', next)
+  const patchBrowserEmulation = (next: Partial<BrowserEmulationSettings>) => editSection('browser_emulation', next)
+  // Language > 'Engine default': a lower layer's language (e.g. the script's
+  // de-DE) would otherwise come back through a reset, so write an explicit empty
+  // whenever something below would supply a value.
+  const emptyBrowserEmulationChoice = (field: 'language') =>
+    (inheritedBrowserEmulation[field] ? '' : undefined)
+  // Version, Platform and Custom User-Agent are only valid together with the mode
+  // and browser they were chosen for (the DSL rejects e.g. Safari on android, or a
+  // custom User-Agent in specific mode). Editing one alone while the rest is
+  // inherited would let a later lower-layer change pair it with another browser,
+  // so the edit pins the whole identity at its current effective values. An edit
+  // that lands back on exactly the inherited identity inherits it again.
+  const patchBrowserIdentityLeaf = (field: 'browser_version' | 'platform' | 'custom_user_agent', value: string) => {
+    const identityMode = (emulation: BrowserEmulationSettings) =>
+      emulation.mode || (emulation.browser_type ? 'specific' : emulation.custom_user_agent ? 'custom' : '')
+    const next: Record<BrowserIdentityLeaf, string> = {
+      mode: identityMode(effectiveBrowserEmulation) || (field === 'custom_user_agent' ? 'custom' : 'specific'),
+      browser_type: effectiveBrowserEmulation.browser_type || '',
+      browser_version: effectiveBrowserEmulation.browser_version || '',
+      platform: effectiveBrowserEmulation.platform || '',
+      custom_user_agent: effectiveBrowserEmulation.custom_user_agent || '',
+      [field]: value,
+    }
+    const inheritedIdentity: Record<BrowserIdentityLeaf, string> = {
+      mode: identityMode(inheritedBrowserEmulation),
+      browser_type: inheritedBrowserEmulation.browser_type || '',
+      browser_version: inheritedBrowserEmulation.browser_version || '',
+      platform: inheritedBrowserEmulation.platform || '',
+      custom_user_agent: inheritedBrowserEmulation.custom_user_agent || '',
+    }
+    if (BROWSER_IDENTITY_LEAVES.every(leaf => next[leaf] === inheritedIdentity[leaf])) {
+      resetPaths(...BROWSER_IDENTITY_LEAVES.map(leaf => `browser_emulation.${leaf}`))
+      return
+    }
+    const patch: Partial<BrowserEmulationSettings> = { [field]: value }
+    for (const leaf of BROWSER_IDENTITY_LEAVES) {
+      if (leaf !== field && !isFieldOverridden(overrides[index], `browser_emulation.${leaf}`)) (patch as Record<string, string>)[leaf] = next[leaf]
+    }
+    patchBrowserEmulation(patch)
+  }
+  const customUserAgentOverridden = isFieldOverridden(overrides[index], 'browser_emulation.custom_user_agent')
+  // A lower layer in custom mode supplies a User-Agent this group can inherit.
+  const inheritedCustomUserAgent = inheritedBrowserEmulation.mode === 'custom' ? inheritedBrowserEmulation.custom_user_agent || '' : ''
+  // Mode overridden to empty (after Browser > Engine default) is shown apart from
+  // Inherit, so Inherit can be picked to return the identity to the lower layer.
+  const modeOverriddenEmpty = isFieldOverridden(overrides[index], 'browser_emulation.mode') && !draft.browser_emulation?.mode
+  const engineDefaultIdentity: Partial<BrowserEmulationSettings> = { mode: '', browser_type: '', browser_version: '', platform: '', custom_user_agent: '' }
 
-  // Browser-emulation edits replace the whole section; the first edit
-  // materializes the inherited section, mirroring patchBrowserConfig.
-  const editedBrowserEmulation = (next: Partial<BrowserEmulationSettings>) => {
-    const hasCurrentSection = draft.browser_emulation !== undefined
-    const topLevelNext = { ...next }
-    delete topLevelNext.cache
-    const edited = editReplacementSection<BrowserEmulationSettings>(
-      draft.browser_emulation,
-      topLevelNext,
-      inheritedBrowserEmulation,
-    ) as BrowserEmulationSettings
-    if (Object.prototype.hasOwnProperty.call(next, 'cache')) {
-      const cache = editReplacementSection(
-        hasCurrentSection ? (draft.browser_emulation?.cache ?? {}) : inheritedBrowserEmulation.cache,
-        next.cache,
-        inheritedBrowserEmulation.cache,
-      )
-      if (Object.keys(cache).length > 0) edited.cache = cache
-      else delete edited.cache
-    }
-    return edited
-  }
-  const patchBrowserEmulation = (next: Partial<BrowserEmulationSettings>) => {
-    patch({ browser_emulation: editedBrowserEmulation(next) })
-  }
   const httpSettingsValue: HTTPSettings = {
     ...effectiveHttp,
     cache_enabled: effectiveBrowserEmulation.cache?.simulate_cache ?? effectiveHttp.cache_enabled,
   }
   const httpOriginLabel = draft.http
-    ? 'Group override'
+    ? groupBadgeLabel
     : scenarioDefault?.http
-      ? 'Scenario default'
+      ? scenarioBadgeLabel
       : focusGroup.scriptConfig?.http && Object.keys(focusGroup.scriptConfig.http).length > 0
-        ? 'Script default'
-        : 'Engine default'
+        ? RUNTIME_FIELD_SOURCE_LABEL.script
+        : engineBadgeLabel
   const webOriginLabel = draft.web_runtime?.additional_attributes
-    ? 'Group override'
+    ? groupBadgeLabel
     : scenarioDefault?.web_runtime?.additional_attributes
-      ? 'Scenario default'
+      ? scenarioBadgeLabel
       : focusGroup.scriptConfig?.web_runtime?.additional_attributes
-        ? 'Script default'
-        : 'Engine default'
+        ? RUNTIME_FIELD_SOURCE_LABEL.script
+        : engineBadgeLabel
   const effectiveSocketAttributes = {
     ...(inheritedWeb.additional_attributes || {}),
     ...(draft.web_runtime?.additional_attributes || {}),
@@ -502,10 +811,12 @@ export default function RuntimeSettingsGroupEditor({
   const requestDefaultErrorCount = countHTTPDefaultHeaderErrors(httpSettingsValue)
   const pinnedCookieErrorCount = countPinnedCookieErrors(httpSettingsValue)
   const patchHTTPSettings = (next: Partial<HTTPSettings>) => {
-    if (!Object.prototype.hasOwnProperty.call(next, 'cache_enabled') || draft.browser_emulation?.cache?.simulate_cache === undefined) {
+    if (!Object.prototype.hasOwnProperty.call(next, 'cache_enabled') || effectiveBrowserEmulation.cache?.simulate_cache === undefined) {
       patchHttp(next)
       return
     }
+    // Browser emulation's simulate_cache is the canonical cache switch once it
+    // is set, so the HTTP cache toggle writes both.
     const cachePatch = next.cache_enabled
       ? { simulate_cache: true }
       : {
@@ -513,10 +824,9 @@ export default function RuntimeSettingsGroupEditor({
           cache_content_urls: undefined,
           check_newer_versions: undefined,
         }
-    patch({
-      http: editedHttp(next),
-      browser_emulation: editedBrowserEmulation({ cache: cachePatch }),
-    })
+    let updated = applyRuntimeOverrideEdit(overrides[index], 'http', next as Record<string, unknown>)
+    updated = applyRuntimeOverrideEdit(updated, 'browser_emulation', { cache: cachePatch })
+    commit(updated)
   }
 
   const browserBoolValue = (a?: boolean, b?: boolean): string => {
@@ -524,140 +834,42 @@ export default function RuntimeSettingsGroupEditor({
     return value === undefined ? '' : value ? 'true' : 'false'
   }
 
-  const clearField = (field: RuntimeFieldKey) => {
-    switch (field) {
-      case 'iterations': {
-        // fieldHasOverride reports an override when the value lives in the
-        // promoted run_logic section, so clearing must strip both the legacy
-        // top-level field AND the section copy. When run_logic retains sibling
-        // fields, its replacement semantics require us to materialize the inherited
-        // iterations value; simply omitting it would reset duration behavior.
-        const rl: Partial<RunLogicSettings> | undefined = draft.run_logic ? { ...draft.run_logic, iterations: undefined } : undefined
-        const hasRunLogicSibling = Boolean(rl && Object.entries(rl).some(([key, value]) => key !== 'iterations' && value !== undefined))
-        if (rl && hasRunLogicSibling && inheritedIterations !== undefined) rl.iterations = inheritedIterations
-        patch({ iterations: undefined, run_logic: hasRunLogicSibling ? rl : undefined })
-        break
-      }
-      case 'pacing':
-        patch({ pacing: undefined })
-        break
-      case 'think_time':
-        patch({ think_time: undefined })
-        break
-      case 'browser':
-        patch({ browser: undefined })
-        break
-      case 'log_level': {
-        const lg: Partial<LogSettings> | undefined = draft.log ? { ...draft.log, level: undefined } : undefined
-        const hasLogSibling = Boolean(lg && Object.entries(lg).some(([key, value]) => key !== 'level' && value !== undefined))
-        if (lg && hasLogSibling && inheritedLog.level !== undefined) lg.level = inheritedLog.level
-        patch({ log_level: '', log: hasLogSibling ? lg : undefined })
-        break
-      }
-      case 'auto_transactions': {
-        const rl: Partial<RunLogicSettings> | undefined = draft.run_logic ? { ...draft.run_logic, auto_transactions: undefined } : undefined
-        const hasRunLogicSibling = Boolean(rl && Object.entries(rl).some(([key, value]) => key !== 'auto_transactions' && value !== undefined))
-        if (rl && hasRunLogicSibling && inheritedRunLogic.auto_transactions !== undefined) {
-          rl.auto_transactions = inheritedRunLogic.auto_transactions
-        }
-        patch({ auto_transactions: '', run_logic: hasRunLogicSibling ? rl : undefined })
-        break
-      }
-      case 'error_handling':
-        patch({
-          continue_on_error: undefined,
-          snapshot_on_error: undefined,
-          fail_transaction_on_error_message: undefined,
-          max_retries: undefined,
-          retry_delay_ms: undefined,
-          retry_backoff: undefined,
-          retry_on: undefined,
-          honor_retry_after: undefined,
-          retry_after_max_ms: undefined,
-          error_handling: undefined,
-        })
-        break
-      case 'results':
-        patch({ results: undefined })
-        break
-      case 'log':
-        patch({ log: undefined, log_level: '' })
-        break
-      case 'run_logic':
-        patch({ run_logic: undefined, iterations: undefined, auto_transactions: '' })
-        break
-      case 'http':
-        patch({ http: undefined })
-        break
-      case 'websocket':
-        patch({websocket: undefined})
-        break
-      case 'web_runtime':
-        patch({ web_runtime: undefined })
-        break
-      case 'browser_config':
-        patch({ browser_config: undefined, browser: undefined })
-        break
-      case 'browser_emulation':
-        patch({ browser_emulation: undefined })
-        break
-      case 'java_vuser':
-        patch({ java_vuser: undefined })
-        break
-    }
+  /** Canonical override paths behind each summary row. */
+  const FIELD_PATHS: Record<RuntimeFieldKey, string[]> = {
+    results: ['results'],
+    iterations: ['run_logic.iterations'],
+    pacing: ['pacing'],
+    think_time: ['think_time'],
+    browser: ['browser.headless', 'browser.device_profile', 'browser.touch_mode', 'browser.orientation'],
+    log_level: ['log.level'],
+    auto_transactions: ['run_logic.auto_transactions'],
+    error_handling: ['error_handling'],
+    log: ['log'],
+    run_logic: ['run_logic'],
+    http: ['http'],
+    websocket: ['websocket'],
+    web_runtime: ['web_runtime'],
+    browser_config: ['browser'],
+    browser_emulation: ['browser_emulation'],
+    java_vuser: ['java_vuser'],
   }
 
-  const fieldHasOverride = (field: RuntimeFieldKey): boolean => {
-    const o = groupOverride
-    if (!o) return false
-    switch (field) {
-      case 'iterations':
-        // Per-VUser iterations only (legacy top-level or the promoted run_logic
-        // section). global_iterations is a distinct fleet-wide shared cap shown via
-        // the Run Logic row, not conflated into this per-VUser Iterations row.
-        return o.iterations !== undefined || o.run_logic?.iterations !== undefined
-      case 'pacing':
-        return Boolean(o.pacing?.type)
-      case 'think_time':
-        return Boolean(o.think_time)
-      case 'browser':
-        return Boolean(o.browser)
-      case 'log_level':
-        return Boolean(o.log_level) || Boolean(o.log?.level)
-      case 'auto_transactions':
-        return Boolean(o.auto_transactions) || Boolean(o.run_logic?.auto_transactions)
-      case 'error_handling':
-        return Boolean(o.error_handling)
-      case 'results':
-        return Boolean(o.results)
-      case 'log':
-        return Boolean(o.log)
-      case 'run_logic':
-        return Boolean(o.run_logic)
-      case 'http':
-        return Boolean(o.http)
-      case 'websocket':
-        return Boolean(o.websocket)
-      case 'web_runtime':
-        return Boolean(o.web_runtime)
-      case 'browser_config':
-        return Boolean(o.browser_config)
-      case 'browser_emulation':
-        return Boolean(o.browser_emulation)
-      case 'java_vuser':
-        return Boolean(o.java_vuser)
-    }
-  }
+  // Clear returns the row's paths to inherited; every other overridden field —
+  // including siblings in the same section — keeps its override.
+  const clearField = (field: RuntimeFieldKey) => resetPaths(...FIELD_PATHS[field])
 
-  // A Java Env edit replaces the whole section. Materialize from the inherited
-  // value on first edit so a single field change does not clear the others, then
-  // drop the section entirely when it collapses back to the inherited value.
+  const fieldHasOverride = (field: RuntimeFieldKey): boolean =>
+    FIELD_PATHS[field].some(path => isFieldOverridden(overrides[index], path))
+
+  // The Java Env editor hands back the whole effective section; only the fields
+  // that changed are overridden (a field set back to empty inherits again).
   const patchJavaVuser = (next: JavaEnvSettingsValue) => {
-    const merged: RuntimeJavaVuserSettings = { ...next }
-    for (const key of Object.keys(merged) as Array<keyof RuntimeJavaVuserSettings>) {
-      if (merged[key] === undefined) delete merged[key]
-    }
-    patch({ java_vuser: Object.keys(merged).length > 0 ? merged : undefined })
+    commit(applyRuntimeOverrideDiff(overrides[index], 'java_vuser', effectiveJava, next))
+  }
+
+  // The Web/HTTP tab hands back this layer's whole web_runtime section.
+  const setWebRuntime = (next: ScenarioRuntimeSettingsDraft['web_runtime']) => {
+    commit(applyRuntimeOverrideDiff(overrides[index], 'web_runtime', draft.web_runtime, next))
   }
 
   const toggleTarget = (target: number) => {
@@ -665,19 +877,62 @@ export default function RuntimeSettingsGroupEditor({
   }
 
   const applyNow = () => {
+    let notice: string | null = null
     if (applyTargets.length > 0) {
-      onApplyToGroups(index, applyTargets)
+      const missing = onApplyToGroups(index, applyTargets)?.missingSOAPCredentialTargets ?? []
+      if (missing.length > 0) {
+        const names = missing.map(target => (groups[target] ? groupLabel(groups[target], target) : `Group ${target + 1}`)).join(', ')
+        notice = `Not applied to ${names}: no SOAP WS-Security credentials of its own. Credentials are not copied between groups, so enter them for that group first.`
+      }
     }
+    setApplyNotice(notice)
     setApplyOpen(false)
     setApplyTargets([])
   }
 
   const pacingType = draft.pacing?.type || ''
+  const effectivePacingType = canonicalPacingType(effectivePacing.type)
+  const pacingIsOpenWorkload = canonicalWorkloadModel(effectiveRunLogic.workload_model) === 'open'
+  const effectiveArrivalProcess = (effectivePacing.arrival_process ?? '').trim().toLowerCase()
+  const inheritedArrivalProcess = (inheritedPacingExt.arrival_process ?? '').trim().toLowerCase()
+  const closedWorkloadHasOpenArrivalSettings = Boolean(
+    effectivePacing.arrival_process || effectivePacing.burstiness !== undefined || effectivePacing.seed !== undefined || effectivePacing.rate_stages?.length,
+  )
+  // The engine builds the quota pacer whenever pacing.quota is set, whatever
+  // pacing.type is, and it throttles only LLM actions.
+  // A scenario- or test-wide mount has no actions of its own: it offers the
+  // quota editor unless the host says no member group runs LLM actions.
+  const groupUsesLLMActions = multiGroupWithoutScript
+    ? scopeUsesLLMActions ?? true
+    : scriptHasLLMActions({ actions: focusGroup.scriptActions ?? [] })
+  const showQuotaEditor = groupUsesLLMActions || effectivePacing.quota !== undefined || effectivePacingType === 'quota'
+  // Clearing is an explicit empty where a lower layer supplies the value, so
+  // the script's leftover arrival settings stop applying; otherwise a reset.
+  const clearOpenArrivalSettings = () => {
+    let next = overrides[index]
+    for (const leaf of ['arrival_process', 'burstiness', 'seed', 'rate_stages'] as const) {
+      const path = `pacing.${leaf}`
+      next = hasValue(inheritedPacingExt[leaf]) ? setOverrideField(next, path, undefined) : resetOverrideField(next, path)
+    }
+    commit(next ?? { ...EMPTY_RUNTIME_DRAFT })
+  }
+  // Rate stages are one override leaf: an edit writes the whole effective list.
+  const writeRateStages = (stages: PacingRateStage[]) => {
+    if (stages.length === 0 && !(inheritedPacingExt.rate_stages?.length)) {
+      resetPaths('pacing.rate_stages')
+      return
+    }
+    commit(setOverrideField(overrides[index], 'pacing.rate_stages', stages))
+  }
+  const patchRateStage = (stageIndex: number, patch: Partial<PacingRateStage>) => {
+    writeRateStages((effectivePacing.rate_stages ?? []).map((stage, position) => (position === stageIndex ? { ...stage, ...patch } : stage)))
+  }
 
   // Tab set: universal tabs always show; HTTP Transport (browser device folds in here)
   // and Web/HTTP are gated by protocol applicability and hidden when not applicable.
   const tabs: Array<{ id: RuntimeTabId; label: string; show: boolean }> = [
     { id: 'summary', label: 'Summary', show: true },
+    { id: 'target', label: 'Target & identity', show: true },
     { id: 'think_time', label: 'Think Time', show: true },
     { id: 'pacing', label: 'Iteration Pacing', show: true },
     { id: 'run_logic', label: 'Run Logic', show: true },
@@ -685,6 +940,7 @@ export default function RuntimeSettingsGroupEditor({
     { id: 'http_transport', label: 'HTTP Transport', show: httpApplicable || browserApplicable },
     { id: 'browser_emulation', label: 'Browser Emulation', show: browserEmulationApplicable },
     { id: 'web_http', label: 'Web/HTTP', show: webRuntimeApplicable },
+    { id: 'soap', label: 'SOAP', show: soapApplicable },
     { id: 'java_env', label: 'Java Env', show: javaVuserApplicable },
   ]
   const visibleTabs = tabs.filter(tab => tab.show)
@@ -706,19 +962,61 @@ export default function RuntimeSettingsGroupEditor({
   const visibleHttpSubTabs = httpSubTabs.filter(st => st.show)
   const httpSubTab: HttpSubTabId = visibleHttpSubTabs.some(st => st.id === rawHttpSubTab) ? rawHttpSubTab : 'request_defaults'
 
-  const patchProxy = (next: Partial<NonNullable<NonNullable<ScenarioRuntimeSettingsDraft['http']>['proxy']>>) => {
-    patchHttp({ proxy: { ...draft.http?.proxy, ...next } })
+  // Canonical 7-group rail. Each pill opens the tab (and HTTP sub-tab) holding
+  // its fields; the active pill follows the tab shown.
+  const railProtocol = normalizeRuntimeProtocol(
+    focusGroup.protocol
+      || (applicableProtocols?.includes('http') ? 'http' : applicableProtocols?.find(isHttpLikeRuntimeProtocol) ?? applicableProtocols?.[0])
+      || 'http',
+  )
+  const railPinActive = railPin && railPin.tab === activeTab && (activeTab !== 'http_transport' || railPin.sub === httpSubTab)
+  const railGroupId: CanonicalRuntimeGroupId = railPinActive
+    ? railPin.groupId
+    : getCanonicalGroupForSection(TAB_SECTION[activeTab], activeTab === 'http_transport' ? HTTP_SUBTAB_TRANSPORT[httpSubTab] : undefined)
+  const railProvenance: Record<string, RuntimeValueProvenance> = {}
+  for (const path of listedPaths) railProvenance[path] = groupProvenance
+  const selectCanonicalGroup = (groupId: CanonicalRuntimeGroupId, focusPaths: string[]) => {
+    const destination = getCanonicalGroupDestinationForPaths(groupId, railProtocol, focusPaths)
+    const destinationTab = SECTION_TAB[destination.section]
+    const tab = destinationTab && visibleTabs.some(candidate => candidate.id === destinationTab) ? destinationTab : 'summary'
+    const sub = tab === 'http_transport' ? httpSubTabForTransport(destination.httpTransportTab) : httpSubTab
+    setRawActiveTab(tab)
+    if (tab === 'http_transport') setRawHttpSubTab(sub)
+    setRailPin({ groupId, tab, sub })
   }
+
+  // The tab's overridden paths that no control on it shows (sub-editor fields,
+  // checkbox cards, whole v1 sections), each with its own reset action. Rendered
+  // last in a tab, after the tab's own field() calls have run.
+  const panelOverrides = (tab: RuntimeTabId) => {
+    const roots = TAB_PATH_ROOTS[tab] ?? []
+    const entries = listedPaths
+      .filter(path => roots.some(root => pathUnder(path, root)))
+      .filter(path => !(tab === 'http_transport' && pathUnder(path, 'browser_emulation')))
+      .filter(path => {
+        if (tab !== 'http_transport') return true
+        const location = pathUnder(path, 'browser') ? 'browser_emulation' : httpSubTabForTransport(getRuntimeFieldLocation(path, 'http')?.httpTransportTab)
+        return location === httpSubTab
+      })
+      .filter(path => !inlinePaths.has(path))
+      .map(path => ({ path, value: overrideValue(path) }))
+    return <RuntimeOverridePanelList entries={entries} provenance={groupProvenance} badgeLabel={groupBadgeLabel} onReset={path => resetPaths(path)} />
+  }
+
+  const patchProxy = (next: Partial<NonNullable<NonNullable<ScenarioRuntimeSettingsDraft['http']>['proxy']>>) => {
+    patchHttp({ proxy: next })
+  }
+  const tlsMaxVersionWarning = getTlsMaxVersionHttp3Warning(effectiveHttp.version, effectiveHttp.tls?.max_version, focusGroup.protocol)
   const patchTls = (next: Partial<NonNullable<NonNullable<ScenarioRuntimeSettingsDraft['http']>['tls']>>) => {
-    patchHttp({ tls: { ...draft.http?.tls, ...next } })
+    patchHttp({ tls: next })
   }
   const patchAuth = (next: Partial<NonNullable<NonNullable<ScenarioRuntimeSettingsDraft['http']>['auth']>>) => {
-    patchHttp({ auth: { ...draft.http?.auth, ...next } })
+    patchHttp({ auth: next })
   }
 
   const applyPanelAvailable = !hideApplyPanel && groups.length > 1
   return (
-    <div className="scenario-subpanel">
+    <div className="scenario-subpanel" data-runtime-editor-mode="scenario">
       <div className="scenario-assignment-header">
         <div>
           <h4>{title || 'Per-group runtime overrides'}</h4>
@@ -746,6 +1044,16 @@ export default function RuntimeSettingsGroupEditor({
           </label>
         </div>
       )}
+
+ <CanonicalRuntimeGroupRail
+        mode="scenario"
+        protocol={railProtocol}
+        currentGroupId={railGroupId}
+        search={railSearch}
+        onSearchChange={setRailSearch}
+        onSelectGroup={selectCanonicalGroup}
+        provenance={railProvenance}
+      />
 
       <TabList className="scenario-run-settings-tabs runtime-override-tabs" role="tablist" aria-label={`${title || "Group runtime"} sections`} onKeyDown={handleTabKey}>
         {visibleTabs.map(tab => (
@@ -796,7 +1104,7 @@ export default function RuntimeSettingsGroupEditor({
                   <tr key={field} className="runtime-override-row">
                     <td>{FIELD_LABELS[field]}</td>
                     <td>{effective.value}</td>
-                    <td><span className={`runtime-source-badge source-${effective.source}`}>{effective.source === 'group' && overrideLabel ? overrideLabel : RUNTIME_FIELD_SOURCE_LABEL[effective.source]}</span></td>
+                    <td><span className={`runtime-source-badge source-${effective.source}`}>{summarySourceLabel(effective.source)}</span></td>
                     <td>
                       {fieldHasOverride(field) && (
                         <button type="button" className="link-button" onClick={() => clearField(field)} aria-label={`Clear ${FIELD_LABELS[field]} override`}>
@@ -811,71 +1119,116 @@ export default function RuntimeSettingsGroupEditor({
           </table>
         )}
 
+        {activeTab === 'target' && (
+          <>
+            <div className="scenario-browser-grid">
+              {field('base_url', 'Base URL', (
+                <label className="scenario-browser-grid-wide">
+                  <span>Base URL</span>
+                  <input
+                    className="settings-input"
+                    type="url"
+                    value={String(overrideValue('base_url') ?? '')}
+                    placeholder={inh(inheritedBaseURL)}
+                    onChange={event => {
+                      const value = event.target.value.trim()
+                      if (value) commit(setOverrideField(overrides[index], 'base_url', value))
+                      else resetPaths('base_url')
+                    }}
+                  />
+                </label>
+              ), true)}
+            </div>
+            <p className="form-hint">Requests with relative URLs resolve against this base URL. User agent and language are under HTTP Transport → Request Defaults{browserEmulationApplicable ? '; the emulated browser identity is under Browser Emulation' : ''}.</p>
+            {panelOverrides('target')}
+          </>
+        )}
+
         {activeTab === 'think_time' && (
           <>
             <div className="scenario-browser-grid">
-              <label>
-                <span>Distribution</span>
-                <select
-                  className="settings-input"
-                  value={effectiveThink.ignore ? '' : canonicalThinkTimeType(draft.think_time?.type)}
-                  disabled={Boolean(effectiveThink.ignore)}
-                  onChange={event => {
-                    const type = event.target.value
-                    if (!type) {
-                      patch({ think_time: undefined })
-                      return
-                    }
-                    patchThinkTime({ type })
-                  }}
-                >
-                  <option value="">Inherit</option>
-                  <option value="none">None</option>
-                  <option value="fixed">Fixed</option>
-                  <option value="recorded">Replay think time as recorded</option>
-              <option value="random_percentage">Random percentage of recorded think time</option>
-                  <option value="gaussian">Gaussian</option>
-                  <option value="uniform">Uniform</option>
-                </select>
-              </label>
+              {field('think_time.type', 'Distribution', (
+                <label>
+                  <span>Distribution</span>
+                  <select
+                    className="settings-input"
+                    value={effectiveThink.ignore ? '' : canonicalThinkTimeType(draft.think_time?.type)}
+                    disabled={Boolean(effectiveThink.ignore)}
+                    onChange={event => {
+                      const type = event.target.value
+                      if (!type) {
+                        resetPaths(...thinkTimeTypeResetPaths())
+                        return
+                      }
+                      // Exponential think time samples from the exponential distribution.
+                      patchThinkTime(type === 'exponential' ? { type, distribution: 'exponential' } as Partial<ThinkTimeSettings> : { type })
+                    }}
+                  >
+                    <option value="">Inherit</option>
+                    {THINK_TIME_TYPE_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                  </select>
+                </label>
+              ), false, () => resetPaths(...thinkTimeTypeResetPaths()))}
+              {field('think_time.distribution', 'Random distribution', (
+                <label>
+                  <span>Random distribution</span>
+                  <select
+                    className="settings-input"
+                    value={overridden('think_time.distribution') ? String(overrideValue('think_time.distribution') ?? '') : ''}
+                    disabled={Boolean(effectiveThink.ignore)}
+                    onChange={event => (event.target.value ? patchThinkTime({ distribution: event.target.value } as Partial<ThinkTimeSettings>) : resetPaths('think_time.distribution'))}
+                  >
+                    <option value="">Inherit ({THINK_TIME_DISTRIBUTION_OPTIONS.find(option => option.value === ((inheritedThink as { distribution?: string }).distribution || 'uniform'))?.label ?? (inheritedThink as { distribution?: string }).distribution})</option>
+                    {THINK_TIME_DISTRIBUTION_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                  </select>
+                </label>
+              ))}
               {effectiveThink.type === 'random_percentage' && <ThinkTimePercentageInputs value={effectiveThink} disabled={Boolean(effectiveThink.ignore)} onChange={patchThinkTime} />}
-              {thinkTimeUsesMean(effectiveThink.type) && (
+              {thinkTimeUsesMean(effectiveThink.type) && field('think_time.mean_ms', 'Mean (ms)', (
                 <label>
                   <span>Mean (ms)</span>
                   <input className="settings-input" type="number" min={0} value={draft.think_time?.mean_ms ?? ''} disabled={Boolean(effectiveThink.ignore)} onChange={event => patchThinkTime({ mean_ms: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder={inh(inheritedThink.mean_ms)} />
                 </label>
-              )}
-              {thinkTimeUsesStdDeviation(effectiveThink.type) && (
+              ))}
+              {thinkTimeUsesStdDeviation(effectiveThink.type) && field('think_time.std_ms', 'Std dev (ms)', (
                 <label>
                   <span>Std dev (ms)</span>
                   <input className="settings-input" type="number" min={0} value={draft.think_time?.std_ms ?? ''} onChange={event => patchThinkTime({ std_ms: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder={inh(inheritedThink.std_ms)} />
                 </label>
-              )}
+              ))}
               {thinkTimeUsesBounds(effectiveThink.type) && (
                 <>
-                  <label>
-                    <span>Min (ms)</span>
-                    <input className="settings-input" type="number" min={0} value={draft.think_time?.min_ms ?? ''} onChange={event => patchThinkTime({ min_ms: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder={inh(inheritedThink.min_ms)} />
-                  </label>
-                  <label>
-                    <span>Max (ms)</span>
-                    <input className="settings-input" type="number" min={0} value={draft.think_time?.max_ms ?? ''} onChange={event => patchThinkTime({ max_ms: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder={inh(inheritedThink.max_ms)} />
-                  </label>
+                  {field('think_time.min_ms', 'Min (ms)', (
+                    <label>
+                      <span>Min (ms)</span>
+                      <input className="settings-input" type="number" min={0} value={draft.think_time?.min_ms ?? ''} onChange={event => patchThinkTime({ min_ms: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder={inh(inheritedThink.min_ms)} />
+                    </label>
+                  ))}
+                  {field('think_time.max_ms', 'Max (ms)', (
+                    <label>
+                      <span>Max (ms)</span>
+                      <input className="settings-input" type="number" min={0} value={draft.think_time?.max_ms ?? ''} onChange={event => patchThinkTime({ max_ms: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder={inh(inheritedThink.max_ms)} />
+                    </label>
+                  ))}
                 </>
               )}
-              <ThinkTimeMultiplierInput
-                draftScope={`${draftScope ?? ''}:${index}:${focusGroup.scriptId}`}
-                label="Multiplier"
-                className="settings-input"
-                value={draft.think_time?.multiplier}
-                fallbackValue=""
-                onValueChange={multiplier => patchThinkTime({ multiplier })}
-                placeholder={inh(normalizeThinkTimeMultiplier(inheritedThink.multiplier))}
-              />
-              <label>
-                <span>Limit (ms)</span>
-                <input className="settings-input" type="number" min={0} value={draft.think_time?.limit_ms ?? ''} onChange={event => patchThinkTime({ limit_ms: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder={inh(inheritedThink.limit_ms)} />
-              </label>
+              {field('think_time.multiplier', 'Multiplier', (
+                <ThinkTimeMultiplierInput
+                  draftScope={`${draftScope ?? ''}:${index}:${focusGroup.scriptId}`}
+                  label="Multiplier"
+                  className="settings-input"
+                  value={draft.think_time?.multiplier}
+                  fallbackValue=""
+                  onValueChange={multiplier => patchThinkTime({ multiplier })}
+                  placeholder={inh(normalizeThinkTimeMultiplier(inheritedThink.multiplier))}
+                />
+              ))}
+              {field('think_time.limit_ms', 'Limit (ms)', (
+                <label>
+                  <span>Limit (ms)</span>
+                  <input className="settings-input" type="number" min={0} value={draft.think_time?.limit_ms ?? ''} onChange={event => patchThinkTime({ limit_ms: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder={inh(inheritedThink.limit_ms)} />
+                </label>
+              ))}
             </div>
             <div className="scenario-option-grid">
               <label className={`scenario-option-card ${effectiveThink.ignore ? 'selected' : ''}`}>
@@ -887,197 +1240,499 @@ export default function RuntimeSettingsGroupEditor({
                 <div><strong>Ignore think time</strong><span>Bypass scripted think times for this group.</span></div>
               </label>
             </div>
+            {panelOverrides('think_time')}
           </>
         )}
 
         {activeTab === 'pacing' && (
-          <div className="scenario-browser-grid">
-            <label>
-              <span>Pacing</span>
-              <select
-                className="settings-input"
-                value={pacingType}
-                onChange={event => {
-                  const type = event.target.value as NonNullable<ScenarioRuntimeSettingsDraft['pacing']>['type'] | ''
-                  if (type) patchPacing({ type })
-                  else patch({ pacing: undefined })
-                }}
-              >
-                <option value="">Inherit</option>
-                <option value="none">None</option>
-                <option value="fixed_delay">Fixed delay</option>
-                <option value="random_delay">Random delay</option>
-                <option value="fixed_interval">Fixed interval</option>
-                <option value="random_interval">Random interval</option>
-                <option value="tps">Target TPS</option>
-              </select>
-            </label>
-            {pacingType === 'fixed_delay' && (
-              <label>
-                <span>Pacing delay (seconds)</span>
-                <SecondsFromMillisecondsInput className="settings-input" valueMs={draft.pacing?.delay_ms} emptyWhenUndefined onChangeMs={delayMs => patchPacing({ delay_ms: delayMs })} placeholder={formatMillisecondsAsSecondsValue(inheritedPacing.delay_ms)} />
-              </label>
+          <>
+            <p>TPS sets the group iteration rate, not HTTP requests per second. Open workloads schedule arrivals; closed workloads share a limiter across VUsers.</p>
+            {pacingIsOpenWorkload && <p role="note" data-testid="pacing-open-workload-notice">Open workloads require TPS pacing. Change the workload model in Run Logic to choose a delay or interval mode.</p>}
+            <div className="scenario-browser-grid">
+              {field('pacing.type', 'Pacing', (
+                <label>
+                  <span>Pacing</span>
+                  <select
+                    className="settings-input"
+                    value={pacingType}
+                    disabled={pacingIsOpenWorkload && effectivePacingType === 'tps'}
+                    onChange={event => {
+                      const type = event.target.value as NonNullable<ScenarioRuntimeSettingsDraft['pacing']>['type'] | ''
+                      if (type) patchPacing({ type })
+                      else resetPaths(...PACING_TYPE_PATHS)
+                    }}
+                  >
+                    <option value="">Inherit ({PACING_TYPE_OPTIONS.find(option => option.value === canonicalPacingType(inheritedPacing.type))?.label ?? inheritedPacing.type})</option>
+                    {PACING_TYPE_OPTIONS.filter(option => option.value !== 'quota' || effectivePacingType === 'quota').map(option => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </select>
+                </label>
+              ), false, () => resetPaths(...PACING_TYPE_PATHS))}
+              {pacingType === 'fixed_delay' && field('pacing.delay_ms', 'Pacing delay (seconds)', (
+                <label>
+                  <span>Pacing delay (seconds)</span>
+                  <SecondsFromMillisecondsInput className="settings-input" valueMs={draft.pacing?.delay_ms} emptyWhenUndefined onChangeMs={delayMs => patchPacing({ delay_ms: delayMs })} placeholder={formatMillisecondsAsSecondsValue(inheritedPacing.delay_ms)} />
+                </label>
+              ))}
+              {pacingType === 'random_delay' && (
+                <>
+                  {field('pacing.min_delay_ms', 'Min delay (seconds)', (
+                    <label>
+                      <span>Min delay (seconds)</span>
+                      <SecondsFromMillisecondsInput className="settings-input" valueMs={draft.pacing?.min_delay_ms} emptyWhenUndefined onChangeMs={minDelayMs => patchPacing({ min_delay_ms: minDelayMs })} placeholder={formatMillisecondsAsSecondsValue(inheritedPacing.min_delay_ms)} />
+                    </label>
+                  ))}
+                  {field('pacing.max_delay_ms', 'Max delay (seconds)', (
+                    <label>
+                      <span>Max delay (seconds)</span>
+                      <SecondsFromMillisecondsInput className="settings-input" valueMs={draft.pacing?.max_delay_ms} emptyWhenUndefined onChangeMs={maxDelayMs => patchPacing({ max_delay_ms: maxDelayMs })} placeholder={formatMillisecondsAsSecondsValue(inheritedPacing.max_delay_ms)} />
+                    </label>
+                  ))}
+                </>
+              )}
+              {pacingType === 'fixed_interval' && field('pacing.interval_ms', 'Pacing interval (seconds)', (
+                <label>
+                  <span>Pacing interval (seconds)</span>
+                  <SecondsFromMillisecondsInput className="settings-input" valueMs={draft.pacing?.interval_ms} emptyWhenUndefined onChangeMs={intervalMs => patchPacing({ interval_ms: intervalMs })} placeholder={formatMillisecondsAsSecondsValue(inheritedPacing.interval_ms)} />
+                </label>
+              ))}
+              {pacingType === 'random_interval' && (
+                <>
+                  {field('pacing.min_interval_ms', 'Min interval (seconds)', (
+                    <label>
+                      <span>Min interval (seconds)</span>
+                      <SecondsFromMillisecondsInput className="settings-input" valueMs={draft.pacing?.min_interval_ms} emptyWhenUndefined onChangeMs={minIntervalMs => patchPacing({ min_interval_ms: minIntervalMs })} placeholder={formatMillisecondsAsSecondsValue(inheritedPacing.min_interval_ms)} />
+                    </label>
+                  ))}
+                  {field('pacing.max_interval_ms', 'Max interval (seconds)', (
+                    <label>
+                      <span>Max interval (seconds)</span>
+                      <SecondsFromMillisecondsInput className="settings-input" valueMs={draft.pacing?.max_interval_ms} emptyWhenUndefined onChangeMs={maxIntervalMs => patchPacing({ max_interval_ms: maxIntervalMs })} placeholder={formatMillisecondsAsSecondsValue(inheritedPacing.max_interval_ms)} />
+                    </label>
+                  ))}
+                </>
+              )}
+              {(pacingType === 'tps' || (!pacingType && effectivePacingType === 'tps')) && field('pacing.tps', 'Target TPS', (
+                <label>
+                  <span>Target TPS</span>
+                  <input className="settings-input" type="number" min={0} value={draft.pacing?.tps ?? ''} onChange={event => patchPacing({ tps: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder={inh(inheritedPacing.tps, '0')} />
+                </label>
+              ))}
+            </div>
+            {/* Validation checks leftover arrival settings in every pacing mode,
+                so a closed workload offers to clear them whatever its mode. */}
+            {!pacingIsOpenWorkload && closedWorkloadHasOpenArrivalSettings && (
+              <p role="note" data-testid="pacing-open-only-settings-notice">
+                Arrival process, burstiness, arrival seed and rate stages apply only to open workloads. {effectivePacingType === 'tps'
+                  ? 'This closed workload paces at a constant Target TPS and ignores them.'
+                  : 'This closed workload ignores them, but invalid leftover values still fail validation.'}{' '}
+                <button type="button" className="btn btn-sm btn-ghost" onClick={clearOpenArrivalSettings}>Clear open-workload settings</button>
+              </p>
             )}
-            {pacingType === 'random_delay' && (
+            {!pacingIsOpenWorkload && !closedWorkloadHasOpenArrivalSettings && effectivePacingType === 'tps' && (
+              <p className="form-hint" data-testid="pacing-open-only-settings-hint">
+                Arrival process, arrival seed and rate stages are available when Run Logic uses the open arrival-rate workload model.
+              </p>
+            )}
+            {pacingIsOpenWorkload && effectivePacingType === 'tps' && (
               <>
-                <label>
-                  <span>Min delay (seconds)</span>
-                  <SecondsFromMillisecondsInput className="settings-input" valueMs={draft.pacing?.min_delay_ms} emptyWhenUndefined onChangeMs={minDelayMs => patchPacing({ min_delay_ms: minDelayMs })} placeholder={formatMillisecondsAsSecondsValue(inheritedPacing.min_delay_ms)} />
-                </label>
-                <label>
-                  <span>Max delay (seconds)</span>
-                  <SecondsFromMillisecondsInput className="settings-input" valueMs={draft.pacing?.max_delay_ms} emptyWhenUndefined onChangeMs={maxDelayMs => patchPacing({ max_delay_ms: maxDelayMs })} placeholder={formatMillisecondsAsSecondsValue(inheritedPacing.max_delay_ms)} />
-                </label>
+                <div className="scenario-browser-grid">
+                  {field('pacing.arrival_process', 'Arrival process', (
+                    <label>
+                      <span>Arrival process</span>
+                      <select
+                        className="settings-input"
+                        aria-label="Arrival process"
+                        value={overridden('pacing.arrival_process') ? String(overrideValue('pacing.arrival_process') ?? '').trim().toLowerCase() : ''}
+                        onChange={event => {
+                          const process = event.target.value
+                          if (!process) {
+                            resetPaths('pacing.arrival_process')
+                            return
+                          }
+                          // Gamma arrivals fail validation without a burstiness above 0.
+                          const needsBurstiness = process === 'gamma' && !((effectivePacing.burstiness ?? 0) > 0)
+                          patchPacing({ arrival_process: process, ...(needsBurstiness ? { burstiness: 1 } : {}) } as Partial<PacingSettings>)
+                        }}
+                      >
+                        <option value="">Inherit ({ARRIVAL_PROCESS_OPTIONS.find(option => option.value === (inheritedArrivalProcess || 'uniform'))?.label ?? inheritedArrivalProcess})</option>
+                        {ARRIVAL_PROCESS_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                      </select>
+                    </label>
+                  ))}
+                  {effectiveArrivalProcess === 'gamma' && field('pacing.burstiness', 'Burstiness', (
+                    <label>
+                      <span>Burstiness</span>
+                      <input
+                        className="settings-input"
+                        type="number"
+                        min={0.1}
+                        max={MAX_ARRIVAL_BURSTINESS}
+                        step={0.1}
+                        aria-label="Arrival burstiness"
+                        value={overridden('pacing.burstiness') ? String(overrideValue('pacing.burstiness') ?? '') : ''}
+                        placeholder={inh(inheritedPacingExt.burstiness, 'Required: above 0, up to 1000')}
+                        onChange={event => {
+                          const parsed = Number(event.target.value)
+                          patchPacing({ burstiness: event.target.value === '' || !Number.isFinite(parsed) ? undefined : parsed } as Partial<PacingSettings>)
+                        }}
+                      />
+                    </label>
+                  ))}
+                  {field('pacing.seed', 'Arrival seed', (
+                    <label>
+                      <span>Arrival seed</span>
+                      <input
+                        className="settings-input"
+                        type="number"
+                        step={1}
+                        aria-label="Arrival seed"
+                        value={overridden('pacing.seed') ? String(overrideValue('pacing.seed') ?? '') : ''}
+                        placeholder={inh(inheritedPacingExt.seed, 'Random each run')}
+                        onChange={event => {
+                          // Any number, 0 included, fixes the arrival sequence.
+                          const parsed = Math.trunc(Number(event.target.value))
+                          patchPacing({ seed: event.target.value === '' || !Number.isFinite(parsed) ? undefined : parsed } as Partial<PacingSettings>)
+                        }}
+                      />
+                    </label>
+                  ))}
+                </div>
+                {field('pacing.rate_stages', 'Rate stages', (
+                  <div className="runtime-override-kv-table" role="group" aria-label="Rate stages" data-testid="pacing-rate-stages-editor">
+                    <span>Rate stages</span>
+                    {(effectivePacing.rate_stages ?? []).map((stage, stageIndex) => (
+                      <div key={stageIndex} className="runtime-override-kv-row">
+                        <input className="settings-input" type="number" min={1} max={3600} aria-label={`Rate stage ${stageIndex + 1} duration`} placeholder="Duration (s)" value={stage.duration_seconds ?? ''} onChange={event => patchRateStage(stageIndex, { duration_seconds: event.target.value === '' ? undefined : Math.min(3600, Math.max(1, Number(event.target.value) || 1)) })} />
+                        <input className="settings-input" type="number" min={0} step={0.1} aria-label={`Rate stage ${stageIndex + 1} target TPS`} placeholder="Target TPS" value={stage.target_tps ?? ''} onChange={event => patchRateStage(stageIndex, { target_tps: event.target.value === '' ? undefined : Math.max(0, Number(event.target.value) || 0) })} />
+                        <input className="settings-input" type="number" min={0} step={0.1} aria-label={`Rate stage ${stageIndex + 1} end TPS`} placeholder="End TPS (optional)" value={stage.end_tps ?? ''} onChange={event => patchRateStage(stageIndex, { end_tps: event.target.value === '' ? undefined : Math.max(0, Number(event.target.value) || 0) })} />
+                        <button type="button" className="btn btn-sm btn-ghost" aria-label={`Remove rate stage ${stageIndex + 1}`} onClick={() => writeRateStages((effectivePacing.rate_stages ?? []).filter((_, position) => position !== stageIndex))}>Remove</button>
+                      </div>
+                    ))}
+                    <div>
+                      <button type="button" className="btn btn-sm btn-secondary" onClick={() => writeRateStages([...(effectivePacing.rate_stages ?? []), { duration_seconds: 30, target_tps: effectivePacing.tps ?? 10 }])}>Add rate stage</button>
+                    </div>
+                  </div>
+                ), true)}
               </>
             )}
-            {pacingType === 'fixed_interval' && (
-              <label>
-                <span>Pacing interval (seconds)</span>
-                <SecondsFromMillisecondsInput className="settings-input" valueMs={draft.pacing?.interval_ms} emptyWhenUndefined onChangeMs={intervalMs => patchPacing({ interval_ms: intervalMs })} placeholder={formatMillisecondsAsSecondsValue(inheritedPacing.interval_ms)} />
-              </label>
+            {showQuotaEditor && (
+              <div className="runtime-override-kv-table" data-testid="pacing-quota-editor">
+                <h5>LLM request quota</h5>
+                <p>Applies in every pacing mode, and only to LLM actions: llm_request steps and HTTP steps marked with params.llm, llm_dialect or stream_profile.</p>
+                <div className="scenario-browser-grid">
+                  {QUOTA_NUMBER_FIELDS.map(([leaf, label, max]) => field(`pacing.quota.${leaf}`, label, (
+                    <label>
+                      <span>{label}</span>
+                      <input
+                        className="settings-input"
+                        type="number"
+                        min={0}
+                        max={max}
+                        step={leaf === 'headroom_ratio' ? 0.05 : 1}
+                        value={overridden(`pacing.quota.${leaf}`) ? String(overrideValue(`pacing.quota.${leaf}`) ?? '') : ''}
+                        placeholder={inh(inheritedPacingExt.quota?.[leaf])}
+                        onChange={event => {
+                          const parsed = Number(event.target.value)
+                          const value = event.target.value === '' || !Number.isFinite(parsed) ? undefined : Math.min(max ?? Infinity, Math.max(0, parsed))
+                          editSection('pacing', { quota: { [leaf]: value } })
+                        }}
+                      />
+                    </label>
+                  )))}
+                  {field('pacing.quota.adaptive_aimd', 'Adaptive AIMD throttling', (
+                    <TriStateOverrideSelect
+                      label="Adaptive AIMD throttling"
+                      value={boolOverride('pacing.quota.adaptive_aimd')}
+                      inheritedValue={triInherited('pacing.quota.adaptive_aimd', Boolean(inheritedPacingExt.quota?.adaptive_aimd), Boolean(effectivePacing.quota?.adaptive_aimd))}
+                      onChange={next => editSection('pacing', { quota: { adaptive_aimd: next } })}
+                    />
+                  ))}
+                </div>
+              </div>
             )}
-            {pacingType === 'random_interval' && (
-              <>
-                <label>
-                  <span>Min interval (seconds)</span>
-                  <SecondsFromMillisecondsInput className="settings-input" valueMs={draft.pacing?.min_interval_ms} emptyWhenUndefined onChangeMs={minIntervalMs => patchPacing({ min_interval_ms: minIntervalMs })} placeholder={formatMillisecondsAsSecondsValue(inheritedPacing.min_interval_ms)} />
-                </label>
-                <label>
-                  <span>Max interval (seconds)</span>
-                  <SecondsFromMillisecondsInput className="settings-input" valueMs={draft.pacing?.max_interval_ms} emptyWhenUndefined onChangeMs={maxIntervalMs => patchPacing({ max_interval_ms: maxIntervalMs })} placeholder={formatMillisecondsAsSecondsValue(inheritedPacing.max_interval_ms)} />
-                </label>
-              </>
-            )}
-            {pacingType === 'tps' && (
-              <label>
-                <span>Target TPS</span>
-                <input className="settings-input" type="number" min={0} value={draft.pacing?.tps ?? ''} onChange={event => patchPacing({ tps: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder={inh(inheritedPacing.tps, '0')} />
-              </label>
-            )}
-          </div>
+            {panelOverrides('pacing')}
+          </>
         )}
 
         {activeTab === 'run_logic' && (
-          <div className="scenario-browser-grid">
-            <label>
-              <span>Iterations</span>
-              <input
-                className="settings-input"
-                type="number"
-                min={0}
-                value={draft.run_logic?.iterations ?? draft.iterations ?? ''}
-                onChange={event => patchRunLogic({ iterations: event.target.value === '' ? undefined : Number(event.target.value) })}
-                placeholder={inh(inheritedIterations, 'Duration-driven')}
-              />
-            </label>
-            <label>
-              <span>Auto-transactions</span>
-              <select className="settings-input" value={draft.run_logic?.auto_transactions ?? draft.auto_transactions ?? ''} onChange={event => patchRunLogic({ auto_transactions: event.target.value || undefined })}>
-                <option value="">Inherit</option>
-                <option value="none">None</option>
-                <option value="per_action">Per action</option>
-                <option value="per_iteration">Per iteration</option>
-              </select>
-            </label>
-            <label>
-              <span>Workload model</span>
-              <select className="settings-input" value={draft.run_logic?.workload_model || ''} onChange={event => patchRunLogic({ workload_model: event.target.value || undefined })}>
-                <option value="">Inherit</option>
-                <option value="closed">Closed</option>
-                <option value="open">Open</option>
-              </select>
-            </label>
-            <label>
-              <span>Block scheduling</span>
-              <select className="settings-input" value={draft.run_logic?.block_scheduling || ''} onChange={event => patchRunLogic({ block_scheduling: event.target.value || undefined })}>
-                <option value="">Inherit</option>
-                <option value="sequential">Sequential</option>
-                <option value="random">Random</option>
-                <option value="percentage">Percentage</option>
-              </select>
-            </label>
-            <label>
-              <span>Global iterations</span>
-              <input className="settings-input" type="number" min={0} value={draft.run_logic?.global_iterations ?? ''} onChange={event => patchRunLogic({ global_iterations: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder={inh(inheritedRunLogic.global_iterations)} />
-            </label>
-            <label>
-              <span>Max transactions</span>
-              <input className="settings-input" type="number" min={0} value={draft.run_logic?.max_transactions ?? ''} onChange={event => patchRunLogic({ max_transactions: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder={inh(inheritedRunLogic.max_transactions)} />
-            </label>
-            <label>
-              <span>Action sequence</span>
-              <input
-                className="settings-input"
-                type="text"
-                value={draft.run_logic?.action_sequence?.join(', ') || ''}
-                onChange={event => {
-                  const sequence = event.target.value.split(',').map(value => value.trim()).filter(Boolean)
-                  patchRunLogic({ action_sequence: sequence.length ? sequence : undefined })
-                }}
-                placeholder="login, browse, checkout"
-              />
-            </label>
-          </div>
+          <>
+            <div className="scenario-browser-grid">
+              {field('run_logic.iterations', 'Iterations', (
+                <label>
+                  <span>Iterations</span>
+                  <input
+                    className="settings-input"
+                    type="number"
+                    min={0}
+                    value={draft.run_logic?.iterations ?? draft.iterations ?? ''}
+                    onChange={event => patchRunLogic({ iterations: event.target.value === '' ? undefined : Number(event.target.value) })}
+                    placeholder={inh(inheritedIterations, 'Duration-driven')}
+                  />
+                </label>
+              ))}
+              {field('run_logic.auto_transactions', 'Auto-transactions', (
+                <label>
+                  <span>Auto-transactions</span>
+                  <select className="settings-input" value={draft.run_logic?.auto_transactions ?? draft.auto_transactions ?? ''} onChange={event => patchRunLogic({ auto_transactions: event.target.value || undefined })}>
+                    <option value="">Inherit</option>
+                    <option value="none">None</option>
+                    <option value="per_action">Per action</option>
+                    <option value="per_iteration">Per iteration</option>
+                  </select>
+                </label>
+              ))}
+              {field('run_logic.workload_model', 'Workload model', (
+                <label>
+                  <span>Workload model</span>
+                  <select className="settings-input" value={draft.run_logic?.workload_model || ''} onChange={event => setWorkloadModel(event.target.value || undefined)}>
+                    <option value="">Inherit</option>
+                    <option value="closed">Closed</option>
+                    <option value="open">Open</option>
+                  </select>
+                </label>
+              ))}
+              {pacingIsOpenWorkload && field('run_logic.max_in_flight', 'Maximum in-flight iterations', (
+                <label>
+                  <span>Maximum in-flight iterations</span>
+                  <input
+                    className="settings-input"
+                    type="number"
+                    min={0}
+                    value={overridden('run_logic.max_in_flight') ? String(overrideValue('run_logic.max_in_flight') ?? '') : ''}
+                    placeholder={inh(inheritedRunLogic.max_in_flight, '0 (engine-derived limit)')}
+                    onChange={event => patchRunLogic({ max_in_flight: event.target.value === '' ? undefined : Math.max(0, Math.trunc(Number(event.target.value) || 0)) })}
+                  />
+                </label>
+              ))}
+              {field('run_logic.termination_mode', 'Termination mode', (
+                <label>
+                  <span>Termination mode</span>
+                  <select
+                    className="settings-input"
+                    aria-label="Termination mode"
+                    value={overridden('run_logic.termination_mode') ? String(overrideValue('run_logic.termination_mode') ?? '') : ''}
+                    onChange={event => patchRunLogic({ termination_mode: (event.target.value || undefined) as RunLogicSettings['termination_mode'] })}
+                  >
+                    <option value="">Inherit ({TERMINATION_MODE_OPTIONS.find(option => option.value === (inheritedRunLogic.termination_mode || 'duration'))?.label ?? inheritedRunLogic.termination_mode})</option>
+                    {TERMINATION_MODE_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                  </select>
+                </label>
+              ))}
+              {field('run_logic.block_scheduling', 'Block scheduling', (
+                <label>
+                  <span>Block scheduling</span>
+                  <select className="settings-input" value={draft.run_logic?.block_scheduling || ''} onChange={event => patchRunLogic({ block_scheduling: event.target.value || undefined })}>
+                    <option value="">Inherit</option>
+                    <option value="sequential">Sequential</option>
+                    <option value="random">Random</option>
+                    <option value="percentage">Percentage</option>
+                  </select>
+                </label>
+              ))}
+              {field('run_logic.global_iterations', 'Global iterations', (
+                <label>
+                  <span>Global iterations</span>
+                  <input className="settings-input" type="number" min={0} value={draft.run_logic?.global_iterations ?? ''} onChange={event => patchRunLogic({ global_iterations: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder={inh(inheritedRunLogic.global_iterations)} />
+                </label>
+              ))}
+              {field('run_logic.max_transactions', 'Max transactions', (
+                <label>
+                  <span>Max transactions</span>
+                  <input className="settings-input" type="number" min={0} value={draft.run_logic?.max_transactions ?? ''} onChange={event => patchRunLogic({ max_transactions: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder={inh(inheritedRunLogic.max_transactions)} />
+                </label>
+              ))}
+              {field('run_logic.action_sequence', 'Action sequence', (
+                <label>
+                  <span>Action sequence</span>
+                  <input
+                    className="settings-input"
+                    type="text"
+                    value={draft.run_logic?.action_sequence?.join(', ') || ''}
+                    onChange={event => {
+                      const sequence = event.target.value.split(',').map(value => value.trim()).filter(Boolean)
+                      patchRunLogic({ action_sequence: sequence.length ? sequence : undefined })
+                    }}
+                    placeholder="login, browse, checkout"
+                  />
+                </label>
+              ))}
+            </div>
+            {effectiveRunLogic.termination_mode === 'iterations' && (
+              <p className="form-hint" data-testid="run-logic-termination-iterations-hint">
+                Iteration termination needs positive per-VUser iterations, the closed workload model, and no global iterations or max transactions.
+              </p>
+            )}
+            {field('run_logic.blocks', 'Run logic blocks', (
+              <div className="runtime-override-kv-table" data-testid="run-logic-blocks-summary">
+                <span>Run logic blocks</span>
+                {(effectiveRunLogic.blocks ?? []).length === 0
+                  ? <p className="form-hint">No run logic blocks; iterations follow the action sequence.</p>
+                  : (
+                    <ul>
+                      {(effectiveRunLogic.blocks ?? []).map((block, blockIndex) => (
+                        <li key={blockIndex}>{block.name || `Block ${blockIndex + 1}`} · {block.mode || 'sequential'}{block.iterations ? ` · ${block.iterations} iterations` : ''} · {block.children.length} {block.children.length === 1 ? 'step' : 'steps'}</li>
+                      ))}
+                    </ul>
+                  )}
+                <p className="form-hint">Run logic blocks are read-only here; edit them in the script&apos;s Run Logic.</p>
+              </div>
+            ), true)}
+            {panelOverrides('run_logic')}
+          </>
         )}
 
         {activeTab === 'error_handling' && (
           <>
-            {fieldApplicable('results') && <MessageDetailFields value={draft.results?.message_detail ?? inheritedOverride?.results?.message_detail} onChange={value => patch({ results: { ...inheritedOverride?.results, ...draft.results, message_detail: value } })} />}
-            {fieldApplicable('results') && <PropertyAnalyticsFields value={draft.results?.property_analytics ?? inheritedOverride?.results?.property_analytics} onChange={value => patch({ results: { ...inheritedOverride?.results, ...draft.results, property_analytics: value } })} />}
+            {fieldApplicable('results') && <MessageDetailFields value={draft.results?.message_detail ?? inheritedOverride?.results?.message_detail} onChange={value => (value === undefined ? resetPaths('results.message_detail') : commit(setOverrideField(overrides[index], 'results.message_detail', value)))} />}
+            {fieldApplicable('results') && <PropertyAnalyticsFields value={draft.results?.property_analytics ?? inheritedOverride?.results?.property_analytics} onChange={value => (value === undefined ? resetPaths('results.property_analytics') : commit(setOverrideField(overrides[index], 'results.property_analytics', value)))} />}
+            <div className="scenario-browser-grid">
+              {field('error_handling.continue_on_error', 'Continue on error', (
+                <TriStateOverrideSelect
+                  label="Continue on error"
+                  value={boolOverride('error_handling.continue_on_error')}
+                  // Inside a scenario continue-on-error is on unless a layer disables it.
+                  inheritedValue={triInherited('error_handling.continue_on_error', explicitInheritedContinueOnError ?? true, effectiveError.continue_on_error ?? true)}
+                  onChange={next => (next === undefined ? resetPaths('error_handling.continue_on_error') : patchErrorHandling({ continue_on_error: next }))}
+                />
+              ))}
+              {field('error_handling.fail_transaction_on_error_message', 'Fail transaction on error message', (
+                <TriStateOverrideSelect
+                  label="Fail transaction on error message"
+                  value={boolOverride('error_handling.fail_transaction_on_error_message')}
+                  inheritedValue={triInherited('error_handling.fail_transaction_on_error_message', Boolean(inheritedError.fail_transaction_on_error_message), Boolean(effectiveError.fail_transaction_on_error_message))}
+                  onChange={next => patchErrorHandling({ fail_transaction_on_error_message: next })}
+                />
+              ))}
+            </div>
             <div className="scenario-option-grid">
-              <label className={`scenario-option-card ${(effectiveError.continue_on_error ?? true) ? 'selected' : ''}`}>
-                <input type="checkbox" checked={effectiveError.continue_on_error ?? true} onChange={event => patchErrorHandling({ continue_on_error: event.target.checked })} />
-                <div><strong>Continue on error</strong><span>Keep iterating after a failed step.</span></div>
-              </label>
               <label className={`scenario-option-card ${effectiveError.snapshot_on_error ? 'selected' : ''}`}>
                 <input type="checkbox" checked={effectiveError.snapshot_on_error ?? false} onChange={event => patchErrorHandling({ snapshot_on_error: event.target.checked })} />
                 <div><strong>Snapshot on error</strong><span>Capture diagnostics when a step fails.</span></div>
               </label>
             </div>
             <div className="scenario-browser-grid">
-              <label>
-                <span>Log level</span>
-                <select className="settings-input" value={draft.log?.level ?? draft.log_level ?? ''} onChange={event => patchLog({ level: event.target.value || undefined })}>
-                  <option value="">Inherit</option>
-                  <option value="disabled">Disabled</option>
-                  <option value="standard">Standard</option>
-                  <option value="extended">Extended</option>
-                </select>
-              </label>
-              <label>
-                <span>Max retries</span>
-                <input
-                  className="settings-input"
-                  type="number"
-                  min={0}
-                  value={draft.max_retries ?? ''}
-                  onChange={event => patchErrorHandling({ max_retries: event.target.value === '' ? undefined : Number(event.target.value) })}
-                  placeholder={inh(inheritedError.max_retries, '0')}
+              {field('log.level', 'Log level', (
+                <label>
+                  <span>Log level</span>
+                  <select className="settings-input" value={draft.log?.level ?? draft.log_level ?? ''} onChange={event => patchLog({ level: event.target.value || undefined })}>
+                    <option value="">Inherit</option>
+                    <option value="disabled">Disabled</option>
+                    <option value="standard">Standard</option>
+                    <option value="extended">Extended</option>
+                  </select>
+                </label>
+              ))}
+              {field('error_handling.max_retries', 'Max retries', (
+                <label>
+                  <span>Max retries</span>
+                  <input
+                    className="settings-input"
+                    type="number"
+                    min={0}
+                    value={draft.max_retries ?? ''}
+                    onChange={event => patchErrorHandling({ max_retries: event.target.value === '' ? undefined : Number(event.target.value) })}
+                    placeholder={inh(inheritedError.max_retries, '0')}
+                  />
+                </label>
+              ))}
+              {field('error_handling.retry_delay_ms', 'Retry delay (ms)', (
+                <label>
+                  <span>Retry delay (ms)</span>
+                  <input
+                    className="settings-input"
+                    type="number"
+                    min={0}
+                    value={draft.retry_delay_ms ?? ''}
+                    onChange={event => patchErrorHandling({ retry_delay_ms: event.target.value === '' ? undefined : Number(event.target.value) })}
+                    placeholder={inh(inheritedError.retry_delay_ms)}
+                  />
+                </label>
+              ))}
+              {field('error_handling.retry_backoff', 'Retry backoff', (
+                <label>
+                  <span>Retry backoff</span>
+                  <select
+                    className="settings-input"
+                    value={draft.retry_backoff || ''}
+                    onChange={event => patchErrorHandling({ retry_backoff: event.target.value || undefined })}
+                  >
+                    <option value="">Inherit</option>
+                    {RETRY_BACKOFF_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                  </select>
+                </label>
+              ))}
+              {field('error_handling.honor_retry_after', 'Honor Retry-After', (
+                <TriStateOverrideSelect
+                  label="Honor Retry-After"
+                  value={boolOverride('error_handling.honor_retry_after')}
+                  inheritedValue={triInherited('error_handling.honor_retry_after', Boolean(inheritedError.honor_retry_after), Boolean(effectiveError.honor_retry_after))}
+                  onChange={next => patchErrorHandling({ honor_retry_after: next })}
                 />
-              </label>
-              <label>
-                <span>Retry delay (ms)</span>
-                <input
-                  className="settings-input"
-                  type="number"
-                  min={0}
-                  value={draft.retry_delay_ms ?? ''}
-                  onChange={event => patchErrorHandling({ retry_delay_ms: event.target.value === '' ? undefined : Number(event.target.value) })}
-                  placeholder={inh(inheritedError.retry_delay_ms)}
-                />
-              </label>
-              <label>
-                <span>Retry backoff</span>
-                <select
-                  className="settings-input"
-                  value={draft.retry_backoff || ''}
-                  onChange={event => patchErrorHandling({ retry_backoff: event.target.value || undefined })}
-                >
-                  <option value="">Inherit</option>
-                  <option value="fixed">Fixed</option>
-                  <option value="exponential">Exponential</option>
-                </select>
-              </label>
+              ))}
+              {field('error_handling.retry_after_max_ms', 'Retry-After cap (ms)', (
+                <label>
+                  <span>Retry-After cap (ms)</span>
+                  <input
+                    className="settings-input"
+                    type="number"
+                    min={0}
+                    value={overridden('error_handling.retry_after_max_ms') ? String(overrideValue('error_handling.retry_after_max_ms') ?? '') : ''}
+                    onChange={event => patchErrorHandling({ retry_after_max_ms: event.target.value === '' ? undefined : Math.max(0, Number(event.target.value) || 0) })}
+                    placeholder={inh(inheritedError.retry_after_max_ms)}
+                  />
+                </label>
+              ))}
+              {field('error_handling.retry_on', 'Retry on', (
+                <fieldset className="runtime-override-checkbox-row" aria-label="Retry on">
+                  <legend>Retry on</legend>
+                  <label>
+                    <input
+                      type="checkbox"
+                      aria-label="Any error (no filter)"
+                      checked={retryOnAnyError}
+                      // Leaving 'Any error' means ticking a specific condition.
+                      disabled={retryOnAnyError}
+                      onChange={event => { if (event.target.checked) writeRetryOn([]) }}
+                    />
+                    <span>Any error (no filter)</span>
+                  </label>
+                  {RETRY_ON_OPTIONS.map(option => {
+                    const checked = effectiveRetryOn.includes(option.value)
+                    const onlyCondition = checked && effectiveRetryOn.length === 1
+                    return (
+                      <label key={option.value}>
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          disabled={onlyCondition}
+                          title={onlyCondition ? 'Choose Any error (no filter) to retry on every error' : undefined}
+                          onChange={event => toggleRetryOn(option.value, event.target.checked)}
+                        />
+                        <span>{option.label}</span>
+                      </label>
+                    )
+                  })}
+                  <p className="form-hint" data-testid="retry-on-hint">
+                    No ticked condition means no filter: every failed step is retried, including 4xx and assertion failures. To stop retries, set Max retries to 0.
+                  </p>
+                </fieldset>
+              ), true)}
+              {field('log.max_response_bytes', 'Max logged response (bytes)', (
+                <label>
+                  <span>Max logged response (bytes)</span>
+                  <input
+                    className="settings-input"
+                    type="number"
+                    min={0}
+                    max={LOG_MAX_RESPONSE_BYTES}
+                    value={overridden('log.max_response_bytes') ? String(overrideValue('log.max_response_bytes') ?? '') : ''}
+                    onChange={event => patchLog({ max_response_bytes: event.target.value === '' ? undefined : Math.min(LOG_MAX_RESPONSE_BYTES, Math.max(0, Math.trunc(Number(event.target.value) || 0))) })}
+                    placeholder={inh(inheritedLog.max_response_bytes)}
+                  />
+                </label>
+              ))}
             </div>
             <div className="scenario-option-grid">
               <label><span>Error history buffer (bytes)</span><input type="number" min={0} max={1048576} value={effectiveLog.error_buffer_bytes ?? ''} placeholder="102400 by default" onChange={event => patchLog({ error_buffer_bytes: event.target.value === '' ? undefined : Number(event.target.value) })} /></label>
@@ -1104,6 +1759,7 @@ export default function RuntimeSettingsGroupEditor({
                 <div><strong>Advanced trace</strong><span>Capture DNS/connect/TLS/TTFB timings, socket reuse, TLS cipher/ALPN, compression ratios, and cookie counts.</span></div>
               </label>
             </div>
+            {panelOverrides('error_handling')}
           </>
         )}
 
@@ -1158,9 +1814,20 @@ export default function RuntimeSettingsGroupEditor({
                   onChange={patchHTTPSettings}
                   onNewUserEachIterationChange={enabled => patchBrowserEmulation({ cache: { new_user_each_iteration: enabled } })}
                   originLabel={httpOriginLabel}
+                  hideBooleanPolicyControls
                   section="request"
                   value={httpSettingsValue}
                 />
+              )}
+              {httpSubTab === 'request_defaults' && (
+                <div className="scenario-browser-grid" aria-label="Trace context overrides">
+                  {field('http.traceparent', 'Trace context override', (
+                    <TriStateOverrideSelect label="Trace context override" value={boolOverride('http.traceparent')} inheritedValue={triInherited('http.traceparent', inheritedHttp.traceparent !== false, effectiveHttp.traceparent !== false)} enabledLabel="Generate / propagate" disabledLabel="Disabled" onChange={next => patchHttp({ traceparent: next })} />
+                  ))}
+                  {field('http.traceparent_sampled', 'Trace sampling override', (
+                    <TriStateOverrideSelect label="Trace sampling override" value={boolOverride('http.traceparent_sampled')} inheritedValue={triInherited('http.traceparent_sampled', inheritedHttp.traceparent_sampled !== false, effectiveHttp.traceparent_sampled !== false)} enabledLabel="Sampled" disabledLabel="Not sampled" onChange={next => patchHttp({ traceparent_sampled: next })} />
+                  ))}
+                </div>
               )}
 
               {httpSubTab === 'session_cache' && (
@@ -1170,10 +1837,27 @@ export default function RuntimeSettingsGroupEditor({
                   newUserEachIteration={Boolean(effectiveBrowserEmulation.cache?.new_user_each_iteration)}
                   onChange={patchHTTPSettings}
                   onNewUserEachIterationChange={enabled => patchBrowserEmulation({ cache: { new_user_each_iteration: enabled } })}
-                  originLabel={draft.http ? 'Group override' : 'Inherited'}
+                  originLabel={draft.http ? groupBadgeLabel : 'Inherited'}
+                  hideBooleanPolicyControls
                   section="session"
                   value={httpSettingsValue}
                 />
+                <div className="scenario-browser-grid" aria-label="Cookie jar and cache overrides">
+                  {field('http.cookies_enabled', 'Cookie jar override', (
+                    <TriStateOverrideSelect label="Cookie jar override" value={boolOverride('http.cookies_enabled')} inheritedValue={triInherited('http.cookies_enabled', inheritedHttp.cookies_enabled !== false, effectiveHttp.cookies_enabled !== false)} onChange={next => patchHttp({ cookies_enabled: next })} />
+                  ))}
+                  {field('http.clear_cookies_per_iteration', 'Clear learned cookies override', (
+                    <TriStateOverrideSelect label="Clear learned cookies override" value={boolOverride('http.clear_cookies_per_iteration')} inheritedValue={triInherited('http.clear_cookies_per_iteration', Boolean(inheritedHttp.clear_cookies_per_iteration), Boolean(effectiveHttp.clear_cookies_per_iteration))} disabled={Boolean(effectiveBrowserEmulation.cache?.new_user_each_iteration)} onChange={next => patchHttp({ clear_cookies_per_iteration: next })} />
+                  ))}
+                  {field('http.cache_enabled', 'HTTP cache override', (
+                    <TriStateOverrideSelect
+                      label="HTTP cache override"
+                      value={boolOverride('browser_emulation.cache.simulate_cache') ?? boolOverride('http.cache_enabled')}
+                      inheritedValue={triInherited([...HTTP_CACHE_PATHS], Boolean(inheritedBrowserEmulation.cache?.simulate_cache ?? inheritedHttp.cache_enabled), Boolean(effectiveBrowserEmulation.cache?.simulate_cache ?? effectiveHttp.cache_enabled))}
+                      onChange={next => (next === undefined ? resetPaths(...HTTP_CACHE_PATHS) : patchHTTPSettings({ cache_enabled: next }))}
+                    />
+                  ), false, () => resetPaths(...HTTP_CACHE_PATHS), [HTTP_CACHE_PATHS[1]])}
+                </div>
                 <div className="scenario-browser-grid"><HTTPReplayPolicyFields section="session" value={draft.http} inherited={inheritedHttp} onChange={patchHttp} /></div>
                 </>
               )}
@@ -1181,25 +1865,27 @@ export default function RuntimeSettingsGroupEditor({
               {httpSubTab === 'timeouts' && (
                 <div className="scenario-browser-grid">
                   <HTTPReplayPolicyFields section="timeouts" value={draft.http} inherited={inheritedHttp} onChange={patchHttp} />
-                  <label><span>Connect timeout (ms)</span><input className="settings-input" type="number" min={0} value={draft.http?.connect_timeout_ms ?? ''} onChange={event => patchHttp({ connect_timeout_ms: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder={inh(inheritedHttp.connect_timeout_ms)} /></label>
-                  <label><span>Request timeout (ms)</span><input className="settings-input" type="number" min={0} value={draft.http?.request_timeout_ms ?? ''} onChange={event => patchHttp({ request_timeout_ms: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder={inh(inheritedHttp.request_timeout_ms)} /></label>
-                  <label><span>TLS handshake timeout (ms)</span><input className="settings-input" type="number" min={0} value={draft.http?.tls_timeout_ms ?? ''} onChange={event => patchHttp({ tls_timeout_ms: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder={inh(inheritedHttp.tls_timeout_ms)} /></label>
-                  <label><span>Idle timeout (ms)</span><input className="settings-input" type="number" min={0} value={draft.http?.idle_timeout_ms ?? ''} onChange={event => patchHttp({ idle_timeout_ms: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder={inh(inheritedHttp.idle_timeout_ms)} /></label>
+                  {field('http.connect_timeout_ms', 'Connect timeout (ms)', <label><span>Connect timeout (ms)</span><input className="settings-input" type="number" min={0} value={draft.http?.connect_timeout_ms ?? ''} onChange={event => patchHttp({ connect_timeout_ms: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder={inh(inheritedHttp.connect_timeout_ms)} /></label>)}
+                  {field('http.request_timeout_ms', 'Request timeout (ms)', <label><span>Request timeout (ms)</span><input className="settings-input" type="number" min={0} value={draft.http?.request_timeout_ms ?? ''} onChange={event => patchHttp({ request_timeout_ms: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder={inh(inheritedHttp.request_timeout_ms)} /></label>)}
+                  {field('http.tls_timeout_ms', 'TLS handshake timeout (ms)', <label><span>TLS handshake timeout (ms)</span><input className="settings-input" type="number" min={0} value={draft.http?.tls_timeout_ms ?? ''} onChange={event => patchHttp({ tls_timeout_ms: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder={inh(inheritedHttp.tls_timeout_ms)} /></label>)}
+                  {field('http.idle_timeout_ms', 'Idle timeout (ms)', <label><span>Idle timeout (ms)</span><input className="settings-input" type="number" min={0} value={draft.http?.idle_timeout_ms ?? ''} onChange={event => patchHttp({ idle_timeout_ms: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder={inh(inheritedHttp.idle_timeout_ms)} /></label>)}
                 </div>
               )}
 
               {httpSubTab === 'connection' && (
                 <div className="scenario-browser-grid">
                   <HTTPReplayPolicyFields section="connection" value={draft.http} inherited={inheritedHttp} onChange={patchHttp} />
-                  <label>
-                    <span>HTTP version</span>
-                    <select className="settings-input" value={draft.http?.version || ''} onChange={event => patchHttp({ version: event.target.value || undefined })}>
-                      <option value="">Inherit</option>
-                      {HTTP_VERSION_OPTIONS.slice(1).map(option => (
-                        <option key={option.value} value={option.value}>{option.label}</option>
-                      ))}
-                    </select>
-                  </label>
+                  {field('http.version', 'HTTP version', (
+                    <label>
+                      <span>HTTP version</span>
+                      <select className="settings-input" value={draft.http?.version || ''} onChange={event => patchHttp({ version: event.target.value || undefined })}>
+                        <option value="">Inherit</option>
+                        {HTTP_VERSION_OPTIONS.slice(1).map(option => (
+                          <option key={option.value} value={option.value}>{option.label}</option>
+                        ))}
+                      </select>
+                    </label>
+                  ))}
                   {http3PolicyIssues(effectiveHttp.version, { http: effectiveHttp, web: effectiveWebRuntimeForHTTP3, target: focusGroup.scriptConfig?.base_url }).map(issue => <p key={issue} className="http3-policy-issue" role="alert">{issue}</p>)}
                   <div className="form-hint">
                     Inherit uses the next configured layer; an effective empty value auto-negotiates. Explicit versions are exact, and required HTTP/2 never falls back to HTTP/1.1.
@@ -1207,18 +1893,13 @@ export default function RuntimeSettingsGroupEditor({
                   </div>
                   <HTTPQUICSettingsFields value={draft.http?.quic} inherited={inheritedHttp.quic}
                     disabledReason={quicPanelDisabledReason(effectiveHttp, effectiveWebRuntimeForHTTP3)}
-                    onChange={patch => patchHttp({ quic: patchQUICConfig(draft.http ? draft.http.quic : inheritedHttp.quic, patch) ?? {} })} />
-                  <label><span>Max connections / host</span><input className="settings-input" type="number" min={0} value={draft.http?.max_conns_per_host ?? ''} onChange={event => patchHttp({ max_conns_per_host: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder={inh(inheritedHttp.max_conns_per_host)} /></label>
-                  <label><span>Max idle connections</span><input className="settings-input" type="number" min={0} value={draft.http?.max_idle_conns ?? ''} onChange={event => patchHttp({ max_idle_conns: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder={inh(inheritedHttp.max_idle_conns)} /></label>
-                  <label><span>Max redirects</span><input className="settings-input" type="number" min={0} value={draft.http?.max_redirects ?? ''} onChange={event => patchHttp({ max_redirects: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder={inh(inheritedHttp.max_redirects)} /></label>
-                  <label>
-                    <span>Keep-alive</span>
-                    <select className="settings-input" value={browserBoolValue(draft.http?.keep_alive)} onChange={event => patchHttp({ keep_alive: event.target.value === '' ? undefined : event.target.value === 'true' })}>
-                      <option value="">Inherit</option>
-                      <option value="true">Enabled</option>
-                      <option value="false">Disabled</option>
-                    </select>
-                  </label>
+                    onChange={patch => patchQuic(patch as Record<string, unknown>)} />
+                  {field('http.max_conns_per_host', 'Max connections / host', <label><span>Max connections / host</span><input className="settings-input" type="number" min={0} value={draft.http?.max_conns_per_host ?? ''} onChange={event => patchHttp({ max_conns_per_host: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder={inh(inheritedHttp.max_conns_per_host)} /></label>)}
+                  {field('http.max_idle_conns', 'Max idle connections', <label><span>Max idle connections</span><input className="settings-input" type="number" min={0} value={draft.http?.max_idle_conns ?? ''} onChange={event => patchHttp({ max_idle_conns: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder={inh(inheritedHttp.max_idle_conns)} /></label>)}
+                  {field('http.max_redirects', 'Max redirects', <label><span>Max redirects</span><input className="settings-input" type="number" min={0} value={draft.http?.max_redirects ?? ''} onChange={event => patchHttp({ max_redirects: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder={inh(inheritedHttp.max_redirects)} /></label>)}
+                  {field('http.keep_alive', 'Keep-alive', (
+                    <TriStateOverrideSelect label="Keep-alive" value={boolOverride('http.keep_alive')} inheritedValue={triInherited('http.keep_alive', inheritedHttp.keep_alive !== false, effectiveHttp.keep_alive !== false)} onChange={next => patchHttp({ keep_alive: next })} />
+                  ))}
                   <details className="http-advanced-options">
                     <summary>Advanced connection guidance</summary>
                     <p>Connection-specific headers require exact HTTP/1.1. Unsupported imported socket options remain review-only compatibility metadata.</p>
@@ -1233,32 +1914,39 @@ export default function RuntimeSettingsGroupEditor({
               {httpSubTab === 'tls' && (
                 <>
                   <div className="scenario-browser-grid">
-                    <label>
-                      <span>TLS min version</span>
-                      <select className="settings-input" value={draft.http?.tls?.min_version || ''} onChange={event => patchTls({ min_version: event.target.value || undefined })}>
-                        <option value="">Inherit</option>
-                        <option value="1.0">1.0</option>
-                        <option value="1.1">1.1</option>
-                        <option value="1.2">1.2</option>
-                        <option value="1.3">1.3</option>
-                      </select>
-                    </label>
-                    <label><span>Client cert file</span><input className="settings-input" type="text" value={draft.http?.tls?.client_cert_file || ''} onChange={event => patchTls({ client_cert_file: event.target.value || undefined })} placeholder={inh(inheritedHttp.tls?.client_cert_file)} /></label>
-                    <label><span>Client key file</span><input className="settings-input" type="text" value={draft.http?.tls?.client_key_file || ''} onChange={event => patchTls({ client_key_file: event.target.value || undefined })} placeholder={inh(inheritedHttp.tls?.client_key_file)} /></label>
-                    <label><span>CA cert file</span><input className="settings-input" type="text" value={draft.http?.tls?.ca_cert_file || ''} onChange={event => patchTls({ ca_cert_file: event.target.value || undefined })} placeholder={inh(inheritedHttp.tls?.ca_cert_file)} /></label>
+                    {field('http.tls.min_version', 'TLS min version', (
+                      <label>
+                        <span>TLS min version</span>
+                        <select className="settings-input" value={draft.http?.tls?.min_version || ''} onChange={event => patchTls({ min_version: event.target.value || undefined })}>
+                          <option value="">Inherit</option>
+                          {TLS_VERSION_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                        </select>
+                      </label>
+                    ))}
+                    {field('http.tls.max_version', 'TLS max version', (
+                      <label>
+                        <span>TLS max version</span>
+                        <select className="settings-input" value={overridden('http.tls.max_version') ? String(overrideValue('http.tls.max_version') ?? '') : ''} onChange={event => patchTls({ max_version: event.target.value || undefined })}>
+                          <option value="">Inherit{inheritedHttp.tls?.max_version ? ` (${inheritedHttp.tls.max_version})` : ''}</option>
+                          {TLS_VERSION_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                        </select>
+                      </label>
+                    ))}
+                    {tlsMaxVersionWarning && <p className="http3-policy-issue" role="alert" data-testid="tls-max-version-http3-warning">{tlsMaxVersionWarning}</p>}
+                    {field('http.tls.client_cert_file', 'Client cert file', <label><span>Client cert file</span><input className="settings-input" type="text" value={draft.http?.tls?.client_cert_file || ''} onChange={event => patchTls({ client_cert_file: event.target.value || undefined })} placeholder={inh(inheritedHttp.tls?.client_cert_file)} /></label>)}
+                    {field('http.tls.client_key_file', 'Client key file', <label><span>Client key file</span><input className="settings-input" type="text" value={draft.http?.tls?.client_key_file || ''} onChange={event => patchTls({ client_key_file: event.target.value || undefined })} placeholder={inh(inheritedHttp.tls?.client_key_file)} /></label>)}
+                    {field('http.tls.ca_cert_file', 'CA cert file', <label><span>CA cert file</span><input className="settings-input" type="text" value={draft.http?.tls?.ca_cert_file || ''} onChange={event => patchTls({ ca_cert_file: event.target.value || undefined })} placeholder={inh(inheritedHttp.tls?.ca_cert_file)} /></label>)}
+                    {field('http.tls.insecure_skip_verify', 'Skip TLS verification', (
+                      <TriStateOverrideSelect label="Skip TLS verification" value={boolOverride('http.tls.insecure_skip_verify')} inheritedValue={triInherited('http.tls.insecure_skip_verify', Boolean(inheritedHttp.tls?.insecure_skip_verify), Boolean(effectiveHttp.tls?.insecure_skip_verify))} onChange={next => patchTls({ insecure_skip_verify: next })} />
+                    ))}
                   </div>
-                  <div className="scenario-option-grid">
-                    <label className={`scenario-option-card ${effectiveHttp.tls?.insecure_skip_verify ? 'selected' : ''}`}>
-                      <input type="checkbox" checked={Boolean(effectiveHttp.tls?.insecure_skip_verify)} onChange={event => patchTls({ insecure_skip_verify: event.target.checked })} />
-                      <div><strong>Skip TLS verification</strong><span>Do not validate the server certificate (test environments only).</span></div>
-                    </label>
-                  </div>
+                  <p className="form-hint">Skipping TLS verification does not validate the server certificate (test environments only).</p>
                 </>
               )}
 
               {httpSubTab === 'proxy' && (
                 <div className="scenario-browser-grid">
-                  <label>
+                  {field('http.proxy_mode', 'Proxy mode', <label>
                     <span>Proxy mode</span>
                     <select className="settings-input" value={draft.http?.proxy_mode || ''} onChange={event => patchHttp({ proxy_mode: event.target.value || undefined })}>
                       <option value="">Inherit</option>
@@ -1267,24 +1955,28 @@ export default function RuntimeSettingsGroupEditor({
 <option value="pac">PAC script</option>
                       <option value="custom">Custom</option>
                     </select>
-                  </label>
-                  <label><span>PAC URL</span><input className="settings-input" value={draft.http?.proxy?.pac_url || ''} onChange={event => patchProxy({ pac_url: event.target.value || undefined })} placeholder={inh(inheritedHttp.proxy?.pac_url)} /></label>
-                  <label><span>Proxy URL</span><input className="settings-input" type="text" value={draft.http?.proxy?.url || ''} onChange={event => patchProxy({ url: event.target.value || undefined })} placeholder={inh(inheritedHttp.proxy?.url, 'http://proxy:8080')} /></label>
-                  <label><span>Proxy username</span><input className="settings-input" type="text" autoComplete="off" value={draft.http?.proxy?.username || ''} onChange={event => patchProxy({ username: event.target.value || undefined })} placeholder="Inherit" /></label>
-                  <label><span>Proxy password</span><input className="settings-input" type="password" autoComplete="off" value={draft.http?.proxy?.password || ''} onChange={event => patchProxy({ password: event.target.value || undefined })} placeholder="Inherit" /></label>
-                  <label>
+                  </label>)}
+                  {field('http.proxy.pac_url', 'PAC URL', <label><span>PAC URL</span><input className="settings-input" value={draft.http?.proxy?.pac_url || ''} onChange={event => patchProxy({ pac_url: event.target.value || undefined })} placeholder={inh(inheritedHttp.proxy?.pac_url)} /></label>)}
+                  {field('http.proxy.url', 'Proxy URL', <label><span>Proxy URL</span><input className="settings-input" type="text" value={draft.http?.proxy?.url || ''} onChange={event => patchProxy({ url: event.target.value || undefined })} placeholder={inh(inheritedHttp.proxy?.url, 'http://proxy:8080')} /></label>)}
+                  {field('http.proxy.username', 'Proxy username', (
+                    <MaskedTextOverrideInput label="Proxy username" value={stringOverride('http.proxy.username')} inheritPlaceholder={inh(inheritedHttp.proxy?.username)} onChange={next => patchProxy({ username: next })} />
+                  ))}
+                  {field('http.proxy.password', 'Proxy password', (
+                    <SecretOverrideInput label="Proxy password" value={stringOverride('http.proxy.password')} inheritsValue={Boolean(inheritedHttp.proxy?.password)} onChange={next => patchProxy({ password: next })} />
+                  ))}
+                  {field('http.proxy.no_proxy', 'No-proxy hosts', <label>
                     <span>No-proxy hosts</span>
                     <input className="settings-input" type="text" value={draft.http?.proxy?.no_proxy?.join(', ') || ''} onChange={event => {
                       const hosts = event.target.value.split(',').map(value => value.trim()).filter(Boolean)
                       patchProxy({ no_proxy: hosts.length ? hosts : undefined })
                     }} placeholder={inh(inheritedHttp.proxy?.no_proxy?.join(', '), 'localhost, 127.0.0.1')} />
-                  </label>
+                  </label>)}
                 </div>
               )}
 
               {httpSubTab === 'authentication' && (
                 <div className="scenario-browser-grid">
-                  <label>
+                  {field('http.auth.type', 'Auth type', <label>
                     <span>Auth type</span>
                     <select className="settings-input" value={draft.http?.auth?.type || ''} onChange={event => patchAuth({ type: event.target.value || undefined })}>
                       <option value="">Inherit</option>
@@ -1295,16 +1987,31 @@ export default function RuntimeSettingsGroupEditor({
                       <option value="negotiate_any">Any challenge (Basic, Digest, NTLM, Negotiate)</option>
                       <option value="digest">Digest</option>
                     </select>
-                  </label>
-                  <label><span>Auth username</span><input className="settings-input" type="text" value={draft.http?.auth?.username || ''} onChange={event => patchAuth({ username: event.target.value || undefined })} placeholder={inh(inheritedHttp.auth?.username)} /></label>
-                  <label><span>Auth password</span><input className="settings-input" type="password" autoComplete="off" value={draft.http?.auth?.password || ''} onChange={event => patchAuth({ password: event.target.value || undefined })} placeholder="Inherit" /></label>
-                  <label><span>Auth token</span><input className="settings-input" type="password" autoComplete="off" value={draft.http?.auth?.token || ''} onChange={event => patchAuth({ token: event.target.value || undefined })} placeholder="Inherit" /></label>
+                  </label>)}
+                  {field('http.auth.username', 'Auth username', (
+                    <MaskedTextOverrideInput label="Auth username" value={stringOverride('http.auth.username')} inheritPlaceholder={inh(inheritedHttp.auth?.username)} onChange={next => patchAuth({ username: next })} />
+                  ))}
+                  {field('http.auth.password', 'Auth password', (
+                    <SecretOverrideInput label="Auth password" value={stringOverride('http.auth.password')} inheritsValue={Boolean(inheritedHttp.auth?.password)} onChange={next => patchAuth({ password: next })} />
+                  ))}
+                  {field('http.auth.token', 'Auth token', (
+                    <SecretOverrideInput label="Auth token" value={stringOverride('http.auth.token')} inheritsValue={Boolean(inheritedHttp.auth?.token)} onChange={next => patchAuth({ token: next })} />
+                  ))}
+                  {field('http.auth.domain', 'Auth domain', <label><span>Auth domain</span><input className="settings-input" type="text" value={String(overrideValue('http.auth.domain') ?? '')} onChange={event => patchAuth({ domain: event.target.value || undefined })} placeholder={inh(inheritedHttp.auth?.domain, 'NTLM / Negotiate domain')} /></label>)}
+                  {field('http.auth.hosts', 'Send credentials only to hosts', (
+                    <AuthHostsField
+                      hosts={effectiveHttp.auth?.hosts}
+                      // Clearing the list over inherited hosts sends credentials to every host.
+                      onChange={hosts => (hosts === undefined && !(inheritedHttp.auth?.hosts?.length) ? resetPaths('http.auth.hosts') : patchAuth({ hosts: hosts ?? [] }))}
+                    />
+                  ), true)}
                 </div>
               )}
 
               {httpSubTab === 'browser_emulation' && browserApplicable && (
                 <>
                   <div className="scenario-browser-grid">
+                    {field('browser.device_profile', 'Device profile', (
                     <label>
                       <span>Device profile</span>
                       <select className="settings-input" value={draft.browser_config?.device_profile ?? draft.browser?.device_profile ?? ''} onChange={event => patchBrowserConfig({ device_profile: event.target.value || undefined })}>
@@ -1317,6 +2024,8 @@ export default function RuntimeSettingsGroupEditor({
                         <option value="iphone_se">iphone_se (WebKit)</option>
                       </select>
                     </label>
+                    ))}
+                    {field('browser.orientation', 'Orientation', (
                     <label>
                       <span>Orientation</span>
                       <select className="settings-input" value={draft.browser_config?.orientation ?? draft.browser?.orientation ?? ''} onChange={event => patchBrowserConfig({ orientation: event.target.value || undefined })}>
@@ -1325,6 +2034,8 @@ export default function RuntimeSettingsGroupEditor({
                         <option value="landscape">Landscape</option>
                       </select>
                     </label>
+                    ))}
+                    {field('browser.headless', 'Headless', (
                     <label>
                       <span>Headless</span>
                       <select className="settings-input" value={browserBoolValue(draft.browser_config?.headless, draft.browser?.headless)} onChange={event => patchBrowserConfig({ headless: event.target.value === '' ? undefined : event.target.value === 'true' })}>
@@ -1333,6 +2044,8 @@ export default function RuntimeSettingsGroupEditor({
                         <option value="false">Headed</option>
                       </select>
                     </label>
+                    ))}
+                    {field('browser.touch_mode', 'Touch mode', (
                     <label>
                       <span>Touch mode</span>
                       <select className="settings-input" value={browserBoolValue(draft.browser_config?.touch_mode, draft.browser?.touch_mode)} onChange={event => patchBrowserConfig({ touch_mode: event.target.value === '' ? undefined : event.target.value === 'true' })}>
@@ -1341,6 +2054,8 @@ export default function RuntimeSettingsGroupEditor({
                         <option value="false">Disabled</option>
                       </select>
                     </label>
+                    ))}
+                    {field('browser.engine', 'Browser engine', (
                     <label>
                       <span>Browser engine</span>
                       <select className="settings-input" value={draft.browser_config?.engine || ''} onChange={event => patchBrowserConfig({ engine: event.target.value || undefined })}>
@@ -1350,12 +2065,14 @@ export default function RuntimeSettingsGroupEditor({
                         <option value="webkit">WebKit</option>
                       </select>
                     </label>
-                    <label><span>Browser user agent</span><input className="settings-input" type="text" value={draft.browser_config?.user_agent || ''} onChange={event => patchBrowserConfig({ user_agent: event.target.value || undefined })} placeholder={inh(inheritedBrowser.user_agent)} /></label>
-                    <label><span>Slow-mo (ms)</span><input className="settings-input" type="number" min={0} value={draft.browser_config?.slow_mo_ms ?? ''} onChange={event => patchBrowserConfig({ slow_mo_ms: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder={inh(inheritedBrowser.slow_mo_ms)} /></label>
-                    <label><span>Emulated system language</span><input className="settings-input" value={draft.browser_config?.system_language || ''} onChange={event => patchBrowserConfig({system_language: event.target.value || undefined})} placeholder={inh(inheritedBrowser.system_language)} /></label>
- {(['available_screen_width','available_screen_height'] as const).map(field => <label key={field}><span>{field === 'available_screen_width' ? 'Available screen width' : 'Available screen height'}</span><input className="settings-input" type="number" min={0} max={8192} value={draft.browser_config?.[field] ?? ''} onChange={event => patchBrowserConfig({[field]: event.target.value === '' ? undefined : Number(event.target.value)})} placeholder={inh(inheritedBrowser[field])} /></label>)}
-                    <label><span>Viewport width</span><input className="settings-input" type="number" min={0} value={draft.browser_config?.viewport?.width ?? ''} onChange={event => patchBrowserConfig({ viewport: { width: event.target.value === '' ? undefined : Number(event.target.value) } })} placeholder={inh(inheritedBrowser.viewport?.width)} /></label>
-                    <label><span>Viewport height</span><input className="settings-input" type="number" min={0} value={draft.browser_config?.viewport?.height ?? ''} onChange={event => patchBrowserConfig({ viewport: { height: event.target.value === '' ? undefined : Number(event.target.value) } })} placeholder={inh(inheritedBrowser.viewport?.height)} /></label>
+                    ))}
+                    {field('browser.user_agent', 'Browser user agent', <label><span>Browser user agent</span><input className="settings-input" type="text" value={draft.browser_config?.user_agent || ''} onChange={event => patchBrowserConfig({ user_agent: event.target.value || undefined })} placeholder={inh(inheritedBrowser.user_agent)} /></label>)}
+                    {field('browser.slow_mo_ms', 'Slow-mo (ms)', <label><span>Slow-mo (ms)</span><input className="settings-input" type="number" min={0} value={draft.browser_config?.slow_mo_ms ?? ''} onChange={event => patchBrowserConfig({ slow_mo_ms: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder={inh(inheritedBrowser.slow_mo_ms)} /></label>)}
+                    {field('browser.system_language', 'Emulated system language', <label><span>Emulated system language</span><input className="settings-input" value={draft.browser_config?.system_language || ''} onChange={event => patchBrowserConfig({system_language: event.target.value || undefined})} placeholder={inh(inheritedBrowser.system_language)} /></label>)}
+                    {(['available_screen_width', 'available_screen_height'] as const).map(leaf => field(`browser.${leaf}`, leaf === 'available_screen_width' ? 'Available screen width' : 'Available screen height', <label><span>{leaf === 'available_screen_width' ? 'Available screen width' : 'Available screen height'}</span><input className="settings-input" type="number" min={0} max={8192} value={draft.browser_config?.[leaf] ?? ''} onChange={event => patchBrowserConfig({ [leaf]: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder={inh(inheritedBrowser[leaf])} /></label>))}
+                    {field('browser.viewport.width', 'Viewport width', <label><span>Viewport width</span><input className="settings-input" type="number" min={0} value={draft.browser_config?.viewport?.width ?? ''} onChange={event => patchBrowserConfig({ viewport: { width: event.target.value === '' ? undefined : Number(event.target.value) } })} placeholder={inh(inheritedBrowser.viewport?.width)} /></label>)}
+                    {field('browser.viewport.height', 'Viewport height', <label><span>Viewport height</span><input className="settings-input" type="number" min={0} value={draft.browser_config?.viewport?.height ?? ''} onChange={event => patchBrowserConfig({ viewport: { height: event.target.value === '' ? undefined : Number(event.target.value) } })} placeholder={inh(inheritedBrowser.viewport?.height)} /></label>)}
+                    {field('browser.capture_screenshots', 'Capture screenshots', (
                     <label>
                       <span>Capture screenshots</span>
                       <select className="settings-input" value={draft.browser_config?.capture_screenshots || ''} onChange={event => patchBrowserConfig({ capture_screenshots: event.target.value || undefined })}>
@@ -1365,6 +2082,8 @@ export default function RuntimeSettingsGroupEditor({
                         <option value="per_action">Per action</option>
                       </select>
                     </label>
+                    ))}
+                    {field('browser.download_resources', 'Download resources', (
                     <label>
                       <span>Download resources</span>
                       <select className="settings-input" value={draft.browser_config?.download_resources || ''} onChange={event => patchBrowserConfig({ download_resources: event.target.value || undefined })}>
@@ -1374,6 +2093,8 @@ export default function RuntimeSettingsGroupEditor({
                         <option value="all">All resources</option>
                       </select>
                     </label>
+                    ))}
+                    {field('browser.quic', 'HTTP/3 (QUIC)', (
                     <label>
                       <span>HTTP/3 (QUIC)</span>
                       <select className="settings-input" value={draft.browser_config?.quic || ''} onChange={event => patchBrowserConfig({ quic: event.target.value === 'auto' || event.target.value === 'off' ? event.target.value : undefined })}>
@@ -1382,6 +2103,7 @@ export default function RuntimeSettingsGroupEditor({
                         <option value="off">Off (launch with QUIC disabled)</option>
                       </select>
                     </label>
+                    ))}
                     {effectiveBrowser.engine === 'webkit' && effectiveBrowser.quic === 'off' && (
                       <div className="form-hint">WebKit cannot launch with QUIC disabled. Choose Browser default, or another engine to keep HTTP/3 off.</div>
                     )}
@@ -1426,6 +2148,7 @@ export default function RuntimeSettingsGroupEditor({
                   </div>
                 </>
               )}
+              {panelOverrides('http_transport')}
             </div>
           </>
         )}
@@ -1441,40 +2164,62 @@ export default function RuntimeSettingsGroupEditor({
               </div>
             )}
             <div className="scenario-browser-grid">
+              {field('browser_emulation.mode', 'Browser emulation mode', (
               <label>
                 <span>Mode</span>
                 <select
                   className="settings-input"
-                  value={draft.browser_emulation?.mode ?? ''}
+                  value={modeOverriddenEmpty ? ENGINE_DEFAULT_MODE_OPTION : draft.browser_emulation?.mode ?? ''}
                   aria-label="Browser emulation mode"
                   onChange={event => {
                     const mode = event.target.value
+                    if (mode === ENGINE_DEFAULT_MODE_OPTION) {
+                      patchBrowserEmulation(engineDefaultIdentity)
+                      return
+                    }
                     if (!mode) {
                       // Inherit browser identity, but keep this group's cache AND
                       // language overrides. Neither is mode-dependent at replay —
                       // the engine derives Accept-Language from `language` whether
-                      // or not a mode is set — so dropping them here would silently
-                      // discard edits made on this same tab.
-                      const kept: BrowserEmulationSettings = {}
-                      const currentCache = draft.browser_emulation?.cache
-                      if (currentCache) kept.cache = currentCache
-                      const currentLanguage = draft.browser_emulation?.language
-                      if (currentLanguage) kept.language = currentLanguage
-                      patch({ browser_emulation: Object.keys(kept).length > 0 ? kept : undefined })
+                      // or not a mode is set — so only the identity fields reset.
+                      resetPaths(
+                        'browser_emulation.mode',
+                        'browser_emulation.browser_type',
+                        'browser_emulation.browser_version',
+                        'browser_emulation.platform',
+                        'browser_emulation.custom_user_agent',
+                      )
                       return
                     }
+                    // The identity fields the new mode forbids are written as
+                    // explicit empties, not reset: a reset would inherit the
+                    // script's browser (or User-Agent) into a mode the DSL
+                    // rejects it in, with the control disabled to clear it.
                     if (mode === 'custom') {
-                      patchBrowserEmulation({ mode: 'custom', browser_type: undefined, browser_version: undefined, platform: undefined })
+                      // An earlier Specific (or Engine default) left the User-Agent
+                      // overridden to empty; over an inherited custom User-Agent that
+                      // empty would fail validation, so it inherits again.
+                      const inheritUserAgent = customUserAgentOverridden && !draft.browser_emulation?.custom_user_agent && Boolean(inheritedCustomUserAgent)
+                      patchBrowserEmulation({
+                        mode: 'custom',
+                        browser_type: '',
+                        browser_version: '',
+                        platform: '',
+                        ...(inheritUserAgent ? { custom_user_agent: undefined } : {}),
+                      })
                     } else {
-                      patchBrowserEmulation({ mode: 'specific', custom_user_agent: undefined })
+                      patchBrowserEmulation({ mode: 'specific', custom_user_agent: '' })
                     }
                   }}
                 >
-                  <option value="">Inherit{effectiveBrowserEmulation.mode ? ` (${effectiveBrowserEmulation.mode})` : ''}</option>
+                  <option value="">Inherit{inheritedBrowserEmulation.mode ? ` (${inheritedBrowserEmulation.mode})` : ''}</option>
+                  {modeOverriddenEmpty && <option value={ENGINE_DEFAULT_MODE_OPTION}>None (engine default)</option>}
                   <option value="specific">Specific browser</option>
                   <option value="custom">Custom browser</option>
                 </select>
               </label>
+              ))}
+              {field('browser_emulation.browser_type', 'Browser type', (
               <label>
                 <span>Browser</span>
                 <select
@@ -1482,7 +2227,14 @@ export default function RuntimeSettingsGroupEditor({
                   value={effectiveBrowserEmulation.browser_type || ''}
                   disabled={effectiveBrowserEmulation.mode === 'custom'}
                   aria-label="Browser type"
-                  onChange={event => patchBrowserEmulation({ mode: event.target.value ? 'specific' : undefined, browser_type: event.target.value || undefined, browser_version: undefined, platform: undefined })}
+                  onChange={event => patchBrowserEmulation(event.target.value
+                    // A new browser starts from its own latest version and default
+                    // platform: the previous browser's may not exist for it.
+                    ? { mode: 'specific', browser_type: event.target.value, browser_version: '', platform: '' }
+                    // Engine default overrides the browser identity to empty, so the
+                    // script's browser no longer applies; Mode > Inherit inherits it
+                    // (the Mode select then shows None (engine default), not Inherit).
+                    : engineDefaultIdentity)}
                 >
                   <option value="">Engine default</option>
                   {browserEmulationCatalog.browsers.map(browser => (
@@ -1490,6 +2242,8 @@ export default function RuntimeSettingsGroupEditor({
                   ))}
                 </select>
               </label>
+              ))}
+              {field('browser_emulation.browser_version', 'Browser version', (
               <label>
                 <span>Version</span>
                 <select
@@ -1497,14 +2251,19 @@ export default function RuntimeSettingsGroupEditor({
                   value={effectiveBrowserEmulation.browser_version || ''}
                   disabled={effectiveBrowserEmulation.mode === 'custom' || !effectiveBrowserEmulation.browser_type}
                   aria-label="Browser version"
-                  onChange={event => patchBrowserEmulation({ browser_version: event.target.value || undefined })}
+                  onChange={event => patchBrowserIdentityLeaf('browser_version', event.target.value)}
                 >
                   <option value="">Latest</option>
+                  {unavailableEmulationVersion && (
+                    <option value={unavailableEmulationVersion}>{unavailableEmulationVersion} (not available for {selectedEmulationBrowser?.label})</option>
+                  )}
                   {(selectedEmulationBrowser?.versions || []).map(version => (
                     <option key={version} value={version}>{version}</option>
                   ))}
                 </select>
               </label>
+              ))}
+              {field('browser_emulation.platform', 'Browser platform', (
               <label>
                 <span>Platform</span>
                 <select
@@ -1512,9 +2271,15 @@ export default function RuntimeSettingsGroupEditor({
                   value={effectiveBrowserEmulation.platform || ''}
                   disabled={effectiveBrowserEmulation.mode === 'custom' || !effectiveBrowserEmulation.browser_type}
                   aria-label="Browser platform"
-                  onChange={event => patchBrowserEmulation({ platform: event.target.value || undefined })}
+                  onChange={event => patchBrowserIdentityLeaf('platform', event.target.value)}
                 >
                   <option value="">Browser default</option>
+                  {unavailableEmulationPlatform && (
+                    <option value={unavailableEmulationPlatform}>
+                      {browserEmulationCatalog.platforms.find(candidate => candidate.id === unavailableEmulationPlatform)?.label || unavailableEmulationPlatform}
+                      {' '}(not available for {selectedEmulationBrowser?.label})
+                    </option>
+                  )}
                   {(selectedEmulationBrowser?.platforms || []).map(platform => (
                     <option key={platform} value={platform}>
                       {browserEmulationCatalog.platforms.find(candidate => candidate.id === platform)?.label || platform}
@@ -1522,13 +2287,15 @@ export default function RuntimeSettingsGroupEditor({
                   ))}
                 </select>
               </label>
+              ))}
+              {field('browser_emulation.language', 'Browser language', (
               <label>
                 <span>Language</span>
                 <select
                   className="settings-input"
                   value={effectiveBrowserEmulation.language || ''}
                   aria-label="Browser language"
-                  onChange={event => patchBrowserEmulation({ language: event.target.value || undefined })}
+                  onChange={event => patchBrowserEmulation({ language: event.target.value || emptyBrowserEmulationChoice('language') })}
                 >
                   <option value="">Engine default</option>
                   {browserEmulationCatalog.languages.map(language => (
@@ -1536,17 +2303,28 @@ export default function RuntimeSettingsGroupEditor({
                   ))}
                 </select>
               </label>
+              ))}
+              {field('browser_emulation.custom_user_agent', 'Custom User-Agent', (
               <label className="scenario-browser-grid-wide">
                 <span>Custom User-Agent</span>
                 <input
                   className="settings-input"
                   value={effectiveBrowserEmulation.custom_user_agent || ''}
                   disabled={effectiveBrowserEmulation.mode !== 'custom'}
-                  placeholder={inh(inheritedBrowserEmulation.custom_user_agent)}
+                  placeholder={customUserAgentOverridden ? undefined : inh(inheritedBrowserEmulation.custom_user_agent)}
                   aria-label="Custom User-Agent"
-                  onChange={event => patchBrowserEmulation({ custom_user_agent: event.target.value })}
+                  onChange={event => {
+                    // Clearing the field inherits a lower layer's custom User-Agent
+                    // again rather than overriding it to an empty one custom mode rejects.
+                    if (!event.target.value && inheritedCustomUserAgent) {
+                      resetPaths('browser_emulation.custom_user_agent')
+                      return
+                    }
+                    patchBrowserIdentityLeaf('custom_user_agent', event.target.value)
+                  }}
                 />
               </label>
+              ), true)}
             </div>
             <div className="http-cache-canonical-note" role="note">
               Cache enablement and per-iteration cleanup are configured in HTTP Transport → Session &amp; Cache.
@@ -1591,11 +2369,40 @@ export default function RuntimeSettingsGroupEditor({
                 <span>Simulate prefetch and prerender</span>
               </label>
             </div>
+            <div className="scenario-browser-grid">
+              {field('browser_emulation.cache.clear_cache_for_new_user', 'Clear cache for a new user', (
+                <TriStateOverrideSelect
+                  label="Clear cache for a new user"
+                  value={boolOverride('browser_emulation.cache.clear_cache_for_new_user')}
+                  // Unset clears the cache for a new user (dsl BrowserCacheSimulationConfig).
+                  inheritedValue={triInherited('browser_emulation.cache.clear_cache_for_new_user', inheritedBrowserEmulation.cache?.clear_cache_for_new_user ?? true, effectiveBrowserEmulation.cache?.clear_cache_for_new_user ?? true)}
+                  onChange={next => patchBrowserEmulation({ cache: { clear_cache_for_new_user: next } })}
+                />
+              ))}
+            </div>
+            {panelOverrides('browser_emulation')}
           </>
         )}
 
         {activeTab === 'web_http' && (
-          <WebHttpTab web={draft.web_runtime} inheritedWeb={inheritedWeb} setWeb={next => patch({ web_runtime: next })} />
+          <>
+            <WebHttpTab web={draft.web_runtime} inheritedWeb={inheritedWeb} setWeb={setWebRuntime} />
+            {panelOverrides('web_http')}
+          </>
+        )}
+
+        {activeTab === 'soap' && (
+          <>
+            <SoapOverrideTab
+              effective={effectiveSoap}
+              inherited={inheritedSoap}
+              overridden={overridden}
+              overrideValue={overrideValue}
+              edit={update => commit(update(overrides[index]))}
+              renderField={field}
+            />
+            {panelOverrides('soap')}
+          </>
         )}
 
         {activeTab === 'java_env' && (
@@ -1616,16 +2423,18 @@ export default function RuntimeSettingsGroupEditor({
               listOverrideInherits
               dedicatedClassLoaderNote="Each Java VUser keeps its own Actions instance and child loader for its full lifecycle when enabled, and its own JVM unless the group uses shared JVMs."
             />
+            {panelOverrides('java_env')}
           </>
         )}
       </div>
 
-      {fieldApplicable('websocket') && <label className="runtime-apply-row"><span>WebSocket callback interval (ms)</span><input className="settings-input" type="number" min={0} max={60000} value={draft.websocket?.callback_interval_ms ?? ''} placeholder={String(inheritedOverride?.websocket?.callback_interval_ms ?? 500)} onChange={event => patch({websocket: {...(draft.websocket ?? inheritedOverride?.websocket), callback_interval_ms: event.target.value === '' ? undefined : Number(event.target.value)}})} /></label>}
+      {fieldApplicable('websocket') && <label className="runtime-apply-row"><span>WebSocket callback interval (ms)</span><input className="settings-input" type="number" min={0} max={60000} value={draft.websocket?.callback_interval_ms ?? ''} placeholder={String(inheritedOverride?.websocket?.callback_interval_ms ?? 500)} onChange={event => editSection('websocket', { callback_interval_ms: event.target.value === '' ? undefined : Number(event.target.value) })} /></label>}
       {applyPanelAvailable && (
       <div className="runtime-apply-row">
         <button type="button" className="btn btn-sm btn-secondary" onClick={() => setApplyOpen(open => !open)} disabled={groups.length < 2}>
           Apply to groups…
         </button>
+        {applyNotice && <div className="form-hint" role="status" data-testid="runtime-apply-notice">{applyNotice}</div>}
         {applyOpen && (
           <div className="runtime-apply-panel">
             <p>Copy {groupLabel(focusGroup, index)}’s effective runtime to:</p>
