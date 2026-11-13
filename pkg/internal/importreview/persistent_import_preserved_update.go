@@ -333,19 +333,21 @@ func pruneStaleImportedCredentialTargets(script *dsl.Script) {
 				probeSurfacePath = "actions[0].params.request"
 				wrapperType = "http_async_start"
 			}
-			var childMap map[string]any
+			var childSource any
 			if ref.Request != nil {
-				clonedReq, err := CloneImportSecurityMetadata(ref.Request)
-				if err != nil {
-					return nil
-				}
-				childMap, _ = clonedReq.(map[string]any)
+				childSource = ref.Request
 			} else if ref.Action != nil {
-				rawAct, err := CloneImportSecurityMetadata(ref.Action)
-				if err != nil {
+				childSource = ref.Action
+			}
+			var childMap map[string]any
+			if childSource != nil {
+				cloned, cloneable := cloneProbeSurface(childSource)
+				if !cloneable {
+					// Leave this surface's targets as they are; the walk
+					// prunes the remaining surfaces.
 					return nil
 				}
-				childMap, _ = rawAct.(map[string]any)
+				childMap, _ = cloned.(map[string]any)
 			}
 			if childMap == nil {
 				delete(meta, key)
@@ -392,6 +394,15 @@ func pruneStaleImportedCredentialTargets(script *dsl.Script) {
 		}
 		return nil
 	})
+}
+
+// cloneProbeSurface deep-copies a request or action for a disclosure probe.
+// It reports false when the surface cannot be cloned; pruning is best-effort
+// per surface, so the caller then keeps that surface's credential targets
+// unchanged instead of aborting the walk over the rest of the script.
+func cloneProbeSurface(surface any) (any, bool) {
+	cloned, err := CloneImportSecurityMetadata(surface)
+	return cloned, err == nil
 }
 
 // uidOwnerAligned reports whether the candidate surface at path is aligned

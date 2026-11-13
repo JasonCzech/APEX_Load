@@ -430,7 +430,7 @@ func overrideFieldsCoverPath(fields []string, path string) bool {
 // every field of t under prefix except the excluded leaves. Only structs on the
 // way to an excluded leaf are expanded; every other field stays one path.
 func overrideFieldPathsExcluding(t reflect.Type, prefix string, excluded map[string]bool) []string {
-	for t.Kind() == reflect.Ptr {
+	for t.Kind() == reflect.Pointer {
 		t = t.Elem()
 	}
 	var paths []string
