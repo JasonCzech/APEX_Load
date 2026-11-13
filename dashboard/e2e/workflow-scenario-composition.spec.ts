@@ -12,8 +12,8 @@ test('scenario composition combines group editing with a live preview', async ({
   await page.getByPlaceholder('Scenario name').fill('Composition preview')
   await page.getByRole('button', { name: 'Add script to Group 1' }).click()
   await page.getByRole('row').filter({ hasText: 'Composition_HTTP' }).getByRole('button', { name: 'Use for Group 1' }).click()
+  // Add group opens the script picker straight away, targeting the new group.
   await page.getByRole('button', { name: /Add group/ }).click()
-  await page.getByRole('button', { name: 'Add script to Group 2' }).click()
   await page.getByRole('row').filter({ hasText: 'Composition_HTTP' }).getByRole('button', { name: 'Use for Group 2' }).click()
   await page.getByLabel('Scenario builder steps').getByRole('button', { name: /^Run settings/ }).click()
 
@@ -213,8 +213,8 @@ test('scenario prerequisite saves retain archive siblings and later editor chang
   await page.getByPlaceholder('Scenario name').fill('Retained prerequisite scenario')
   await page.getByRole('button', { name: 'Add script to Group 1' }).click()
   await page.getByRole('row').filter({ hasText: 'Original group script' }).getByRole('button', { name: 'Use for Group 1' }).click()
+  // Add group opens the script picker straight away, targeting the new group.
   await page.getByRole('button', { name: /Add group/ }).click()
-  await page.getByRole('button', { name: 'Add script to Group 2' }).click()
   await page.getByRole('button', { name: 'Import script', exact: true }).click()
   await page.getByRole('button', { name: /LoadRunner Script Archive/ }).click()
   const archive = storedZip([
