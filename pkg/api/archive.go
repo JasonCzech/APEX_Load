@@ -82,6 +82,11 @@ type RunArchiveManifest struct {
 	// businessKeys applies the run's business-key policy while a
 	// controller-owned archive is built.
 	businessKeys *businessKeyArchiver
+	// authoredRequestGroups maps each test group to whether the controller's
+	// own copy of its script leaves config.log.redact_run_evidence off: only
+	// those groups' remote events may keep a generator-supplied
+	// authored_request_retained marker (authoredRequestRetentionForTest).
+	authoredRequestGroups map[string]bool
 	// BusinessKeyDigestsUnavailable records that business-key values of
 	// digest-only groups were dropped without a digest (no key wrapper), so
 	// lookups cannot match them.

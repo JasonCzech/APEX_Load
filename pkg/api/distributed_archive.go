@@ -1349,6 +1349,7 @@ func writeMergedRemoteArchiveFilesWithBudget(rootDir string, manifest *RunArchiv
 	if len(tests) > 0 {
 		test = tests[0]
 	}
+	manifest.authoredRequestGroups = authoredRequestRetentionForTest(test)
 	if err := mergeRemoteArchiveTransactions(transactionsPath, manifest, bundles, messageDetailBudgetsForTest(test), budget); err != nil {
 		return err
 	}
@@ -1435,6 +1436,59 @@ func messageDetailBudgetsForTest(test *ManagedTest) map[string]*controllerMessag
 	return budgets
 }
 
+// authoredRequestRetentionForTest maps each group of test to whether its
+// staged script leaves config.log.redact_run_evidence off. Groups sharing a
+// name retain authored requests only when every such script does.
+func authoredRequestRetentionForTest(test *ManagedTest) map[string]bool {
+	if test == nil {
+		return nil
+	}
+	out := make(map[string]bool, len(test.Groups))
+	for _, group := range test.Groups {
+		name := strings.TrimSpace(group.Name)
+		retains := group.script != nil && !engine.ScriptRedactsRunEvidence(group.script)
+		if previous, ok := out[name]; ok {
+			retains = retains && previous
+		}
+		out[name] = retains
+	}
+	return out
+}
+
+// remoteEventRetainsAuthoredRequest reports whether a remote event of group
+// may keep its authored-request marker. An unknown group (or no test) does not.
+func remoteEventRetainsAuthoredRequest(groups map[string]bool, group string) bool {
+	if retains, ok := groups[strings.TrimSpace(group)]; ok {
+		return retains
+	}
+	if strings.TrimSpace(group) == "" && len(groups) == 1 {
+		for _, retains := range groups {
+			return retains
+		}
+	}
+	return false
+}
+
+// clearAuthoredRequestMarkers drops every authored_request_retained marker an
+// event carries, so the archive sanitizers scrub its request side in full.
+func clearAuthoredRequestMarkers(event *TransactionEvent) {
+	if event == nil {
+		return
+	}
+	for index := range event.NetworkEntries {
+		event.NetworkEntries[index].AuthoredRequestRetained = false
+	}
+	if snapshot := event.Snapshot; snapshot != nil {
+		snapshot.AuthoredRequestRetained = false
+		for index := range snapshot.NetworkEntries {
+			snapshot.NetworkEntries[index].AuthoredRequestRetained = false
+		}
+	}
+	if event.ProtocolEvidence != nil {
+		delete(event.ProtocolEvidence, archivedEvidenceAuthoredMarker)
+	}
+}
+
 func messageDetailBudgetForEvent(budgets map[string]*controllerMessageDetailBudget, group string) *controllerMessageDetailBudget {
 	if len(budgets) == 0 {
 		return nil
@@ -1498,6 +1552,12 @@ func mergeRemoteArchiveTransactions(destinationPath string, manifest *RunArchive
 			// so any digest a bundle carries is discarded.
 			event.ExtractionDigests = nil
 			manifest.businessKeys.apply(&event)
+			// The authored-request marker is generator input: it is honoured
+			// only for a group whose script, as the controller staged it,
+			// leaves config.log.redact_run_evidence off.
+			if !remoteEventRetainsAuthoredRequest(manifest.authoredRequestGroups, event.Group) {
+				clearAuthoredRequestMarkers(&event)
+			}
 			sanitizeArchivedTransaction(&event)
 			// Region is controller-owned placement metadata. Never accept a label
 			// supplied by a generator archive, even when that label looks valid.

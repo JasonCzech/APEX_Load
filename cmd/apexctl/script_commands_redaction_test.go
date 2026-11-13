@@ -16,7 +16,48 @@ import (
 	"github.com/jasonczech/apexload/pkg/engine"
 )
 
+// withRunEvidenceRedaction stamps config.log.redact_run_evidence onto a raw
+// script fixture; every fixture here has a config object with other keys.
+func withRunEvidenceRedaction(t *testing.T, raw string, redact bool) string {
+	t.Helper()
+	const marker = `"config": {`
+	if strings.Count(raw, marker) != 1 {
+		t.Fatalf("fixture must contain exactly one %s: %s", marker, raw)
+	}
+	return strings.Replace(raw, marker, fmt.Sprintf(`%s"log": {"redact_run_evidence": %t}, `, marker, redact), 1)
+}
+
+// assertCLILiteral states the contract once: a script-sourced literal is
+// scrubbed from CLI output exactly when the script turns redaction on.
+func assertCLILiteral(t *testing.T, label, output, secret string, redact bool) {
+	t.Helper()
+	if leaked := strings.Contains(output, secret); leaked == redact {
+		t.Fatalf("%s: redact_run_evidence=%t but literal %q leaked=%t: %s", label, redact, secret, leaked, output)
+	}
+}
+
+// assertCLINeverLeaks covers outputs that either never carry the value or pass
+// it through the generic shape/name scrubbers (URL userinfo, quoted validation
+// values, token= pairs), which apply in both modes.
+func assertCLINeverLeaks(t *testing.T, label, output, secret string) {
+	t.Helper()
+	if strings.Contains(output, secret) {
+		t.Fatalf("%s: leaked %q: %s", label, secret, output)
+	}
+}
+
 func TestScriptCommandsAllowLiteralCredentialsAndScrubCLIDisclosure(t *testing.T) {
+	for _, mode := range []struct {
+		name   string
+		redact bool
+	}{{name: "redaction_on", redact: true}, {name: "redaction_off", redact: false}} {
+		t.Run(mode.name, func(t *testing.T) {
+			assertCLIDisclosureFollowsRunEvidenceSetting(t, mode.redact)
+		})
+	}
+}
+
+func assertCLIDisclosureFollowsRunEvidenceSetting(t *testing.T, redact bool) {
 	const (
 		urlPwd    = "synth-cli-urlpwd-9901"
 		javaVMPwd = "synth-cli-javavm-9902"
@@ -58,13 +99,14 @@ func TestScriptCommandsAllowLiteralCredentialsAndScrubCLIDisclosure(t *testing.T
     }
   ]
 }`
-	path := writeTempScript(t, rawScript)
+	path := writeTempScript(t, withRunEvidenceRedaction(t, rawScript, redact))
 
 	valRes := validateScriptFile(path)
 	if !valRes.Valid {
 		t.Fatalf("validateScriptFile marked literal-credential script invalid: %+v", valRes)
 	}
 	valJSON, _ := json.Marshal(valRes)
+	// A valid result carries no script content, so nothing surfaces in either mode.
 	for _, secret := range []string{urlPwd, javaVMPwd, bearerTok, soapPwd} {
 		if strings.Contains(string(valJSON), secret) {
 			t.Fatalf("validateScriptFile output leaked %q: %s", secret, valJSON)
@@ -77,23 +119,21 @@ func TestScriptCommandsAllowLiteralCredentialsAndScrubCLIDisclosure(t *testing.T
 	}
 	expJSON, _ := json.Marshal(expRes)
 	for _, secret := range []string{urlPwd, javaVMPwd, bearerTok, soapPwd} {
-		if strings.Contains(string(expJSON), secret) {
-			t.Fatalf("explainScriptFile output leaked %q: %s", secret, expJSON)
-		}
+		assertCLINeverLeaks(t, "explainScriptFile", string(expJSON), secret)
 	}
 
 	loaded, cliRedaction, err := loadScriptForCLIExecution(path, runArgs{})
 	if err != nil {
 		t.Fatalf("loadScriptForCLIExecution blocked script with literal credentials / Java -D VM property: %v", err)
 	}
-	if loaded == nil || cliRedaction == nil {
-		t.Fatalf("expected loaded script and CLI redaction config")
+	if loaded == nil {
+		t.Fatalf("expected loaded script")
+	}
+	if redact && cliRedaction == nil {
+		t.Fatalf("expected a CLI redaction config with redact_run_evidence on")
 	}
 	for _, secret := range []string{urlPwd, javaVMPwd, bearerTok, soapPwd} {
-		scrubbed := scrubCLIText("failure detail: "+secret, cliRedaction)
-		if strings.Contains(scrubbed, secret) {
-			t.Fatalf("scrubCLIText failed to redact literal DSL secret %q: %q", secret, scrubbed)
-		}
+		assertCLILiteral(t, "scrubCLIText", scrubCLIText("failure detail: "+secret, cliRedaction), secret, redact)
 	}
 
 	// Finding 6 regression: when a script unmarshals cleanly with literal
@@ -116,29 +156,31 @@ func TestScriptCommandsAllowLiteralCredentialsAndScrubCLIDisclosure(t *testing.T
   ]
 }`
 	invalidScript = strings.ReplaceAll(invalidScript, `"unsupported_action_" + "`+bearerTok+`"`, `"unsupported_action_`+bearerTok+`"`)
-	invalidPath := writeTempScript(t, invalidScript)
+	invalidPath := writeTempScript(t, withRunEvidenceRedaction(t, invalidScript, redact))
 	invalidVal := validateScriptFile(invalidPath)
 	if invalidVal.Valid {
 		t.Fatalf("expected invalid script to fail validation")
 	}
 	invalidJSON, _ := json.Marshal(invalidVal)
-	if strings.Contains(string(invalidJSON), bearerTok) {
-		t.Fatalf("validateScriptFile leaked literal header secret on validation error: %s", invalidJSON)
+	assertCLINeverLeaks(t, "validateScriptFile validation error", string(invalidJSON), bearerTok)
+	_, expErr := explainScriptFile(invalidPath)
+	if expErr == nil {
+		t.Fatalf("explainScriptFile accepted an invalid script")
 	}
-	if _, expErr := explainScriptFile(invalidPath); expErr == nil || strings.Contains(expErr.Error(), bearerTok) {
-		t.Fatalf("explainScriptFile validation error unexpected or leaked secret: %v", expErr)
-	}
+	assertCLINeverLeaks(t, "explainScriptFile validation error", expErr.Error(), bearerTok)
 
 	// Missing body_file (ResolveBodyRefs failure, non-ValidationError) still returns CLI redaction.
-	missingBodyPath := writeTempScript(t, `{
+	missingBodyPath := writeTempScript(t, withRunEvidenceRedaction(t, `{
   "name": "cli-missing-body-file",
   "protocol": "http",
   "config": {"base_url": "https://operator:`+urlPwd+`@api.example.test"},
   "actions": [{"name": "post", "type": "request", "method": "POST", "target": "/", "body_file": "missing-`+urlPwd+`.json"}]
-}`)
-	if _, missingRC, bodyErr := parseScriptFileForCLI(missingBodyPath); bodyErr == nil || missingRC == nil || strings.Contains(scrubCLIText(bodyErr.Error(), missingRC), urlPwd) {
-		t.Fatalf("expected non-nil redaction config and redacted error on missing body_file, got rc=%v err=%v", missingRC, bodyErr)
+}`, redact))
+	_, missingRC, bodyErr := parseScriptFileForCLI(missingBodyPath)
+	if bodyErr == nil || (redact && missingRC == nil) {
+		t.Fatalf("expected an error (and a redaction config when on) on missing body_file, got rc=%v err=%v", missingRC, bodyErr)
 	}
+	assertCLINeverLeaks(t, "missing body_file error", scrubCLIText(bodyErr.Error(), missingRC), urlPwd)
 
 	// Oversized script (> maxCLIScriptBytes) is rejected before unbounded allocation.
 	oversizedPath := writeTempScript(t, `{"name":"big","pad":"`+strings.Repeat("a", maxCLIScriptBytes+64)+`"}`)
@@ -159,7 +201,7 @@ func TestScriptCommandsAllowLiteralCredentialsAndScrubCLIDisclosure(t *testing.T
 	if err != nil {
 		t.Fatalf("parse ciTarget URL: %v", err)
 	}
-	ciValidPath := writeTempScript(t, `{
+	ciValidPath := writeTempScript(t, withRunEvidenceRedaction(t, `{
   "name": "ci-local-preserved-import",
   "protocol": "http",
   "config": {
@@ -172,7 +214,7 @@ func TestScriptCommandsAllowLiteralCredentialsAndScrubCLIDisclosure(t *testing.T
   "actions": [
     {"name": "ping", "type": "request", "method": "GET", "target": "/"}
   ]
-}`)
+}`, redact))
 	ciRes, ciErr := executeCI(context.Background(), ciArgs{
 		executionMode: "local",
 		scriptPath:    ciValidPath,
@@ -189,9 +231,10 @@ func TestScriptCommandsAllowLiteralCredentialsAndScrubCLIDisclosure(t *testing.T
 		vusers:        1,
 		duration:      20 * time.Millisecond,
 	})
-	if ciInvalidErr == nil || ciErrRes.Outcome != ciOutcomeConfigurationError || strings.Contains(ciInvalidErr.Error(), bearerTok) {
-		t.Fatalf("executeLocalCI failed to redact literal credential on invalid script: res=%+v err=%v", ciErrRes, ciInvalidErr)
+	if ciInvalidErr == nil || ciErrRes.Outcome != ciOutcomeConfigurationError {
+		t.Fatalf("executeLocalCI accepted an invalid script: res=%+v err=%v", ciErrRes, ciInvalidErr)
 	}
+	assertCLINeverLeaks(t, "executeLocalCI invalid script", ciInvalidErr.Error(), bearerTok)
 
 	varsPath := filepath.Join(t.TempDir(), "vars.json")
 	writeTempFile := writeTempScript(t, `{"API_SECRET":"not-allowed-in-variables-file"}`)
@@ -209,25 +252,43 @@ func TestScriptCommandsAllowLiteralCredentialsAndScrubCLIDisclosure(t *testing.T
 
 	// Round-4 Finding 4b regression: CLI -env sensitive-named overrides are
 	// registered onto the returned CLI RedactionConfig even when substituted into
-	// neutral-named DSL fields.
+	// neutral-named DSL fields, but only when redact_run_evidence is on. They are
+	// literal operator values, not secret-store material, so they follow the
+	// setting like script literals and never count as runtime secret material
+	// (which would drop browser screenshots and change payload retention).
 	const cliEnvSecret = "short-pin-99"
-	neutralEnvPath := writeTempScript(t, `{
+	neutralEnvPath := writeTempScript(t, withRunEvidenceRedaction(t, `{
   "name": "cli-env-neutral-target",
   "protocol": "http",
   "config": {"base_url": "https://api.example.test"},
   "actions": [
     {"name": "fetch-{{env.api_password}}", "type": "request", "method": "GET", "target": "/v1/{{env.api_password}}/orders"}
   ]
-}`)
+}`, redact))
 	_, envRC, envLoadErr := loadScriptForCLIExecution(neutralEnvPath, runArgs{
 		env: map[string]string{"api_password": cliEnvSecret, "region": "us-east-1"},
 	})
-	if envLoadErr != nil || envRC == nil {
+	if envLoadErr != nil || (redact && envRC == nil) {
 		t.Fatalf("loadScriptForCLIExecution with -env failed: rc=%v err=%v", envRC, envLoadErr)
 	}
+	if envRC != nil && envRC.HasRuntimeSecretMaterial() {
+		t.Fatalf("CLI -env value registered as platform-managed secret material (redact_run_evidence=%t)", redact)
+	}
 	scrubbedEnvMsg := scrubCLIText("action fetch-"+cliEnvSecret+" in us-east-1 failed", envRC)
-	if strings.Contains(scrubbedEnvMsg, cliEnvSecret) || !strings.Contains(scrubbedEnvMsg, "us-east-1") {
-		t.Fatalf("CLI -env redaction unexpected: %q", scrubbedEnvMsg)
+	if !strings.Contains(scrubbedEnvMsg, "us-east-1") {
+		t.Fatalf("CLI -env redaction scrubbed a neutral value: %q", scrubbedEnvMsg)
+	}
+	assertCLILiteral(t, "CLI -env value", scrubbedEnvMsg, cliEnvSecret, redact)
+	// A JWT-shaped -env value under a neutral key is equally a literal: it
+	// must not mark the run as carrying platform-managed secret material.
+	_, jwtRC, jwtErr := loadScriptForCLIExecution(neutralEnvPath, runArgs{
+		env: map[string]string{"region": "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJjbGktZW52In0.c3ludGgtY2xpLWVudi1zaWc"},
+	})
+	if jwtErr != nil {
+		t.Fatalf("loadScriptForCLIExecution with JWT -env failed: %v", jwtErr)
+	}
+	if jwtRC != nil && jwtRC.HasRuntimeSecretMaterial() {
+		t.Fatalf("JWT-shaped CLI -env value registered as platform-managed secret material (redact_run_evidence=%t)", redact)
 	}
 
 	// Round-5 Finding 3 regression: engine.New receives RedactionConfig: envRC so
@@ -237,14 +298,14 @@ func TestScriptCommandsAllowLiteralCredentialsAndScrubCLIDisclosure(t *testing.T
 		_, _ = fmt.Fprintf(w, "failed path=%s", r.URL.Path)
 	}))
 	defer envEchoSrv.Close()
-	neutralExecPath := writeTempScript(t, `{
+	neutralExecPath := writeTempScript(t, withRunEvidenceRedaction(t, `{
   "name": "cli-env-engine-run",
   "protocol": "http",
   "config": {"base_url": "`+envEchoSrv.URL+`", "run_logic": {"iterations": 1}},
   "actions": [
     {"name": "fetch-orders", "type": "request", "method": "GET", "target": "/v1/{{env.api_password}}/orders"}
   ]
-}`)
+}`, redact))
 	execScript, execRC, execLoadErr := loadScriptForCLIExecution(neutralExecPath, runArgs{
 		env: map[string]string{"api_password": cliEnvSecret},
 	})
@@ -262,8 +323,8 @@ func TestScriptCommandsAllowLiteralCredentialsAndScrubCLIDisclosure(t *testing.T
 	}
 	runRes, _ := eng.Run(context.Background())
 	snapJSON, _ := json.Marshal(runRes)
-	if strings.Contains(string(snapJSON), cliEnvSecret) {
-		t.Fatalf("eng.Run FinalSnapshot leaked CLI -env secret %q: %s", cliEnvSecret, snapJSON)
+	if redact && strings.Contains(string(snapJSON), cliEnvSecret) {
+		t.Fatalf("eng.Run FinalSnapshot leaked CLI -env value %q (redact_run_evidence=%t): %s", cliEnvSecret, redact, snapJSON)
 	}
 
 	// Round-8 Finding 6 regression: validateScriptFile and explainScriptFile
@@ -272,7 +333,7 @@ func TestScriptCommandsAllowLiteralCredentialsAndScrubCLIDisclosure(t *testing.T
 		genURLSecret = "synth-gen-url-tok-77"
 		namePin      = "synth-name-pin-78"
 	)
-	metaScriptPath := writeTempScript(t, `{
+	metaScriptPath := writeTempScript(t, withRunEvidenceRedaction(t, `{
   "name": "import-`+namePin+`",
   "protocol": "http",
   "generated_by": "importer token=`+namePin+`",
@@ -281,22 +342,22 @@ func TestScriptCommandsAllowLiteralCredentialsAndScrubCLIDisclosure(t *testing.T
   "actions": [
     {"name": "ping", "type": "request", "method": "GET", "target": "/", "headers": {"X-Api-Key": "`+namePin+`"}}
   ]
-}`)
+}`, redact))
 	metaVal := validateScriptFile(metaScriptPath)
 	metaValJSON, _ := json.Marshal(metaVal)
-	if !metaVal.Valid || strings.Contains(string(metaValJSON), namePin) {
-		t.Fatalf("validateScriptFile leaked script.Name credential: %s", metaValJSON)
+	if !metaVal.Valid {
+		t.Fatalf("validateScriptFile rejected the metadata fixture: %s", metaValJSON)
 	}
+	assertCLILiteral(t, "validateScriptFile script.Name", string(metaValJSON), namePin, redact)
 	metaExplain, metaExpErr := explainScriptFile(metaScriptPath)
 	if metaExpErr != nil {
 		t.Fatalf("explainScriptFile(metaScriptPath): %v", metaExpErr)
 	}
 	metaExpJSON, _ := json.Marshal(metaExplain)
-	for _, secret := range []string{genURLSecret, namePin} {
-		if strings.Contains(string(metaExpJSON), secret) {
-			t.Fatalf("explainScriptFile leaked %q in metadata/summary: %s", secret, metaExpJSON)
-		}
-	}
+	// generated_from carries the value in URL userinfo and an api_key query
+	// pair, both shape-scrubbed; the bare name pin follows the setting.
+	assertCLINeverLeaks(t, "explainScriptFile generated_from", string(metaExpJSON), genURLSecret)
+	assertCLILiteral(t, "explainScriptFile script.Name", string(metaExpJSON), namePin, redact)
 
 	// Round-9 Finding 2 regression: writeRedactedRunJUnit scrubs both script.Name
 	// and fallback args.script filename in JUnit suite attributes.
@@ -312,9 +373,7 @@ func TestScriptCommandsAllowLiteralCredentialsAndScrubCLIDisclosure(t *testing.T
 	if err != nil {
 		t.Fatalf("ReadFile(junitOut): %v", err)
 	}
-	if strings.Contains(string(junitBytes), namePin) {
-		t.Fatalf("JUnit report leaked script.Name credential %q: %s", namePin, junitBytes)
-	}
+	assertCLILiteral(t, "JUnit script.Name", string(junitBytes), namePin, redact)
 	blankNameScript := *metaScript
 	blankNameScript.Name = ""
 	fallbackScriptPath := filepath.Join(t.TempDir(), "scenario-"+namePin+".json")
@@ -325,7 +384,5 @@ func TestScriptCommandsAllowLiteralCredentialsAndScrubCLIDisclosure(t *testing.T
 	if err != nil {
 		t.Fatalf("ReadFile(fallback junitOut): %v", err)
 	}
-	if strings.Contains(string(fallbackBytes), namePin) {
-		t.Fatalf("JUnit report leaked fallback script filename credential %q: %s", namePin, fallbackBytes)
-	}
+	assertCLILiteral(t, "JUnit fallback filename", string(fallbackBytes), namePin, redact)
 }

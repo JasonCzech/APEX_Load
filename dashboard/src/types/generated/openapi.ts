@@ -5119,6 +5119,7 @@ export interface operations {
               "sample"?: string;
               "signature"?: string;
               "snapshot"?: ({
+                "authored_request_retained"?: boolean;
                 "console_entries"?: Array<Record<string, unknown>>;
                 "dom_summary"?: (Record<string, unknown>) | null;
                 "html"?: string;
@@ -75550,6 +75551,7 @@ export interface operations {
                 "method"?: string;
                 "network_entries"?: Array<{
                   "aura"?: (Record<string, unknown>) | null;
+                  "authored_request_retained"?: boolean;
                   "browser_evidence"?: ({
                     "bytes": {
                       "request_body"?: (number) | null;
@@ -75630,6 +75632,7 @@ export interface operations {
                 "screenshot_omitted"?: boolean;
                 "selector"?: string;
                 "snapshot"?: ({
+                  "authored_request_retained"?: boolean;
                   "console_entries"?: Array<Record<string, unknown>>;
                   "dom_summary"?: (Record<string, unknown>) | null;
                   "html"?: string;
@@ -75839,6 +75842,7 @@ export interface operations {
                 "screenshot_omitted"?: boolean;
                 "selector"?: string;
                 "snapshot"?: ({
+                  "authored_request_retained"?: boolean;
                   "console_entries"?: Array<Record<string, unknown>>;
                   "dom_summary"?: (Record<string, unknown>) | null;
                   "html"?: string;
@@ -76027,6 +76031,7 @@ export interface operations {
                 "script_hash"?: string;
                 "script_revision"?: string;
                 "snapshots"?: Array<({
+                  "authored_request_retained"?: boolean;
                   "console_entries"?: Array<Record<string, unknown>>;
                   "dom_summary"?: (Record<string, unknown>) | null;
                   "html"?: string;
@@ -78612,6 +78617,7 @@ export interface operations {
             "region"?: string;
             "signature": string;
             "snapshot"?: ({
+              "authored_request_retained"?: boolean;
               "console_entries"?: Array<{
                 "level"?: string;
                 "source"?: string;
@@ -78629,6 +78635,7 @@ export interface operations {
                   "actions": Array<Record<string, unknown>>;
                   "framework_error"?: string;
                 }) | null;
+                "authored_request_retained"?: boolean;
                 "browser_evidence"?: ({
                   "bytes": {
                     "request_body"?: (number) | null;
@@ -97612,6 +97619,7 @@ export interface operations {
               "sample": string;
               "signature": string;
               "snapshot"?: ({
+                "authored_request_retained"?: boolean;
                 "console_entries"?: Array<Record<string, unknown>>;
                 "dom_summary"?: ({
                   "ready_state"?: string;
@@ -105598,6 +105606,7 @@ export interface operations {
                 "method"?: string;
                 "network_entries"?: Array<{
                   "aura"?: (Record<string, unknown>) | null;
+                  "authored_request_retained"?: boolean;
                   "browser_evidence"?: ({
                     "bytes": {
                       "request_body"?: (number) | null;
@@ -105678,6 +105687,7 @@ export interface operations {
                 "screenshot_omitted"?: boolean;
                 "selector"?: string;
                 "snapshot"?: ({
+                  "authored_request_retained"?: boolean;
                   "console_entries"?: Array<Record<string, unknown>>;
                   "dom_summary"?: (Record<string, unknown>) | null;
                   "html"?: string;
@@ -105887,6 +105897,7 @@ export interface operations {
                 "screenshot_omitted"?: boolean;
                 "selector"?: string;
                 "snapshot"?: ({
+                  "authored_request_retained"?: boolean;
                   "console_entries"?: Array<Record<string, unknown>>;
                   "dom_summary"?: (Record<string, unknown>) | null;
                   "html"?: string;
@@ -106103,6 +106114,7 @@ export interface operations {
                 "script_hash"?: string;
                 "script_revision"?: string;
                 "snapshots"?: Array<({
+                  "authored_request_retained"?: boolean;
                   "console_entries"?: Array<Record<string, unknown>>;
                   "dom_summary"?: (Record<string, unknown>) | null;
                   "html"?: string;
@@ -106404,6 +106416,7 @@ export interface operations {
                 "method"?: string;
                 "network_entries"?: Array<{
                   "aura"?: (Record<string, unknown>) | null;
+                  "authored_request_retained"?: boolean;
                   "browser_evidence"?: ({
                     "bytes": {
                       "request_body"?: (number) | null;
@@ -106484,6 +106497,7 @@ export interface operations {
                 "screenshot_omitted"?: boolean;
                 "selector"?: string;
                 "snapshot"?: ({
+                  "authored_request_retained"?: boolean;
                   "console_entries"?: Array<Record<string, unknown>>;
                   "dom_summary"?: (Record<string, unknown>) | null;
                   "html"?: string;
@@ -106693,6 +106707,7 @@ export interface operations {
                 "screenshot_omitted"?: boolean;
                 "selector"?: string;
                 "snapshot"?: ({
+                  "authored_request_retained"?: boolean;
                   "console_entries"?: Array<Record<string, unknown>>;
                   "dom_summary"?: (Record<string, unknown>) | null;
                   "html"?: string;
@@ -106909,6 +106924,7 @@ export interface operations {
                 "script_hash"?: string;
                 "script_revision"?: string;
                 "snapshots"?: Array<({
+                  "authored_request_retained"?: boolean;
                   "console_entries"?: Array<Record<string, unknown>>;
                   "dom_summary"?: (Record<string, unknown>) | null;
                   "html"?: string;
@@ -132262,6 +132278,7 @@ export interface operations {
                 "method"?: string;
                 "network_entries"?: Array<{
                   "aura"?: (Record<string, unknown>) | null;
+                  "authored_request_retained"?: boolean;
                   "browser_evidence"?: ({
                     "bytes": {
                       "request_body"?: (number) | null;
@@ -132342,6 +132359,7 @@ export interface operations {
                 "screenshot_omitted"?: boolean;
                 "selector"?: string;
                 "snapshot"?: ({
+                  "authored_request_retained"?: boolean;
                   "console_entries"?: Array<Record<string, unknown>>;
                   "dom_summary"?: (Record<string, unknown>) | null;
                   "html"?: string;
@@ -132551,6 +132569,7 @@ export interface operations {
                 "screenshot_omitted"?: boolean;
                 "selector"?: string;
                 "snapshot"?: ({
+                  "authored_request_retained"?: boolean;
                   "console_entries"?: Array<Record<string, unknown>>;
                   "dom_summary"?: (Record<string, unknown>) | null;
                   "html"?: string;
@@ -132739,6 +132758,7 @@ export interface operations {
                 "script_hash"?: string;
                 "script_revision"?: string;
                 "snapshots"?: Array<({
+                  "authored_request_retained"?: boolean;
                   "console_entries"?: Array<Record<string, unknown>>;
                   "dom_summary"?: (Record<string, unknown>) | null;
                   "html"?: string;
@@ -133128,6 +133148,7 @@ export interface operations {
                 "method"?: string;
                 "network_entries"?: Array<{
                   "aura"?: (Record<string, unknown>) | null;
+                  "authored_request_retained"?: boolean;
                   "browser_evidence"?: ({
                     "bytes": {
                       "request_body"?: (number) | null;
@@ -133208,6 +133229,7 @@ export interface operations {
                 "screenshot_omitted"?: boolean;
                 "selector"?: string;
                 "snapshot"?: ({
+                  "authored_request_retained"?: boolean;
                   "console_entries"?: Array<Record<string, unknown>>;
                   "dom_summary"?: (Record<string, unknown>) | null;
                   "html"?: string;
@@ -133417,6 +133439,7 @@ export interface operations {
                 "screenshot_omitted"?: boolean;
                 "selector"?: string;
                 "snapshot"?: ({
+                  "authored_request_retained"?: boolean;
                   "console_entries"?: Array<Record<string, unknown>>;
                   "dom_summary"?: (Record<string, unknown>) | null;
                   "html"?: string;
@@ -133633,6 +133656,7 @@ export interface operations {
                 "script_hash"?: string;
                 "script_revision"?: string;
                 "snapshots"?: Array<({
+                  "authored_request_retained"?: boolean;
                   "console_entries"?: Array<Record<string, unknown>>;
                   "dom_summary"?: (Record<string, unknown>) | null;
                   "html"?: string;
@@ -133939,6 +133963,7 @@ export interface operations {
                 "method"?: string;
                 "network_entries"?: Array<{
                   "aura"?: (Record<string, unknown>) | null;
+                  "authored_request_retained"?: boolean;
                   "browser_evidence"?: ({
                     "bytes": {
                       "request_body"?: (number) | null;
@@ -134019,6 +134044,7 @@ export interface operations {
                 "screenshot_omitted"?: boolean;
                 "selector"?: string;
                 "snapshot"?: ({
+                  "authored_request_retained"?: boolean;
                   "console_entries"?: Array<Record<string, unknown>>;
                   "dom_summary"?: (Record<string, unknown>) | null;
                   "html"?: string;
@@ -134228,6 +134254,7 @@ export interface operations {
                 "screenshot_omitted"?: boolean;
                 "selector"?: string;
                 "snapshot"?: ({
+                  "authored_request_retained"?: boolean;
                   "console_entries"?: Array<Record<string, unknown>>;
                   "dom_summary"?: (Record<string, unknown>) | null;
                   "html"?: string;
@@ -134444,6 +134471,7 @@ export interface operations {
                 "script_hash"?: string;
                 "script_revision"?: string;
                 "snapshots"?: Array<({
+                  "authored_request_retained"?: boolean;
                   "console_entries"?: Array<Record<string, unknown>>;
                   "dom_summary"?: (Record<string, unknown>) | null;
                   "html"?: string;
@@ -144882,6 +144910,7 @@ export interface operations {
               "actions"?: Array<Record<string, unknown>>;
               "framework_error"?: string;
             }) | null;
+            "authored_request_retained"?: boolean;
             "browser_evidence"?: ({
               "bytes"?: {
                 "request_body"?: (number) | null;
@@ -180175,6 +180204,7 @@ export interface operations {
                 "method"?: string;
                 "network_entries"?: Array<{
                   "aura"?: (Record<string, unknown>) | null;
+                  "authored_request_retained"?: boolean;
                   "browser_evidence"?: ({
                     "bytes": {
                       "request_body"?: (number) | null;
@@ -180255,6 +180285,7 @@ export interface operations {
                 "screenshot_omitted"?: boolean;
                 "selector"?: string;
                 "snapshot"?: ({
+                  "authored_request_retained"?: boolean;
                   "console_entries"?: Array<Record<string, unknown>>;
                   "dom_summary"?: (Record<string, unknown>) | null;
                   "html"?: string;
@@ -180464,6 +180495,7 @@ export interface operations {
                 "screenshot_omitted"?: boolean;
                 "selector"?: string;
                 "snapshot"?: ({
+                  "authored_request_retained"?: boolean;
                   "console_entries"?: Array<Record<string, unknown>>;
                   "dom_summary"?: (Record<string, unknown>) | null;
                   "html"?: string;
@@ -180652,6 +180684,7 @@ export interface operations {
                 "script_hash"?: string;
                 "script_revision"?: string;
                 "snapshots"?: Array<({
+                  "authored_request_retained"?: boolean;
                   "console_entries"?: Array<Record<string, unknown>>;
                   "dom_summary"?: (Record<string, unknown>) | null;
                   "html"?: string;
@@ -181041,6 +181074,7 @@ export interface operations {
                 "method"?: string;
                 "network_entries"?: Array<{
                   "aura"?: (Record<string, unknown>) | null;
+                  "authored_request_retained"?: boolean;
                   "browser_evidence"?: ({
                     "bytes": {
                       "request_body"?: (number) | null;
@@ -181121,6 +181155,7 @@ export interface operations {
                 "screenshot_omitted"?: boolean;
                 "selector"?: string;
                 "snapshot"?: ({
+                  "authored_request_retained"?: boolean;
                   "console_entries"?: Array<Record<string, unknown>>;
                   "dom_summary"?: (Record<string, unknown>) | null;
                   "html"?: string;
@@ -181330,6 +181365,7 @@ export interface operations {
                 "screenshot_omitted"?: boolean;
                 "selector"?: string;
                 "snapshot"?: ({
+                  "authored_request_retained"?: boolean;
                   "console_entries"?: Array<Record<string, unknown>>;
                   "dom_summary"?: (Record<string, unknown>) | null;
                   "html"?: string;
@@ -181546,6 +181582,7 @@ export interface operations {
                 "script_hash"?: string;
                 "script_revision"?: string;
                 "snapshots"?: Array<({
+                  "authored_request_retained"?: boolean;
                   "console_entries"?: Array<Record<string, unknown>>;
                   "dom_summary"?: (Record<string, unknown>) | null;
                   "html"?: string;
@@ -181852,6 +181889,7 @@ export interface operations {
                 "method"?: string;
                 "network_entries"?: Array<{
                   "aura"?: (Record<string, unknown>) | null;
+                  "authored_request_retained"?: boolean;
                   "browser_evidence"?: ({
                     "bytes": {
                       "request_body"?: (number) | null;
@@ -181932,6 +181970,7 @@ export interface operations {
                 "screenshot_omitted"?: boolean;
                 "selector"?: string;
                 "snapshot"?: ({
+                  "authored_request_retained"?: boolean;
                   "console_entries"?: Array<Record<string, unknown>>;
                   "dom_summary"?: (Record<string, unknown>) | null;
                   "html"?: string;
@@ -182141,6 +182180,7 @@ export interface operations {
                 "screenshot_omitted"?: boolean;
                 "selector"?: string;
                 "snapshot"?: ({
+                  "authored_request_retained"?: boolean;
                   "console_entries"?: Array<Record<string, unknown>>;
                   "dom_summary"?: (Record<string, unknown>) | null;
                   "html"?: string;
@@ -182357,6 +182397,7 @@ export interface operations {
                 "script_hash"?: string;
                 "script_revision"?: string;
                 "snapshots"?: Array<({
+                  "authored_request_retained"?: boolean;
                   "console_entries"?: Array<Record<string, unknown>>;
                   "dom_summary"?: (Record<string, unknown>) | null;
                   "html"?: string;
@@ -189023,6 +189064,7 @@ export interface operations {
                 "method"?: string;
                 "network_entries"?: Array<{
                   "aura"?: (Record<string, unknown>) | null;
+                  "authored_request_retained"?: boolean;
                   "browser_evidence"?: ({
                     "bytes": {
                       "request_body"?: (number) | null;
@@ -189103,6 +189145,7 @@ export interface operations {
                 "screenshot_omitted"?: boolean;
                 "selector"?: string;
                 "snapshot"?: ({
+                  "authored_request_retained"?: boolean;
                   "console_entries"?: Array<Record<string, unknown>>;
                   "dom_summary"?: (Record<string, unknown>) | null;
                   "html"?: string;
@@ -189312,6 +189355,7 @@ export interface operations {
                 "screenshot_omitted"?: boolean;
                 "selector"?: string;
                 "snapshot"?: ({
+                  "authored_request_retained"?: boolean;
                   "console_entries"?: Array<Record<string, unknown>>;
                   "dom_summary"?: (Record<string, unknown>) | null;
                   "html"?: string;
@@ -189500,6 +189544,7 @@ export interface operations {
                 "script_hash"?: string;
                 "script_revision"?: string;
                 "snapshots"?: Array<({
+                  "authored_request_retained"?: boolean;
                   "console_entries"?: Array<Record<string, unknown>>;
                   "dom_summary"?: (Record<string, unknown>) | null;
                   "html"?: string;
@@ -190646,6 +190691,7 @@ export interface operations {
                 "method"?: string;
                 "network_entries"?: Array<{
                   "aura"?: (Record<string, unknown>) | null;
+                  "authored_request_retained"?: boolean;
                   "browser_evidence"?: ({
                     "bytes": {
                       "request_body"?: (number) | null;
@@ -190726,6 +190772,7 @@ export interface operations {
                 "screenshot_omitted"?: boolean;
                 "selector"?: string;
                 "snapshot"?: ({
+                  "authored_request_retained"?: boolean;
                   "console_entries"?: Array<Record<string, unknown>>;
                   "dom_summary"?: (Record<string, unknown>) | null;
                   "html"?: string;
@@ -190935,6 +190982,7 @@ export interface operations {
                 "screenshot_omitted"?: boolean;
                 "selector"?: string;
                 "snapshot"?: ({
+                  "authored_request_retained"?: boolean;
                   "console_entries"?: Array<Record<string, unknown>>;
                   "dom_summary"?: (Record<string, unknown>) | null;
                   "html"?: string;
@@ -191123,6 +191171,7 @@ export interface operations {
                 "script_hash"?: string;
                 "script_revision"?: string;
                 "snapshots"?: Array<({
+                  "authored_request_retained"?: boolean;
                   "console_entries"?: Array<Record<string, unknown>>;
                   "dom_summary"?: (Record<string, unknown>) | null;
                   "html"?: string;
@@ -192794,6 +192843,7 @@ export interface operations {
                 "method"?: string;
                 "network_entries"?: Array<{
                   "aura"?: (Record<string, unknown>) | null;
+                  "authored_request_retained"?: boolean;
                   "browser_evidence"?: ({
                     "bytes": {
                       "request_body"?: (number) | null;
@@ -192874,6 +192924,7 @@ export interface operations {
                 "screenshot_omitted"?: boolean;
                 "selector"?: string;
                 "snapshot"?: ({
+                  "authored_request_retained"?: boolean;
                   "console_entries"?: Array<Record<string, unknown>>;
                   "dom_summary"?: (Record<string, unknown>) | null;
                   "html"?: string;
@@ -193083,6 +193134,7 @@ export interface operations {
                 "screenshot_omitted"?: boolean;
                 "selector"?: string;
                 "snapshot"?: ({
+                  "authored_request_retained"?: boolean;
                   "console_entries"?: Array<Record<string, unknown>>;
                   "dom_summary"?: (Record<string, unknown>) | null;
                   "html"?: string;
@@ -193299,6 +193351,7 @@ export interface operations {
                 "script_hash"?: string;
                 "script_revision"?: string;
                 "snapshots"?: Array<({
+                  "authored_request_retained"?: boolean;
                   "console_entries"?: Array<Record<string, unknown>>;
                   "dom_summary"?: (Record<string, unknown>) | null;
                   "html"?: string;
@@ -194884,6 +194937,7 @@ export interface operations {
                 "method"?: string;
                 "network_entries"?: Array<{
                   "aura"?: (Record<string, unknown>) | null;
+                  "authored_request_retained"?: boolean;
                   "browser_evidence"?: ({
                     "bytes": {
                       "request_body"?: (number) | null;
@@ -194964,6 +195018,7 @@ export interface operations {
                 "screenshot_omitted"?: boolean;
                 "selector"?: string;
                 "snapshot"?: ({
+                  "authored_request_retained"?: boolean;
                   "console_entries"?: Array<Record<string, unknown>>;
                   "dom_summary"?: (Record<string, unknown>) | null;
                   "html"?: string;
@@ -195173,6 +195228,7 @@ export interface operations {
                 "screenshot_omitted"?: boolean;
                 "selector"?: string;
                 "snapshot"?: ({
+                  "authored_request_retained"?: boolean;
                   "console_entries"?: Array<Record<string, unknown>>;
                   "dom_summary"?: (Record<string, unknown>) | null;
                   "html"?: string;
@@ -195389,6 +195445,7 @@ export interface operations {
                 "script_hash"?: string;
                 "script_revision"?: string;
                 "snapshots"?: Array<({
+                  "authored_request_retained"?: boolean;
                   "console_entries"?: Array<Record<string, unknown>>;
                   "dom_summary"?: (Record<string, unknown>) | null;
                   "html"?: string;
@@ -196970,6 +197027,7 @@ export interface operations {
                 "method"?: string;
                 "network_entries"?: Array<{
                   "aura"?: (Record<string, unknown>) | null;
+                  "authored_request_retained"?: boolean;
                   "browser_evidence"?: ({
                     "bytes": {
                       "request_body"?: (number) | null;
@@ -197050,6 +197108,7 @@ export interface operations {
                 "screenshot_omitted"?: boolean;
                 "selector"?: string;
                 "snapshot"?: ({
+                  "authored_request_retained"?: boolean;
                   "console_entries"?: Array<Record<string, unknown>>;
                   "dom_summary"?: (Record<string, unknown>) | null;
                   "html"?: string;
@@ -197259,6 +197318,7 @@ export interface operations {
                 "screenshot_omitted"?: boolean;
                 "selector"?: string;
                 "snapshot"?: ({
+                  "authored_request_retained"?: boolean;
                   "console_entries"?: Array<Record<string, unknown>>;
                   "dom_summary"?: (Record<string, unknown>) | null;
                   "html"?: string;
@@ -197475,6 +197535,7 @@ export interface operations {
                 "script_hash"?: string;
                 "script_revision"?: string;
                 "snapshots"?: Array<({
+                  "authored_request_retained"?: boolean;
                   "console_entries"?: Array<Record<string, unknown>>;
                   "dom_summary"?: (Record<string, unknown>) | null;
                   "html"?: string;
@@ -199060,6 +199121,7 @@ export interface operations {
                 "method"?: string;
                 "network_entries"?: Array<{
                   "aura"?: (Record<string, unknown>) | null;
+                  "authored_request_retained"?: boolean;
                   "browser_evidence"?: ({
                     "bytes": {
                       "request_body"?: (number) | null;
@@ -199140,6 +199202,7 @@ export interface operations {
                 "screenshot_omitted"?: boolean;
                 "selector"?: string;
                 "snapshot"?: ({
+                  "authored_request_retained"?: boolean;
                   "console_entries"?: Array<Record<string, unknown>>;
                   "dom_summary"?: (Record<string, unknown>) | null;
                   "html"?: string;
@@ -199349,6 +199412,7 @@ export interface operations {
                 "screenshot_omitted"?: boolean;
                 "selector"?: string;
                 "snapshot"?: ({
+                  "authored_request_retained"?: boolean;
                   "console_entries"?: Array<Record<string, unknown>>;
                   "dom_summary"?: (Record<string, unknown>) | null;
                   "html"?: string;
@@ -199565,6 +199629,7 @@ export interface operations {
                 "script_hash"?: string;
                 "script_revision"?: string;
                 "snapshots"?: Array<({
+                  "authored_request_retained"?: boolean;
                   "console_entries"?: Array<Record<string, unknown>>;
                   "dom_summary"?: (Record<string, unknown>) | null;
                   "html"?: string;
@@ -199991,6 +200056,7 @@ export interface operations {
                 "method"?: string;
                 "network_entries"?: Array<{
                   "aura"?: (Record<string, unknown>) | null;
+                  "authored_request_retained"?: boolean;
                   "browser_evidence"?: ({
                     "bytes": {
                       "request_body"?: (number) | null;
@@ -200071,6 +200137,7 @@ export interface operations {
                 "screenshot_omitted"?: boolean;
                 "selector"?: string;
                 "snapshot"?: ({
+                  "authored_request_retained"?: boolean;
                   "console_entries"?: Array<Record<string, unknown>>;
                   "dom_summary"?: (Record<string, unknown>) | null;
                   "html"?: string;
@@ -200280,6 +200347,7 @@ export interface operations {
                 "screenshot_omitted"?: boolean;
                 "selector"?: string;
                 "snapshot"?: ({
+                  "authored_request_retained"?: boolean;
                   "console_entries"?: Array<Record<string, unknown>>;
                   "dom_summary"?: (Record<string, unknown>) | null;
                   "html"?: string;
@@ -200496,6 +200564,7 @@ export interface operations {
                 "script_hash"?: string;
                 "script_revision"?: string;
                 "snapshots"?: Array<({
+                  "authored_request_retained"?: boolean;
                   "console_entries"?: Array<Record<string, unknown>>;
                   "dom_summary"?: (Record<string, unknown>) | null;
                   "html"?: string;
@@ -200811,6 +200880,7 @@ export interface operations {
                 "method"?: string;
                 "network_entries"?: Array<{
                   "aura"?: (Record<string, unknown>) | null;
+                  "authored_request_retained"?: boolean;
                   "browser_evidence"?: ({
                     "bytes": {
                       "request_body"?: (number) | null;
@@ -200891,6 +200961,7 @@ export interface operations {
                 "screenshot_omitted"?: boolean;
                 "selector"?: string;
                 "snapshot"?: ({
+                  "authored_request_retained"?: boolean;
                   "console_entries"?: Array<Record<string, unknown>>;
                   "dom_summary"?: (Record<string, unknown>) | null;
                   "html"?: string;
@@ -201100,6 +201171,7 @@ export interface operations {
                 "screenshot_omitted"?: boolean;
                 "selector"?: string;
                 "snapshot"?: ({
+                  "authored_request_retained"?: boolean;
                   "console_entries"?: Array<Record<string, unknown>>;
                   "dom_summary"?: (Record<string, unknown>) | null;
                   "html"?: string;
@@ -201316,6 +201388,7 @@ export interface operations {
                 "script_hash"?: string;
                 "script_revision"?: string;
                 "snapshots"?: Array<({
+                  "authored_request_retained"?: boolean;
                   "console_entries"?: Array<Record<string, unknown>>;
                   "dom_summary"?: (Record<string, unknown>) | null;
                   "html"?: string;
@@ -201622,6 +201695,7 @@ export interface operations {
                 "method"?: string;
                 "network_entries"?: Array<{
                   "aura"?: (Record<string, unknown>) | null;
+                  "authored_request_retained"?: boolean;
                   "browser_evidence"?: ({
                     "bytes": {
                       "request_body"?: (number) | null;
@@ -201702,6 +201776,7 @@ export interface operations {
                 "screenshot_omitted"?: boolean;
                 "selector"?: string;
                 "snapshot"?: ({
+                  "authored_request_retained"?: boolean;
                   "console_entries"?: Array<Record<string, unknown>>;
                   "dom_summary"?: (Record<string, unknown>) | null;
                   "html"?: string;
@@ -201911,6 +201986,7 @@ export interface operations {
                 "screenshot_omitted"?: boolean;
                 "selector"?: string;
                 "snapshot"?: ({
+                  "authored_request_retained"?: boolean;
                   "console_entries"?: Array<Record<string, unknown>>;
                   "dom_summary"?: (Record<string, unknown>) | null;
                   "html"?: string;
@@ -202099,6 +202175,7 @@ export interface operations {
                 "script_hash"?: string;
                 "script_revision"?: string;
                 "snapshots"?: Array<({
+                  "authored_request_retained"?: boolean;
                   "console_entries"?: Array<Record<string, unknown>>;
                   "dom_summary"?: (Record<string, unknown>) | null;
                   "html"?: string;
@@ -202532,6 +202609,7 @@ export interface operations {
                 "method"?: string;
                 "network_entries"?: Array<{
                   "aura"?: (Record<string, unknown>) | null;
+                  "authored_request_retained"?: boolean;
                   "browser_evidence"?: ({
                     "bytes": {
                       "request_body"?: (number) | null;
@@ -202612,6 +202690,7 @@ export interface operations {
                 "screenshot_omitted"?: boolean;
                 "selector"?: string;
                 "snapshot"?: ({
+                  "authored_request_retained"?: boolean;
                   "console_entries"?: Array<Record<string, unknown>>;
                   "dom_summary"?: (Record<string, unknown>) | null;
                   "html"?: string;
@@ -202821,6 +202900,7 @@ export interface operations {
                 "screenshot_omitted"?: boolean;
                 "selector"?: string;
                 "snapshot"?: ({
+                  "authored_request_retained"?: boolean;
                   "console_entries"?: Array<Record<string, unknown>>;
                   "dom_summary"?: (Record<string, unknown>) | null;
                   "html"?: string;
@@ -203037,6 +203117,7 @@ export interface operations {
                 "script_hash"?: string;
                 "script_revision"?: string;
                 "snapshots"?: Array<({
+                  "authored_request_retained"?: boolean;
                   "console_entries"?: Array<Record<string, unknown>>;
                   "dom_summary"?: (Record<string, unknown>) | null;
                   "html"?: string;
@@ -203338,6 +203419,7 @@ export interface operations {
                 "method"?: string;
                 "network_entries"?: Array<{
                   "aura"?: (Record<string, unknown>) | null;
+                  "authored_request_retained"?: boolean;
                   "browser_evidence"?: ({
                     "bytes": {
                       "request_body"?: (number) | null;
@@ -203418,6 +203500,7 @@ export interface operations {
                 "screenshot_omitted"?: boolean;
                 "selector"?: string;
                 "snapshot"?: ({
+                  "authored_request_retained"?: boolean;
                   "console_entries"?: Array<Record<string, unknown>>;
                   "dom_summary"?: (Record<string, unknown>) | null;
                   "html"?: string;
@@ -203627,6 +203710,7 @@ export interface operations {
                 "screenshot_omitted"?: boolean;
                 "selector"?: string;
                 "snapshot"?: ({
+                  "authored_request_retained"?: boolean;
                   "console_entries"?: Array<Record<string, unknown>>;
                   "dom_summary"?: (Record<string, unknown>) | null;
                   "html"?: string;
@@ -203843,6 +203927,7 @@ export interface operations {
                 "script_hash"?: string;
                 "script_revision"?: string;
                 "snapshots"?: Array<({
+                  "authored_request_retained"?: boolean;
                   "console_entries"?: Array<Record<string, unknown>>;
                   "dom_summary"?: (Record<string, unknown>) | null;
                   "html"?: string;
@@ -221467,6 +221552,7 @@ export interface operations {
                 "method"?: string;
                 "network_entries"?: Array<{
                   "aura"?: (Record<string, unknown>) | null;
+                  "authored_request_retained"?: boolean;
                   "browser_evidence"?: ({
                     "bytes": {
                       "request_body"?: (number) | null;
@@ -221547,6 +221633,7 @@ export interface operations {
                 "screenshot_omitted"?: boolean;
                 "selector"?: string;
                 "snapshot"?: ({
+                  "authored_request_retained"?: boolean;
                   "console_entries"?: Array<Record<string, unknown>>;
                   "dom_summary"?: (Record<string, unknown>) | null;
                   "html"?: string;
@@ -221756,6 +221843,7 @@ export interface operations {
                 "screenshot_omitted"?: boolean;
                 "selector"?: string;
                 "snapshot"?: ({
+                  "authored_request_retained"?: boolean;
                   "console_entries"?: Array<Record<string, unknown>>;
                   "dom_summary"?: (Record<string, unknown>) | null;
                   "html"?: string;
@@ -221972,6 +222060,7 @@ export interface operations {
                 "script_hash"?: string;
                 "script_revision"?: string;
                 "snapshots"?: Array<({
+                  "authored_request_retained"?: boolean;
                   "console_entries"?: Array<Record<string, unknown>>;
                   "dom_summary"?: (Record<string, unknown>) | null;
                   "html"?: string;
@@ -222287,6 +222376,7 @@ export interface operations {
                 "method"?: string;
                 "network_entries"?: Array<{
                   "aura"?: (Record<string, unknown>) | null;
+                  "authored_request_retained"?: boolean;
                   "browser_evidence"?: ({
                     "bytes": {
                       "request_body"?: (number) | null;
@@ -222367,6 +222457,7 @@ export interface operations {
                 "screenshot_omitted"?: boolean;
                 "selector"?: string;
                 "snapshot"?: ({
+                  "authored_request_retained"?: boolean;
                   "console_entries"?: Array<Record<string, unknown>>;
                   "dom_summary"?: (Record<string, unknown>) | null;
                   "html"?: string;
@@ -222576,6 +222667,7 @@ export interface operations {
                 "screenshot_omitted"?: boolean;
                 "selector"?: string;
                 "snapshot"?: ({
+                  "authored_request_retained"?: boolean;
                   "console_entries"?: Array<Record<string, unknown>>;
                   "dom_summary"?: (Record<string, unknown>) | null;
                   "html"?: string;
@@ -222792,6 +222884,7 @@ export interface operations {
                 "script_hash"?: string;
                 "script_revision"?: string;
                 "snapshots"?: Array<({
+                  "authored_request_retained"?: boolean;
                   "console_entries"?: Array<Record<string, unknown>>;
                   "dom_summary"?: (Record<string, unknown>) | null;
                   "html"?: string;
@@ -223107,6 +223200,7 @@ export interface operations {
                 "method"?: string;
                 "network_entries"?: Array<{
                   "aura"?: (Record<string, unknown>) | null;
+                  "authored_request_retained"?: boolean;
                   "browser_evidence"?: ({
                     "bytes": {
                       "request_body"?: (number) | null;
@@ -223187,6 +223281,7 @@ export interface operations {
                 "screenshot_omitted"?: boolean;
                 "selector"?: string;
                 "snapshot"?: ({
+                  "authored_request_retained"?: boolean;
                   "console_entries"?: Array<Record<string, unknown>>;
                   "dom_summary"?: (Record<string, unknown>) | null;
                   "html"?: string;
@@ -223396,6 +223491,7 @@ export interface operations {
                 "screenshot_omitted"?: boolean;
                 "selector"?: string;
                 "snapshot"?: ({
+                  "authored_request_retained"?: boolean;
                   "console_entries"?: Array<Record<string, unknown>>;
                   "dom_summary"?: (Record<string, unknown>) | null;
                   "html"?: string;
@@ -223612,6 +223708,7 @@ export interface operations {
                 "script_hash"?: string;
                 "script_revision"?: string;
                 "snapshots"?: Array<({
+                  "authored_request_retained"?: boolean;
                   "console_entries"?: Array<Record<string, unknown>>;
                   "dom_summary"?: (Record<string, unknown>) | null;
                   "html"?: string;
@@ -223927,6 +224024,7 @@ export interface operations {
                 "method"?: string;
                 "network_entries"?: Array<{
                   "aura"?: (Record<string, unknown>) | null;
+                  "authored_request_retained"?: boolean;
                   "browser_evidence"?: ({
                     "bytes": {
                       "request_body"?: (number) | null;
@@ -224007,6 +224105,7 @@ export interface operations {
                 "screenshot_omitted"?: boolean;
                 "selector"?: string;
                 "snapshot"?: ({
+                  "authored_request_retained"?: boolean;
                   "console_entries"?: Array<Record<string, unknown>>;
                   "dom_summary"?: (Record<string, unknown>) | null;
                   "html"?: string;
@@ -224216,6 +224315,7 @@ export interface operations {
                 "screenshot_omitted"?: boolean;
                 "selector"?: string;
                 "snapshot"?: ({
+                  "authored_request_retained"?: boolean;
                   "console_entries"?: Array<Record<string, unknown>>;
                   "dom_summary"?: (Record<string, unknown>) | null;
                   "html"?: string;
@@ -224432,6 +224532,7 @@ export interface operations {
                 "script_hash"?: string;
                 "script_revision"?: string;
                 "snapshots"?: Array<({
+                  "authored_request_retained"?: boolean;
                   "console_entries"?: Array<Record<string, unknown>>;
                   "dom_summary"?: (Record<string, unknown>) | null;
                   "html"?: string;
@@ -229911,6 +230012,7 @@ export interface operations {
                 "method"?: string;
                 "network_entries"?: Array<{
                   "aura"?: (Record<string, unknown>) | null;
+                  "authored_request_retained"?: boolean;
                   "browser_evidence"?: ({
                     "bytes": {
                       "request_body"?: (number) | null;
@@ -229991,6 +230093,7 @@ export interface operations {
                 "screenshot_omitted"?: boolean;
                 "selector"?: string;
                 "snapshot"?: ({
+                  "authored_request_retained"?: boolean;
                   "console_entries"?: Array<Record<string, unknown>>;
                   "dom_summary"?: (Record<string, unknown>) | null;
                   "html"?: string;
@@ -230200,6 +230303,7 @@ export interface operations {
                 "screenshot_omitted"?: boolean;
                 "selector"?: string;
                 "snapshot"?: ({
+                  "authored_request_retained"?: boolean;
                   "console_entries"?: Array<Record<string, unknown>>;
                   "dom_summary"?: (Record<string, unknown>) | null;
                   "html"?: string;
@@ -230388,6 +230492,7 @@ export interface operations {
                 "script_hash"?: string;
                 "script_revision"?: string;
                 "snapshots"?: Array<({
+                  "authored_request_retained"?: boolean;
                   "console_entries"?: Array<Record<string, unknown>>;
                   "dom_summary"?: (Record<string, unknown>) | null;
                   "html"?: string;

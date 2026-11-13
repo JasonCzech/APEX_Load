@@ -895,12 +895,16 @@ func TestReplayRedactsResolverBackedActionAuthCompositeEcho(t *testing.T) {
 		auth:              &dsl.AuthConfig{Type: "basic", Username: "a", Password: "b"},
 		redactRunEvidence: &redactOn,
 	}, {
-		name: "script literal with run evidence redaction unset",
-		auth: &dsl.AuthConfig{Type: "basic", Username: "a", Password: "b"},
+		// The same literals with the setting unset take the visible-by-default
+		// behavior.
+		name:     "script literal with run evidence redaction unset",
+		auth:     &dsl.AuthConfig{Type: "basic", Username: "a", Password: "b"},
+		disclose: true,
 	}, {
 		name:              "script literal with run evidence redaction off",
 		auth:              &dsl.AuthConfig{Type: "basic", Username: "a", Password: "b"},
 		redactRunEvidence: &redactOff,
+		disclose:          true,
 	}} {
 		t.Run(testCase.name, func(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1000,8 +1004,13 @@ func TestReplayRedactsResolverBackedURLUserinfoCompositeEcho(t *testing.T) {
 		redactRunEvidence: &redactOff,
 		userinfo:          "usr:{{ secret.BASIC_PASSWORD }}",
 	}, {
+		// The default, and the state of an unset field: the operator asked for
+		// nothing, so their own credential remains visible in run output.
+		// URL userinfo is an auth surface with no auth block, so it has to obey
+		// the setting exactly as dsl.Action.Auth does.
 		name:     "script literal with run evidence redaction unset",
 		userinfo: "usr:b",
+		disclose: true,
 	}, {
 		name:              "script literal with run evidence redaction on",
 		redactRunEvidence: &redactOn,
@@ -1010,6 +1019,7 @@ func TestReplayRedactsResolverBackedURLUserinfoCompositeEcho(t *testing.T) {
 		name:              "script literal with run evidence redaction off",
 		redactRunEvidence: &redactOff,
 		userinfo:          "usr:b",
+		disclose:          true,
 	}} {
 		t.Run(testCase.name, func(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

@@ -198,11 +198,11 @@ func parseScriptSnapshotForCLI(path string, data []byte) (*dsl.Script, *engine.R
 func loadScriptForCLIExecution(path string, args runArgs) (*dsl.Script, *engine.RedactionConfig, error) {
 	script, rc, err := parseScriptFileForCLI(path)
 	if err != nil {
-		return nil, attachCLIEnvSecrets(rc, args.env), err
+		return nil, rc, err
 	}
 	overridden, err := applyRuntimeOverrides(script, args)
 	if err != nil {
-		return nil, attachCLIEnvSecrets(rc, args.env), err
+		return nil, attachCLIEnvSecrets(rc, script, args.env), err
 	}
 	return overridden, cliScriptExecutionRedactionConfig(overridden, args.env), nil
 }
@@ -210,21 +210,28 @@ func loadScriptForCLIExecution(path string, args runArgs) (*dsl.Script, *engine.
 func loadScriptSnapshotForCLIExecution(path string, data []byte, args runArgs) (*dsl.Script, *engine.RedactionConfig, error) {
 	script, rc, err := parseScriptSnapshotForCLI(path, data)
 	if err != nil {
-		return nil, attachCLIEnvSecrets(rc, args.env), err
+		return nil, attachCLIEnvSecrets(rc, cliScriptFromBytes(data), args.env), err
 	}
 	overridden, err := applyRuntimeOverrides(script, args)
 	if err != nil {
-		return nil, attachCLIEnvSecrets(rc, args.env), err
+		return nil, attachCLIEnvSecrets(rc, script, args.env), err
 	}
 	return overridden, cliScriptExecutionRedactionConfig(overridden, args.env), nil
 }
 
 func cliScriptExecutionRedactionConfig(script *dsl.Script, env map[string]string) *engine.RedactionConfig {
-	return attachCLIEnvSecrets(cliScriptRedactionConfig(script), env)
+	return attachCLIEnvSecrets(cliScriptRedactionConfig(script), script, env)
 }
 
-func attachCLIEnvSecrets(rc *engine.RedactionConfig, env map[string]string) *engine.RedactionConfig {
-	if len(env) == 0 {
+// attachCLIEnvSecrets registers --env values that look like credentials. They
+// are literal values the operator supplies alongside the script, not
+// platform-managed secret-store material, so they follow
+// config.log.redact_run_evidence exactly like script literals: registered (as
+// script-sourced) only when the script turns the setting on. They never set
+// HasRuntimeSecretMaterial, so screenshot and payload retention is unchanged.
+// Use {{secret.NAME}} for a value that must always be redacted.
+func attachCLIEnvSecrets(rc *engine.RedactionConfig, script *dsl.Script, env map[string]string) *engine.RedactionConfig {
+	if len(env) == 0 || !engine.ScriptRedactsRunEvidence(script) {
 		return rc
 	}
 	if rc == nil {
@@ -252,26 +259,37 @@ func attachCLIEnvSecrets(rc *engine.RedactionConfig, env map[string]string) *eng
 	return rc
 }
 
-func cliScriptBytesRedactionConfig(data []byte) *engine.RedactionConfig {
+// cliScriptBytesExecutionRedactionConfig is the raw-bytes form of
+// cliScriptExecutionRedactionConfig, used before the snapshot is fully parsed.
+func cliScriptBytesExecutionRedactionConfig(data []byte, env map[string]string) *engine.RedactionConfig {
+	return cliScriptExecutionRedactionConfig(cliScriptFromBytes(data), env)
+}
+
+// cliScriptFromBytes is a best-effort parse used only to size redaction before
+// the authoritative parse; it returns nil when the bytes are not a script.
+func cliScriptFromBytes(data []byte) *dsl.Script {
 	if len(data) == 0 {
-		return cliScriptRedactionConfig(nil)
+		return nil
 	}
 	var wrapper struct {
 		Script dsl.Script `json:"script"`
 	}
 	if err := json.Unmarshal(data, &wrapper); err == nil && (wrapper.Script.Name != "" || wrapper.Script.Protocol != "" || len(wrapper.Script.Actions) > 0) {
-		return cliScriptRedactionConfig(&wrapper.Script)
+		return &wrapper.Script
 	}
 	var direct dsl.Script
 	if err := json.Unmarshal(data, &direct); err == nil {
-		return cliScriptRedactionConfig(&direct)
+		return &direct
 	}
-	return cliScriptRedactionConfig(nil)
+	return nil
 }
 
+// cliScriptRedactionConfig builds the CLI's text redaction for a parsed script.
+// Script-sourced credentials join it only when the script sets
+// config.log.redact_run_evidence to true.
 func cliScriptRedactionConfig(script *dsl.Script) *engine.RedactionConfig {
 	rc, err := engine.NewRedactionConfig(nil)
-	if err != nil || script == nil {
+	if err != nil || !engine.ScriptRedactsRunEvidence(script) {
 		return rc
 	}
 	if values, inspectErr := engine.ImportedCredentialValues(script); inspectErr == nil && len(values) > 0 {

@@ -558,6 +558,7 @@ func NewMultiGroup(cfg MultiGroupConfig) (*MultiGroupEngine, error) {
 			cfg.Groups[i].RedactionConfig,
 			values,
 			scriptSourcedValues,
+			scriptRedactsRunEvidence(cfg.Groups[i].Script),
 		)
 		key := runtimeSecretValueSetKey(mergedValues, scriptSourcedValues)
 		runtimeConfig := runtimeRedactionSets[key]
@@ -579,7 +580,10 @@ func NewMultiGroup(cfg MultiGroupConfig) (*MultiGroupEngine, error) {
 			}
 			runtimeRedactionSets[key] = runtimeConfig
 		}
-		cfg.Groups[i].RedactionConfig = ensureDynamicSecretRegistry(attachRuntimeSecretRedaction(cfg.Groups[i].RedactionConfig, runtimeConfig))
+		cfg.Groups[i].RedactionConfig = withAuthoredEvidenceScrubbing(
+			ensureDynamicSecretRegistry(attachRuntimeSecretRedaction(inboundRuntimeRedactionBase(cfg.Groups[i].RedactionConfig, runtimeConfig), runtimeConfig)),
+			scriptRedactsRunEvidence(cfg.Groups[i].Script),
+		)
 	}
 	runtimeResources, resourceErr := newEngineRuntimeResources(cfg.Groups)
 	if resourceErr != nil {

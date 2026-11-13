@@ -511,6 +511,28 @@ func TestHandleReplayScriptUsesDraftOverride(t *testing.T) {
 }
 
 func TestTransientReplayAndDebugDraftsAllowLiteralCredentialsAndRedactOutputs(t *testing.T) {
+	for _, mode := range []struct {
+		name   string
+		redact bool
+	}{{name: "redaction_on", redact: true}, {name: "redaction_off", redact: false}} {
+		t.Run(mode.name, func(t *testing.T) {
+			assertTransientDraftLiteralsFollowRunEvidenceSetting(t, mode.redact)
+		})
+	}
+}
+
+// literalLeakMismatch reports whether output disagrees with the contract: a
+// script-sourced literal is hidden exactly when hidden is true.
+func literalLeakMismatch(output string, hidden bool, literals ...string) bool {
+	for _, literal := range literals {
+		if strings.Contains(output, literal) == hidden {
+			return true
+		}
+	}
+	return false
+}
+
+func assertTransientDraftLiteralsFollowRunEvidenceSetting(t *testing.T, redact bool) {
 	const secret = "transient-inline-credential"
 	const soapSecret = "transient-soap-user-password"
 	protocolName := registerReplayAPIProtocol(t, func(action *protocol.Action) (*protocol.Result, error) {
@@ -539,7 +561,10 @@ func TestTransientReplayAndDebugDraftsAllowLiteralCredentialsAndRedactOutputs(t 
 		"version":    "1",
 		"protocol":   protocolName,
 		"project_id": "transient-secret-project",
-		"config":     map[string]any{"base_url": "https://example.test"},
+		"config": map[string]any{
+			"base_url": "https://example.test",
+			"log":      map[string]any{"redact_run_evidence": redact},
+		},
 		"actions": []map[string]any{{
 			"name":   "request",
 			"type":   "request",
@@ -575,8 +600,12 @@ func TestTransientReplayAndDebugDraftsAllowLiteralCredentialsAndRedactOutputs(t 
 			if strings.Contains(response.Body.String(), secretBindingsRequiredCode) {
 				t.Fatalf("%s unexpectedly required secret bindings: %s", path, response.Body.String())
 			}
-			if strings.Contains(response.Body.String(), secret) || strings.Contains(response.Body.String(), soapSecret) {
-				t.Fatalf("%s response leaked literal credential: %s", path, response.Body.String())
+			// The synchronous replay response is run output and follows the
+			// setting; a session start response is returned before anything
+			// runs and carries no literal in either mode.
+			startHidden := redact || path != "/api/v1/scripts/replay"
+			if literalLeakMismatch(response.Body.String(), startHidden, secret, soapSecret) {
+				t.Fatalf("%s response: redact_run_evidence=%t literal visibility mismatch: %s", path, redact, response.Body.String())
 			}
 			if path != "/api/v1/scripts/replay" {
 				var started ScriptDebugStartResponse
@@ -588,8 +617,11 @@ func TestTransientReplayAndDebugDraftsAllowLiteralCredentialsAndRedactOutputs(t 
 				if err != nil {
 					t.Fatal(err)
 				}
-				if strings.Contains(string(encoded), secret) || strings.Contains(string(encoded), soapSecret) {
-					t.Fatalf("%s terminal session leaked literal credential: %s", path, encoded)
+				// Interactive sessions run through the unredacted debugger (PR
+				// #311): script literals stay visible in both modes, and only
+				// secret-store values are masked.
+				if literalLeakMismatch(string(encoded), false, secret, soapSecret) {
+					t.Fatalf("%s terminal session: redact_run_evidence=%t literal visibility mismatch: %s", path, redact, encoded)
 				}
 			}
 		})
@@ -613,9 +645,8 @@ func TestTransientReplayAndDebugDraftsAllowLiteralCredentialsAndRedactOutputs(t 
 	server.mux.ServeHTTP(response, request)
 	if response.Code != http.StatusOK ||
 		strings.Contains(response.Body.String(), secretBindingsRequiredCode) ||
-		strings.Contains(response.Body.String(), secret) ||
-		strings.Contains(response.Body.String(), soapSecret) {
-		t.Fatalf("stored override response = %d %s", response.Code, response.Body.String())
+		literalLeakMismatch(response.Body.String(), redact, secret, soapSecret) {
+		t.Fatalf("stored override response (redact_run_evidence=%t) = %d %s", redact, response.Code, response.Body.String())
 	}
 }
 

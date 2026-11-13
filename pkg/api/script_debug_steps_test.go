@@ -331,7 +331,23 @@ func TestScriptDebugLogRetentionIsBounded(t *testing.T) {
 	}
 }
 
-func TestScriptDebugManagerRedactsLiteralDSLCredentialsAcrossLiveBreakpointsLogsAndHAR(t *testing.T) {
+// The debugger runs unredacted (the 10/30 decision, PR #311): the operator's
+// own script literals stay readable at breakpoints, in logs and in the debug
+// HAR, while a value resolved from the secret store is hidden in every mode,
+// including with redact_run_evidence on.
+func TestScriptDebugManagerHidesSecretStoreValuesButShowsLiteralDSLCredentials(t *testing.T) {
+	for _, mode := range []struct {
+		name   string
+		redact bool
+	}{{name: "redaction_off", redact: false}, {name: "redaction_on", redact: true}} {
+		t.Run(mode.name, func(t *testing.T) {
+			assertScriptDebugSecretStoreMasking(t, mode.name, mode.redact)
+		})
+	}
+}
+
+func assertScriptDebugSecretStoreMasking(t *testing.T, modeName string, redact bool) {
+	t.Helper()
 	const (
 		literalBearer = "synth-debug-bearer-9801"
 		literalSoap   = "synth-debug-soap-pwd-9802"
@@ -347,10 +363,12 @@ func TestScriptDebugManagerRedactsLiteralDSLCredentialsAcrossLiveBreakpointsLogs
 		reqBody, _ := io.ReadAll(r.Body)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusUnauthorized)
-		_, _ = w.Write([]byte(`{"rejected_auth":"` + r.Header.Get("Authorization") + `","echo_soap":"` + literalSoap + `","len":` + jsonNumberLen(len(reqBody)) + `}`))
+		_, _ = w.Write([]byte(`{"rejected_auth":"` + r.Header.Get("Authorization") + `","echo_soap":"` + literalSoap + `","echo_managed":"` + r.URL.Query().Get("api_key") + `","len":` + jsonNumberLen(len(reqBody)) + `}`))
 	}))
 	defer srv.Close()
 
+	sessionID := "debug-literal-redaction-" + modeName
+	redactSetting := redact
 	continueTrue := true
 	manager := NewScriptDebugManager(NewHub())
 	manager.Start("", &dsl.Script{
@@ -359,6 +377,7 @@ func TestScriptDebugManagerRedactsLiteralDSLCredentialsAcrossLiveBreakpointsLogs
 		Version:  "1.0.0",
 		Config: dsl.ScriptConfig{
 			BaseURL: srv.URL,
+			Log:     dsl.LogConfig{RedactRunEvidence: &redactSetting},
 		},
 		Parameters: []dsl.Parameter{{
 			Name:   "login_password",
@@ -385,7 +404,7 @@ func TestScriptDebugManagerRedactsLiteralDSLCredentialsAcrossLiveBreakpointsLogs
 			},
 		},
 	}, ScriptDebugStartRequest{
-		ReplaySessionID: "debug-literal-redaction",
+		ReplaySessionID: sessionID,
 		Breakpoints:     []ScriptDebugBreakpoint{{Phase: "action", ActionIndex: 1}},
 		ContinueOnError: &continueTrue,
 		LogLevel:        "trace",
@@ -397,38 +416,38 @@ func TestScriptDebugManagerRedactsLiteralDSLCredentialsAcrossLiveBreakpointsLogs
 		}),
 	})
 
-	paused := waitForScriptDebugStatus(t, manager, "debug-literal-redaction", ScriptDebugPaused)
+	paused := waitForScriptDebugStatus(t, manager, sessionID, ScriptDebugPaused)
 	pausedJSON, err := json.Marshal(paused)
 	if err != nil {
 		t.Fatalf("marshal paused debug session: %v", err)
 	}
-	for _, secret := range []string{literalBearer, literalSoap, managedSecret} {
-		if strings.Contains(string(pausedJSON), secret) {
-			t.Fatalf("paused debug session leaked %q: %s", secret, pausedJSON)
-		}
-	}
-
-	if _, ok, changed := manager.Resume("debug-literal-redaction"); !ok || !changed {
+	if _, ok, changed := manager.Resume(sessionID); !ok || !changed {
 		t.Fatalf("Resume debug session failed: ok=%v changed=%v", ok, changed)
 	}
-	done := waitForScriptDebugStatus(t, manager, "debug-literal-redaction", ScriptDebugFailed)
+	done := waitForScriptDebugStatus(t, manager, sessionID, ScriptDebugFailed)
 	doneJSON, err := json.Marshal(done)
 	if err != nil {
 		t.Fatalf("marshal completed debug session: %v", err)
 	}
-	for _, secret := range []string{literalBearer, literalSoap, managedSecret} {
-		if strings.Contains(string(doneJSON), secret) {
-			t.Fatalf("completed debug session leaked %q: %s", secret, doneJSON)
-		}
-	}
-
-	harBytes, harAvail, ok := manager.ExportHARForProject("debug-literal-redaction", "")
+	harBytes, harAvail, ok := manager.ExportHARForProject(sessionID, "")
 	if !ok || !harAvail.Available {
 		t.Fatalf("ExportHARForProject unavailable: ok=%v avail=%+v", ok, harAvail)
 	}
-	for _, secret := range []string{literalBearer, literalSoap, managedSecret} {
-		if strings.Contains(string(harBytes), secret) {
-			t.Fatalf("exported debug HAR leaked %q: %s", secret, harBytes)
+
+	surfaces := map[string]string{
+		"paused session":    string(pausedJSON),
+		"completed session": string(doneJSON),
+		"debug HAR":         string(harBytes),
+	}
+	for label, surface := range surfaces {
+		if strings.Contains(surface, managedSecret) {
+			t.Fatalf("%s leaked secret-store value %q: %s", label, managedSecret, surface)
+		}
+	}
+	combined := surfaces["paused session"] + surfaces["completed session"] + surfaces["debug HAR"]
+	for _, literal := range []string{literalBearer, literalSoap} {
+		if !strings.Contains(combined, literal) {
+			t.Fatalf("unredacted debugger hid script literal %q (redact_run_evidence=%t): %s", literal, redact, combined)
 		}
 	}
 }

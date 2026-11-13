@@ -461,6 +461,24 @@ func replayScript(ctx context.Context, script *dsl.Script, opts ReplayOptions, d
 	if err != nil {
 		return nil, fmt.Errorf("inspect retained import credentials: %s", replayStartupErrorText(opts, err, nil))
 	}
+	// The platform-managed slice now also carries the composite spellings
+	// (Basic, SASL, DSN, storage state) the transports build from secret-store
+	// values. Rebuild the debugger mask from it; the script-sourced half stays
+	// visible in unredacted debug.
+	var debugSecretMaskValues map[string]struct{}
+	if opts.UnredactedDebug && opts.DebugController != nil {
+		debugSecretMaskValues = make(map[string]struct{}, len(secretValues))
+		for _, value := range secretValues {
+			if value != "" {
+				debugSecretMaskValues[value] = struct{}{}
+			}
+		}
+		debugSecretMask, err = newDebugSecretMask(sortedRuntimeSecretValues(debugSecretMaskValues))
+		if err != nil {
+			return nil, fmt.Errorf("prepare debugger secret masking: %w", err)
+		}
+		*debugSecretMaskOut = debugSecretMask
+	}
 	// seedSecretValues is origin-independent: an operator-supplied replay variable
 	// is governed by its NAME, not by the script. It stays platform-managed and is
 	// never gated by the setting.
@@ -478,7 +496,7 @@ func replayScript(ctx context.Context, script *dsl.Script, opts ReplayOptions, d
 	if scriptSourcedDropped {
 		warnScriptSourcedRedactionDropped("group", groupName, "script", script.Name)
 	}
-	redactionConfig = ensureDynamicSecretRegistry(redactionConfig)
+	redactionConfig = withAuthoredEvidenceScrubbing(ensureDynamicSecretRegistry(redactionConfig), scriptRedactsRunEvidence(script))
 	// Inline sandbox contents are executable data, not evidence. Reject managed
 	// secrets in values, schema and identities before initializing them; redacting
 	// any of these strings would change the input. Imported literals keep their policy.
@@ -687,6 +705,7 @@ func replayScript(ctx context.Context, script *dsl.Script, opts ReplayOptions, d
 	vu = &VUser{
 		unredactedDebug:              opts.UnredactedDebug && opts.DebugController != nil,
 		debugSecretMask:              debugSecretMask,
+		debugSecretMaskValues:        debugSecretMaskValues,
 		ParameterAllocation:          &ParameterAllocation{Population: 1, Offset: 0, Iterations: iterations},
 		ID:                           0,
 		Group:                        groupName,
@@ -706,6 +725,14 @@ func replayScript(ctx context.Context, script *dsl.Script, opts ReplayOptions, d
 		RedactionConfig:              redactionConfig,
 		importedCredentialInspection: importedCredentials,
 		SnapshotStore:                NewSnapshotStore(128),
+	}
+	if vu.unredactedDebug {
+		// Secrets a protocol mints through RuntimeSecretRegistrar land in
+		// the run's dynamic registry; the debugger mask reads it as a layer.
+		vu.attachDebugSecretMaskRegistry()
+		// Per-action composites extend vu.debugSecretMask while the replay
+		// runs; ReplayScript masks the returned report with the final mask.
+		defer func() { *debugSecretMaskOut = vu.debugSecretMask }()
 	}
 	if replayRuntimeEnabled(opts.DebugController) {
 		vu.replayRuntime = &replayRuntimeState{rows: make(map[string]ReplayRuntimeRow)}
@@ -2736,7 +2763,7 @@ func scrubReplayTarget(action *protocol.Action, config *RedactionConfig) string 
 	if action.RedactedTarget != "" {
 		target = action.RedactedTarget
 	}
-	return scrubSensitiveTextWithConfig(target, config)
+	return scrubAuthoredTextWithConfig(target, config)
 }
 
 func scrubReplaySelector(action *protocol.Action, config *RedactionConfig) string {
@@ -2758,7 +2785,7 @@ func scrubReplayValue(action *protocol.Action, config *RedactionConfig) string {
 	if action.RedactedValue != "" {
 		value = action.RedactedValue
 	}
-	return scrubSensitiveTextWithConfig(value, config)
+	return scrubAuthoredTextWithConfig(value, config)
 }
 
 func replayCorrelationEvidence(action *protocol.Action, result *protocol.Result, authored dsl.Action, enabled bool) *protocol.CorrelationEvidence {
@@ -3079,11 +3106,14 @@ func scrubReplayActionEvent(event *ReplayActionEvent, config *RedactionConfig) {
 	event.Method = scrubSensitiveTextWithConfig(event.Method, config)
 	event.ErrorMessage = scrubSensitiveTextWithConfig(event.ErrorMessage, config)
 	event.CredentialClassificationError = scrubSensitiveTextWithConfig(event.CredentialClassificationError, config)
-	event.Target = scrubSensitiveTextWithConfig(event.Target, config)
+	// Target, typed value, request headers and request body are what the
+	// script authored; they follow config.log.redact_run_evidence. The page and
+	// HTML below are server content and keep the full scrubber.
+	event.Target = scrubAuthoredTextWithConfig(event.Target, config)
 	event.Selector = scrubSensitiveTextWithConfig(event.Selector, config)
-	event.Value = scrubSensitiveTextWithConfig(event.Value, config)
-	event.Headers = scrubSensitiveHeaders(event.Headers, config)
-	event.Body = scrubSensitiveBodyTextWithConfig(event.Body, config)
+	event.Value = scrubAuthoredTextWithConfig(event.Value, config)
+	event.Headers = scrubAuthoredHeaders(event.Headers, config)
+	event.Body = scrubAuthoredBodyTextWithConfig(event.Body, config)
 	event.PageURL = scrubSensitiveTextWithConfig(event.PageURL, config)
 	event.PageTitle = scrubSensitiveTextWithConfig(event.PageTitle, config)
 	event.HTML = scrubSensitiveBodyTextWithConfig(event.HTML, config)
@@ -3104,7 +3134,7 @@ func scrubReplayActionEvent(event *ReplayActionEvent, config *RedactionConfig) {
 	event.Console = scrubSensitiveConsoleEntries(event.Console, config)
 	event.Network = scrubSensitiveNetworkEntries(event.Network, config)
 	event.DOMSummary = scrubSensitiveDOMSummary(event.DOMSummary, config)
-	event.ProtocolEvidence = scrubSensitiveEvidenceMap(event.ProtocolEvidence, config)
+	event.ProtocolEvidence = scrubSensitiveProtocolEvidence(event.ProtocolEvidence, config)
 	if event.Snapshot != nil {
 		projection := &protocol.Result{Snapshot: event.Snapshot}
 		scrubSensitiveResultWithOptions(projection, config, false)
@@ -3148,7 +3178,7 @@ func scrubReplayDebugAction(action *ReplayDebugAction, config *RedactionConfig) 
 	}
 	action.ActionType = scrubSensitiveTextWithConfig(action.ActionType, config)
 	action.Method = scrubSensitiveTextWithConfig(action.Method, config)
-	action.Target = scrubSensitiveTextWithConfig(action.Target, config)
+	action.Target = scrubAuthoredTextWithConfig(action.Target, config)
 	action.Selector = scrubSensitiveTextWithConfig(action.Selector, config)
 	action.SourceStepID = scrubSensitiveTextWithConfig(action.SourceStepID, config)
 	if action.parentBusinessTransaction {
@@ -3179,9 +3209,9 @@ func scrubReplayHeaders(action *protocol.Action, config *RedactionConfig) map[st
 		return nil
 	}
 	if len(action.RedactedHeaders) > 0 {
-		return scrubSensitiveHeaders(cloneStringMap(action.RedactedHeaders), config)
+		return scrubAuthoredHeaders(cloneStringMap(action.RedactedHeaders), config)
 	}
-	return scrubSensitiveHeaders(cloneStringMap(action.Headers), config)
+	return scrubAuthoredHeaders(cloneStringMap(action.Headers), config)
 }
 
 func scrubReplayBody(action *protocol.Action, config *RedactionConfig) string {
@@ -3192,7 +3222,7 @@ func scrubReplayBody(action *protocol.Action, config *RedactionConfig) string {
 	if len(action.RedactedBody) > 0 {
 		body = string(action.RedactedBody)
 	}
-	return scrubSensitiveBodyTextWithConfig(body, config)
+	return scrubAuthoredBodyTextWithConfig(body, config)
 }
 
 func applyReplaySourceMetadata(event *ReplayActionEvent, metadata map[string]any) {

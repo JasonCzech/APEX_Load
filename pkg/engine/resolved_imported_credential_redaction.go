@@ -7,9 +7,11 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/jasonczech/apexload/pkg/credential"
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/internal/bodyencoding"
 	"github.com/jasonczech/apexload/pkg/protocol"
 )
 
@@ -25,7 +27,9 @@ import (
 // test and derivation with the script-config surfaces. Their composites embed a
 // value the operator does not otherwise hold, and the exact-value matcher cannot
 // derive base64("user:password") from the bare password registered by
-// snapshotReferencedSecrets.
+// snapshotReferencedSecrets. platformDerivedActionComposites adds the same
+// spellings when a RESOLVED half carries a platform value the authored field
+// does not name (a variable assigned from {{secret.*}}).
 //
 // runtimeCredentialScriptActionScope (script-sourced, gated) carries what
 // resolvedActionCredentialValues walked out of the resolved action. Those returns
@@ -49,8 +53,8 @@ func (vu *VUser) extendRuntimeRedactionForResolvedAction(action *protocol.Action
 		return fmt.Errorf("prepare action credential redaction: %s", scrubSensitiveText(err.Error()))
 	}
 	if err := vu.replaceRuntimeCredentialScopes(map[string][]string{
-		runtimeCredentialActionScope:       vu.platformManagedActionCredentialValues(action),
-		runtimeCredentialScriptActionScope: scriptSourced,
+		runtimeCredentialActionScope:       vu.platformDerivedActionComposites(action, vu.platformManagedActionCredentialValues(action)),
+		runtimeCredentialScriptActionScope: append(scriptSourced, vu.scriptSourcedActionBodySpellings(action)...),
 	}); err != nil {
 		return fmt.Errorf("prepare action credential redaction: %s", err)
 	}
@@ -66,6 +70,230 @@ func (vu *VUser) platformManagedActionCredentialValues(action *protocol.Action) 
 		return nil
 	}
 	return vu.actionCredentialComposites.values
+}
+
+// scriptSourcedActionBodySpellings returns the transformed-body spellings of
+// script-sourced values resolveAction recorded for this action (only with
+// config.log.redact_run_evidence on). Like platformManagedActionCredentialValues
+// it answers nil for any other action.
+func (vu *VUser) scriptSourcedActionBodySpellings(action *protocol.Action) []string {
+	if vu == nil || action == nil || vu.actionCredentialComposites.action != action {
+		return nil
+	}
+	return vu.actionCredentialComposites.scriptValues
+}
+
+// platformDerivedActionComposites extends an action's platform-managed
+// composites with the wire spellings built from RESOLVED credential halves that
+// carry a platform value. A half can carry a secret-store value without naming
+// {{secret.*}} — a variable assigned from one — so the origin test on the
+// authored field registers no composite for it, and base64(user:secret) would
+// reach run evidence (and the unredacted debugger) raw. The halves tested are
+// the typed auth block, the target's URL userinfo (net/http synthesizes the
+// Basic header from it) and the network-auth params (SASL). A half is tested
+// against platform values only (platformSecretCarrier), so a script literal
+// keeps following config.log.redact_run_evidence and stays visible in the
+// debugger. This runs in every mode.
+func (vu *VUser) platformDerivedActionComposites(action *protocol.Action, values []string) []string {
+	if vu == nil || action == nil {
+		return values
+	}
+	var carries func(string) bool
+	carrier := func() func(string) bool {
+		if carries == nil {
+			carries = vu.platformSecretCarrier()
+		}
+		return carries
+	}
+	anyCarries := func(halves ...string) bool {
+		for _, half := range halves {
+			if half != "" && carrier()(half) {
+				return true
+			}
+		}
+		return false
+	}
+	var derived []string
+	if auth := action.Auth; auth != nil && (auth.Username != "" || auth.Password != "") && anyCarries(auth.Username, auth.Password, auth.Domain) {
+		derived = appendTypedAuthComposites(derived, auth)
+		if len(derived) == 0 {
+			// Any other scheme that sends the pair still gets its Basic forms.
+			derived = appendBasicPairComposites(derived, auth.Username, auth.Password)
+		}
+	}
+	if parsed, err := url.Parse(strings.TrimSpace(action.Target)); err == nil && parsed.User != nil {
+		if password, ok := parsed.User.Password(); ok && anyCarries(parsed.User.Username(), password) {
+			derived = appendBasicPairComposites(derived, parsed.User.Username(), password)
+		}
+	}
+	paramUser, hasUser := resolvedActionParamString(action, "username")
+	paramPass, hasPass := resolvedActionParamString(action, "password")
+	if (hasUser || hasPass) && anyCarries(paramUser, paramPass) {
+		derived = appendMailSASLComposites(derived, paramUser, paramPass)
+	}
+	derived = vu.appendPlatformDerivedBodySpellings(derived, action, carrier)
+	if len(derived) == 0 {
+		return values
+	}
+	return append(append(make([]string, 0, len(values)+len(derived)), values...), derived...)
+}
+
+// platformSecretCarrier reports whether a resolved value contains a platform
+// value. The unredacted debugger tests against its mask, which holds platform
+// values only. Every other mode tests against the run's matcher minus the
+// script-sourced values it holds, so a script literal never counts.
+//
+// It runs for every authenticated action execution, so the answer is memoized
+// per matcher publication (platformCarrierCache): a value is first tested with
+// the precompiled matcher, which answers "no registered value at all" without
+// touching the value set, and only a value that matches is checked against the
+// platform-only set, built once per publication.
+func (vu *VUser) platformSecretCarrier() func(string) bool {
+	cache := vu.platformCarrierState()
+	return cache.carries
+}
+
+// platformSecretRuns returns the spans of value that the platform matcher
+// matches (adjacent matches merge into one span), for deriving the transformed
+// spellings a body encoding gives them. Spans of script-sourced values only are
+// left out.
+func (vu *VUser) platformSecretRuns(value string) []string {
+	cache := vu.platformCarrierState()
+	matcher := cache.config
+	if cache.unredacted {
+		matcher = cache.mask
+	}
+	var runs []string
+	for _, run := range runtimeSecretMatchedRuns(value, matcher) {
+		if cache.carries(run) {
+			runs = append(runs, run)
+		}
+	}
+	return runs
+}
+
+// platformCarrierCache is the memoized state behind platformSecretCarrier. It
+// is valid for one matcher publication: the run matcher pointer, the dynamic
+// overlay generation, the debugger mask and the debug mode it was built for.
+type platformCarrierCache struct {
+	config     *RedactionConfig
+	generation uint64
+	mask       *RedactionConfig
+	unredacted bool
+	// platform is the run matcher's value set minus its script-sourced
+	// values, built on the first value the matcher matches.
+	platform map[string]struct{}
+	results  map[string]bool
+}
+
+// maxPlatformCarrierResults bounds the memoized answers; the map is reset when
+// it fills, so data-driven halves cannot grow it without bound.
+const maxPlatformCarrierResults = 1024
+
+// maxPlatformCarrierMemoBytes bounds the values the memo keeps: credential
+// halves are short, and a request body must never be copied into it.
+const maxPlatformCarrierMemoBytes = 4 << 10
+
+func (vu *VUser) platformCarrierState() *platformCarrierCache {
+	config := vu.RedactionConfig
+	generation := config.dynamicGeneration()
+	if cache := vu.platformCarrier; cache != nil && cache.config == config && cache.generation == generation &&
+		cache.mask == vu.debugSecretMask && cache.unredacted == vu.unredactedDebug {
+		return cache
+	}
+	cache := &platformCarrierCache{config: config, generation: generation, mask: vu.debugSecretMask, unredacted: vu.unredactedDebug}
+	vu.platformCarrier = cache
+	return cache
+}
+
+func (cache *platformCarrierCache) carries(value string) bool {
+	if value == "" {
+		return false
+	}
+	if len(value) > maxPlatformCarrierMemoBytes {
+		return cache.compute(value)
+	}
+	if answer, ok := cache.results[value]; ok {
+		return answer
+	}
+	answer := cache.compute(value)
+	if cache.results == nil || len(cache.results) >= maxPlatformCarrierResults {
+		cache.results = make(map[string]bool)
+	}
+	cache.results[value] = answer
+	return answer
+}
+
+func (cache *platformCarrierCache) compute(value string) bool {
+	if cache.unredacted {
+		return cache.mask != nil && scrubRuntimeSecretText(value, cache.mask) != value
+	}
+	// The matcher holds every raw value (and more spellings), so a value it
+	// leaves unchanged contains no platform value.
+	if scrubRuntimeSecretText(value, cache.config) == value {
+		return false
+	}
+	if cache.platform == nil {
+		cache.platform = allRuntimeSecretValues(cache.config)
+		for scriptSourced := range allRuntimeScriptSourcedValues(cache.config) {
+			delete(cache.platform, scriptSourced)
+		}
+	}
+	for secret := range cache.platform {
+		if secret != "" && strings.Contains(value, secret) {
+			return true
+		}
+	}
+	return false
+}
+
+// appendPlatformDerivedBodySpellings derives the wire spellings a body
+// encoding gives the platform values in a resolved body. The exact matcher
+// holds a platform value and its text encodings, never the bytes a transformed
+// body sends:
+//
+//   - base64: a body whose encoded text carries a platform value (the trusted
+//     full-body template {{secret.BASE64_PAYLOAD}}, or a variable assigned from
+//     one) is decoded on the wire, and the decoded text is wholly derived from
+//     that value whatever keys it holds;
+//   - utf-16le: each platform span is sent as UTF-16LE code units.
+//
+// These spellings are filed with the action's platform-managed composites, so
+// the run matcher and the debugger mask cover them in every mode.
+//
+// A body whose authored text has no template that can insert a runtime value
+// (resolveAction records this per action) is skipped: it holds no platform
+// value the authored-surface registration does not cover, and the scan would
+// otherwise run over every request body of a load test.
+func (vu *VUser) appendPlatformDerivedBodySpellings(derived []string, action *protocol.Action, carrier func() func(string) bool) []string {
+	if action == nil || len(action.Body) == 0 {
+		return derived
+	}
+	if vu.actionCredentialComposites.action == action && !vu.actionCredentialComposites.bodyMayCarryPlatformValue {
+		return derived
+	}
+	switch {
+	case strings.EqualFold(strings.TrimSpace(action.BodyEncoding), "base64"):
+		encoded := strings.TrimSpace(string(action.Body))
+		if !carrier()(encoded) {
+			return derived
+		}
+		decoded, err := base64.StdEncoding.DecodeString(encoded)
+		if err == nil && len(decoded) > 0 && utf8.Valid(decoded) {
+			derived = append(derived, string(decoded))
+		}
+	case bodyencoding.IsUTF16LE(action.BodyEncoding):
+		body := string(action.Body)
+		if !carrier()(body) {
+			return derived
+		}
+		for _, run := range vu.platformSecretRuns(body) {
+			if encoded, err := bodyencoding.EncodeUTF16LE(run); err == nil && len(encoded) > 0 {
+				derived = append(derived, string(encoded))
+			}
+		}
+	}
+	return derived
 }
 
 // resolvedActionCredentialValues walks the credential surface of a resolved

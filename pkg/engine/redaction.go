@@ -88,6 +88,15 @@ type RedactionConfig struct {
 	// exchange URLs) without mutating immutable matcher layers or increasing
 	// runtimeParent depth.
 	dynamic *dynamicSecretRegistry
+	// authoredEvidenceVisible marks a config whose script left
+	// config.log.redact_run_evidence off. Built-in NAME/SHAPE scrubbing
+	// (sensitive header names, password=/client_secret JSON keys, URL userinfo
+	// and the like) then no longer applies to script-authored REQUEST content.
+	// Exact runtime values (platform-managed secrets, dynamic tokens) and the
+	// project's own redaction rules still apply everywhere, and server RESPONSE
+	// content keeps the full scrubber. Derived layers inherit it through
+	// cloneRedactionPolicy and the runtimeParent chain.
+	authoredEvidenceVisible bool
 }
 
 type dynamicSecretRegistry struct {
@@ -624,7 +633,43 @@ func cloneRedactionPolicy(config *RedactionConfig) *RedactionConfig {
 		detached.Rules = append([]RedactionRule(nil), config.Rules...)
 		detached.compiled = append([]payloadReplacement(nil), config.compiled...)
 		detached.dynamic = config.findDynamicRegistry()
+		detached.authoredEvidenceVisible = !config.scrubsAuthoredEvidence()
 	}
+	return detached
+}
+
+// scrubsAuthoredEvidence reports whether built-in name/shape scrubbing applies to
+// script-authored request content under this config. It is true unless the
+// config (or a layer it was derived from) was built for a script that leaves
+// config.log.redact_run_evidence off, so a nil or unrelated config keeps the
+// historical full scrub.
+func (c *RedactionConfig) scrubsAuthoredEvidence() bool {
+	for depth := 0; c != nil && depth < maxRuntimeSecretRedactionLayers; depth++ {
+		if c.authoredEvidenceVisible {
+			return false
+		}
+		c = c.runtimeParent
+	}
+	return true
+}
+
+// withAuthoredEvidenceScrubbing applies the script's config.log.redact_run_evidence
+// setting to a run's root redaction config. With the setting on the config is
+// returned unchanged. With it off a detached copy is marked so request-side
+// evidence keeps the values the script authored (see authoredEvidenceVisible).
+// It never fails: the setting only ever relaxes name/shape scrubbing of authored
+// content, never exact platform-managed matching.
+func withAuthoredEvidenceScrubbing(config *RedactionConfig, redactRunEvidence bool) *RedactionConfig {
+	if redactRunEvidence || config.publicationUnavailable() || !config.scrubsAuthoredEvidence() {
+		return config
+	}
+	detached := &RedactionConfig{}
+	if config != nil {
+		*detached = *config
+		detached.Rules = append([]RedactionRule(nil), config.Rules...)
+		detached.compiled = append([]payloadReplacement(nil), config.compiled...)
+	}
+	detached.authoredEvidenceVisible = true
 	return detached
 }
 
@@ -762,10 +807,18 @@ func runtimeSecretPlaceholder(value string) string {
 // script-sourced, and everything else is platform-managed. Platform-managed always
 // wins the collision, in either direction, so a project secret can never be
 // downgraded by a retained import literal that happens to equal it.
+//
+// redactScriptSourced is the operator's config.log.redact_run_evidence setting
+// for the script the values belong to. When it is false the script-sourced half
+// is dropped entirely — including script-sourced values an inbound config
+// (apexctl, generator RPC staging) carried in — so a caller can never re-enable
+// literal redaction the script turned off. Platform-managed values are kept
+// either way.
 func mergedRuntimeSecretValuesByOrigin(
 	config *RedactionConfig,
 	platformManaged []string,
 	scriptSourced []string,
+	redactScriptSourced bool,
 ) ([]string, []string) {
 	inboundScriptSourced := allRuntimeScriptSourcedValues(config)
 	platformSet := make(map[string]struct{}, len(platformManaged))
@@ -795,7 +848,27 @@ func mergedRuntimeSecretValuesByOrigin(
 	for value := range platformSet {
 		delete(scriptSet, value)
 	}
+	if !redactScriptSourced {
+		return sortedRuntimeSecretValueList(platformSet), nil
+	}
 	return sortedRuntimeSecretValueList(platformSet), sortedRuntimeSecretValueList(scriptSet)
+}
+
+// inboundRuntimeRedactionBase returns the base config attachRuntimeSecretRedaction
+// layers the merged runtime matcher onto. attachRuntimeSecretRedaction keeps the
+// inbound config verbatim when runtime is nil, which would keep an inbound
+// script-sourced matcher alive after mergedRuntimeSecretValuesByOrigin dropped
+// it. When nothing survived the merge, the inbound matcher held no
+// platform-managed value, so it is detached and only its rules and dynamic
+// registry are kept.
+func inboundRuntimeRedactionBase(config, runtime *RedactionConfig) *RedactionConfig {
+	if runtime != nil || config == nil || config.publicationUnavailable() {
+		return config
+	}
+	if len(allRuntimeSecretValues(config)) == 0 {
+		return config
+	}
+	return cloneRedactionPolicy(config)
 }
 
 func sortedRuntimeSecretValueList(values map[string]struct{}) []string {
@@ -839,9 +912,13 @@ func attachRuntimeSecretRedaction(config, runtime *RedactionConfig) *RedactionCo
 		return config
 	}
 	if config == nil || (len(config.Rules) == 0 && len(config.compiled) == 0 && config.findDynamicRegistry() == nil) {
+		if config != nil && !config.scrubsAuthoredEvidence() {
+			return withAuthoredEvidenceScrubbing(runtime, false)
+		}
 		return runtime
 	}
 	detached := &RedactionConfig{
+		authoredEvidenceVisible:    !config.scrubsAuthoredEvidence(),
 		Rules:                      append([]RedactionRule(nil), config.Rules...),
 		compiled:                   append([]payloadReplacement(nil), config.compiled...),
 		secretReplacers:            runtime.secretReplacers,
@@ -1040,7 +1117,7 @@ func scrubSensitiveResultWithOptions(result *protocol.Result, config *RedactionC
 	result.NetworkTrace = scrubSensitiveNetworkTrace(result.NetworkTrace, config)
 	result.DOMSummary = scrubSensitiveDOMSummary(result.DOMSummary, config)
 	result.Extractions = scrubSensitiveExtractions(result.Extractions, config)
-	result.ProtocolEvidence = scrubSensitiveEvidenceMap(result.ProtocolEvidence, config)
+	result.ProtocolEvidence = scrubSensitiveProtocolEvidence(result.ProtocolEvidence, config)
 	if config.HasRuntimeSecretMaterial() {
 		// Screenshots are opaque pixels/base64. Exact text replacement cannot
 		// prove the rendered secret is gone, so governed runtime material makes
@@ -1052,7 +1129,15 @@ func scrubSensitiveResultWithOptions(result *protocol.Result, config *RedactionC
 		return
 	}
 
-	result.Snapshot.RequestURL = scrubSensitiveTextWithConfig(result.Snapshot.RequestURL, config)
+	// Request-side surfaces carry what the script authored; they follow
+	// config.log.redact_run_evidence (scrubAuthored*). Response surfaces below
+	// keep the full scrubber whatever the setting.
+	if result.Snapshot.RequestURLNotAuthored {
+		// A server-named URL (meta-refresh follow-up) is not script content.
+		result.Snapshot.RequestURL = scrubSensitiveTextWithConfig(result.Snapshot.RequestURL, config)
+	} else {
+		result.Snapshot.RequestURL = scrubAuthoredTextWithConfig(result.Snapshot.RequestURL, config)
+	}
 	if strings.HasPrefix(strings.ToLower(strings.TrimSpace(result.Snapshot.RequestMethod)), "grpc_") {
 		// Binary metadata is base64-encoded as a whole value. Even a known
 		// secret inside it may have no matching encoded substring because its
@@ -1061,11 +1146,11 @@ func scrubSensitiveResultWithOptions(result *protocol.Result, config *RedactionC
 		redactGRPCBinaryMetadata(result.Snapshot.RequestHeaders)
 		redactGRPCBinaryMetadata(result.Snapshot.ResponseHeaders)
 	}
-	result.Snapshot.RequestHeaders = scrubSensitiveHeaders(result.Snapshot.RequestHeaders, config)
-	if strings.EqualFold(strings.TrimSpace(result.DependencyType), "java_http") && javaBinaryPayloadContainsSecret(result.Snapshot.RequestBody, config) {
+	result.Snapshot.RequestHeaders = scrubAuthoredHeaders(result.Snapshot.RequestHeaders, config)
+	if strings.EqualFold(strings.TrimSpace(result.DependencyType), "java_http") && javaBinaryAuthoredPayloadContainsSecret(result.Snapshot.RequestBody, config) {
 		result.Snapshot.RequestBody = redactedPayloadValue
 	} else {
-		result.Snapshot.RequestBody = scrubSensitiveBodyTextWithConfig(result.Snapshot.RequestBody, config)
+		result.Snapshot.RequestBody = scrubAuthoredBodyTextWithConfig(result.Snapshot.RequestBody, config)
 	}
 	result.Snapshot.ResponseHeaders = scrubSensitiveHeaders(result.Snapshot.ResponseHeaders, config)
 	previousResponseBody := result.Snapshot.ResponseBody
@@ -1098,6 +1183,16 @@ func scrubSensitiveResultWithOptions(result *protocol.Result, config *RedactionC
 		result.Snapshot.ScreenshotBase64 = ""
 		result.Snapshot.ScreenshotOmitted = false
 	}
+	result.Snapshot.AuthoredRequestRetained = authoredRequestRetained(config)
+}
+
+// authoredRequestRetained is the marker published with request-side evidence
+// scrubbed under config: true only when the script left
+// config.log.redact_run_evidence off, so downstream archive and report
+// sanitizers know the request side already went through the run's exact
+// platform-secret matcher and must keep its authored values.
+func authoredRequestRetained(config *RedactionConfig) bool {
+	return !config.scrubsAuthoredEvidence() && !config.publicationUnavailable()
 }
 
 func redactGRPCBinaryMetadata(headers map[string]string) {
@@ -1108,11 +1203,31 @@ func redactGRPCBinaryMetadata(headers map[string]string) {
 	}
 }
 
+// javaBinaryAuthoredPayloadContainsSecret is the request-side form: with the
+// script's config.log.redact_run_evidence off, only exact runtime values and
+// project rules (not the name/shape scrubber) decide whether an opaque authored
+// payload is withheld.
+func javaBinaryAuthoredPayloadContainsSecret(payload string, config *RedactionConfig) bool {
+	if config.scrubsAuthoredEvidence() {
+		return javaBinaryPayloadContainsSecret(payload, config)
+	}
+	return javaBinaryPayloadContainsSecretWith(payload, config, func(value string) string {
+		return scrubAuthoredTextWithConfig(value, config)
+	})
+}
+
 func javaBinaryPayloadContainsSecret(payload string, config *RedactionConfig) bool {
+	if config == nil {
+		return false
+	}
+	return javaBinaryPayloadContainsSecretWith(payload, config, config.ScrubText)
+}
+
+func javaBinaryPayloadContainsSecretWith(payload string, config *RedactionConfig, scrubText func(string) string) bool {
 	if payload == "" || config == nil {
 		return false
 	}
-	if config.ScrubText(payload) != payload {
+	if scrubText(payload) != payload {
 		return true
 	}
 	raw, err := base64.StdEncoding.DecodeString(strings.TrimSpace(payload))
@@ -1123,7 +1238,7 @@ func javaBinaryPayloadContainsSecret(payload string, config *RedactionConfig) bo
 		return false
 	}
 	rawText := string(raw)
-	if config.ScrubText(rawText) != rawText {
+	if scrubText(rawText) != rawText {
 		return true
 	}
 	start := -1
@@ -1137,7 +1252,7 @@ func javaBinaryPayloadContainsSecret(payload string, config *RedactionConfig) bo
 		if start >= 0 {
 			if index-start >= 4 {
 				segment := string(raw[start:index])
-				if config.ScrubText(segment) != segment {
+				if scrubText(segment) != segment {
 					return true
 				}
 			}
@@ -1146,7 +1261,7 @@ func javaBinaryPayloadContainsSecret(payload string, config *RedactionConfig) bo
 	}
 	if start >= 0 && len(raw)-start >= 4 {
 		segment := string(raw[start:])
-		if config.ScrubText(segment) != segment {
+		if scrubText(segment) != segment {
 			return true
 		}
 	}
@@ -1242,7 +1357,7 @@ func scrubSensitiveStructuredResult(result *protocol.Result, config *RedactionCo
 		return
 	}
 	result.Extractions = scrubSensitiveExtractions(result.Extractions, config)
-	result.ProtocolEvidence = scrubSensitiveEvidenceMap(result.ProtocolEvidence, config)
+	result.ProtocolEvidence = scrubSensitiveProtocolEvidence(result.ProtocolEvidence, config)
 }
 
 func scrubSensitiveExtractions(values map[string]string, config *RedactionConfig) map[string]string {
@@ -1278,19 +1393,73 @@ func scrubSensitiveNetworkEntries(entries []protocol.NetworkEntry, config *Redac
 				if body != nil {
 					body.MimeType = scrubSensitiveTextWithConfig(body.MimeType, config)
 				}
-				if body != nil && (body.State == "retained" || body.Text != "") {
-					body.Text = scrubSensitiveBodyTextWithConfig(body.Text, config)
-				}
+			}
+			if body := har.RequestBody; body != nil && (body.State == "retained" || body.Text != "") {
+				body.Text = scrubNetworkEntryRequestBody(entries[i], body.Text, config)
+			}
+			if body := har.ResponseBody; body != nil && (body.State == "retained" || body.Text != "") {
+				body.Text = scrubSensitiveBodyTextWithConfig(body.Text, config)
 			}
 			entries[i].HAR = har
 		}
 		entries[i].Trace = scrubSensitiveNetworkTrace(entries[i].Trace, config)
-		entries[i].URL = scrubSensitiveTextWithConfig(entries[i].URL, config)
-		entries[i].RequestHeaders = scrubSensitiveHeaders(entries[i].RequestHeaders, config)
-		entries[i].RequestBody = scrubSensitiveBodyTextWithConfig(entries[i].RequestBody, config)
+		// The request side of the action's own request (ScriptRequest) follows
+		// config.log.redact_run_evidence. Page, redirect and other observed
+		// traffic, and every response side, keep the full scrubber.
+		if entries[i].ScriptRequest {
+			entries[i].URL = scrubAuthoredTextWithConfig(entries[i].URL, config)
+			entries[i].RequestHeaders = scrubScriptRequestHeaders(entries[i].RequestHeaders, entries[i].RequestCookieNotAuthored, config)
+		} else {
+			entries[i].URL = scrubSensitiveTextWithConfig(entries[i].URL, config)
+			entries[i].RequestHeaders = scrubSensitiveHeaders(entries[i].RequestHeaders, config)
+		}
+		entries[i].RequestBody = scrubNetworkEntryRequestBody(entries[i], entries[i].RequestBody, config)
 		entries[i].ResponseHeaders = scrubSensitiveHeaders(entries[i].ResponseHeaders, config)
+		entries[i].AuthoredRequestRetained = entries[i].ScriptRequest && authoredRequestRetained(config)
 	}
 	return entries
+}
+
+// scrubScriptRequestHeaders scrubs the request headers of a ScriptRequest
+// entry. They follow config.log.redact_run_evidence (scrubAuthoredHeaders),
+// except a Cookie header the cookie jar filled from earlier server responses
+// (cookieNotAuthored), which is server-sourced and keeps the full name mask. An
+// Authorization header built from script-resolved credential halves (URL
+// userinfo, the NTLM/Negotiate pre-challenge Basic) follows the setting like
+// the halves; its platform-derived spellings are in the exact matcher.
+func scrubScriptRequestHeaders(headers map[string]string, cookieNotAuthored bool, config *RedactionConfig) map[string]string {
+	if !cookieNotAuthored || len(headers) == 0 {
+		return scrubAuthoredHeaders(headers, config)
+	}
+	var observed map[string]string
+	for key, value := range headers {
+		name := strings.TrimSpace(key)
+		if strings.EqualFold(name, "Cookie") {
+			if observed == nil {
+				observed = map[string]string{}
+			}
+			observed[key] = value
+			delete(headers, key)
+		}
+	}
+	headers = scrubAuthoredHeaders(headers, config)
+	if len(observed) == 0 {
+		return headers
+	}
+	if headers == nil {
+		headers = make(map[string]string, len(observed))
+	}
+	for key, value := range scrubSensitiveHeaders(observed, config) {
+		headers[key] = value
+	}
+	return headers
+}
+
+func scrubNetworkEntryRequestBody(entry protocol.NetworkEntry, body string, config *RedactionConfig) string {
+	if entry.ScriptRequest {
+		return scrubAuthoredBodyTextWithConfig(body, config)
+	}
+	return scrubSensitiveBodyTextWithConfig(body, config)
 }
 
 func scrubSensitiveNetworkTrace(trace *protocol.HTTPNetworkTrace, config *RedactionConfig) *protocol.HTTPNetworkTrace {
@@ -1516,6 +1685,72 @@ func scrubSensitiveTextWithConfig(value string, config *RedactionConfig) string 
 	return scrub.ValueLabel(redacted, scrub.Policy{})
 }
 
+// scrubAuthoredTextWithConfig scrubs script-authored REQUEST content: request
+// URLs, request headers' values, request bodies, typed form values and action
+// params. When the script turned config.log.redact_run_evidence on (or the
+// config carries no script decision) it is scrubSensitiveTextWithConfig. When the
+// setting is off, the built-in name/shape scrubber is skipped, so a password,
+// client_secret or token the script itself authored stays visible; exact runtime
+// values (platform-managed secrets and runtime-minted tokens) and the project's
+// own redaction rules are still applied.
+func scrubAuthoredTextWithConfig(value string, config *RedactionConfig) string {
+	if config.scrubsAuthoredEvidence() {
+		return scrubSensitiveTextWithConfig(value, config)
+	}
+	if value == "" {
+		return ""
+	}
+	if config.publicationUnavailable() {
+		return "runtime evidence detail unavailable"
+	}
+	if strings.TrimSpace(value) == "" {
+		return value
+	}
+	redacted := scrubRuntimeSecretText(value, config)
+	for _, pattern := range config.compiled {
+		redacted = pattern.re.ReplaceAllString(redacted, pattern.repl)
+	}
+	return scrubRuntimeSecretText(redacted, config)
+}
+
+// scrubAuthoredBodyTextWithConfig is the request-body form of
+// scrubAuthoredTextWithConfig. With the setting off it also withholds a
+// WS-Security PasswordDigest derived from a value the exact matcher withholds
+// (maskPlatformDerivedWSSecurityDigests): the keyed hash cannot be matched by
+// value, and the element-name mask no longer applies to authored bodies.
+func scrubAuthoredBodyTextWithConfig(value string, config *RedactionConfig) string {
+	if config.scrubsAuthoredEvidence() {
+		return scrubSensitiveBodyTextWithConfig(value, config)
+	}
+	if value != "" && !config.publicationUnavailable() {
+		value = maskPlatformDerivedWSSecurityDigests(value, config)
+	}
+	return scrubAuthoredTextWithConfig(value, config)
+}
+
+// scrubAuthoredHeaders scrubs REQUEST headers. With authored scrubbing on it is
+// scrubSensitiveHeaders. With it off a sensitively NAMED header (Authorization,
+// Cookie, X-Api-Key, ...) keeps its authored value, but any exact runtime match
+// in it — a platform-managed secret, its Basic/SASL composite, a runtime-minted
+// token — masks the whole value, so a header carrying a platform secret is still
+// withheld by name.
+func scrubAuthoredHeaders(headers map[string]string, config *RedactionConfig) map[string]string {
+	if config.scrubsAuthoredEvidence() {
+		return scrubSensitiveHeaders(headers, config)
+	}
+	if len(headers) == 0 {
+		return headers
+	}
+	for key, value := range headers {
+		scrubbed := scrubAuthoredTextWithConfig(value, config)
+		if scrubbed != value && isSensitiveHeaderName(key) {
+			scrubbed = redactedPayloadValue
+		}
+		headers[key] = scrubbed
+	}
+	return headers
+}
+
 func scrubSensitiveBodyTextWithConfig(value string, config *RedactionConfig) string {
 	if value == "" {
 		return ""
@@ -1647,6 +1882,42 @@ func scrubRuntimeSecretText(value string, config *RedactionConfig) string {
 	return expandRuntimeSecretMatches(original, matchedOffsets)
 }
 
+// runtimeSecretMatchedRuns returns the maximal spans of value that config's
+// runtime matcher (every layer and the dynamic overlay) matches.
+func runtimeSecretMatchedRuns(value string, config *RedactionConfig) []string {
+	if value == "" || !hasRuntimeSecretReplacers(config) {
+		return nil
+	}
+	matchedOffsets := make([]bool, len(value))
+	matched := false
+	if dyn := config.dynamicOverlay(); dyn != nil && applyRuntimeSecretLayer(value, dyn, matchedOffsets) {
+		matched = true
+	}
+	for layer, depth := config, 0; layer != nil && depth < maxRuntimeSecretRedactionLayers; depth++ {
+		if applyRuntimeSecretLayer(value, layer, matchedOffsets) {
+			matched = true
+		}
+		layer = layer.runtimeParent
+	}
+	if !matched {
+		return nil
+	}
+	var runs []string
+	for offset := 0; offset < len(value); {
+		if !matchedOffsets[offset] {
+			offset++
+			continue
+		}
+		end := offset
+		for end < len(value) && matchedOffsets[end] {
+			end++
+		}
+		runs = append(runs, value[offset:end])
+		offset = end
+	}
+	return runs
+}
+
 func expandRuntimeSecretMatches(value string, matched []bool) string {
 	// Preserve the public [REDACTED] contract for ordinary matches, but cap
 	// growth to one marker beyond the original evidence size. Once that budget
@@ -1708,4 +1979,139 @@ func scrubBrowserDocumentEvidence(evidence *protocol.BrowserDocumentEvidence, co
 		}
 	}
 	return evidence.Clone()
+}
+
+// ProtocolEvidenceAuthoredRequestMarker is the protocol_evidence key the engine
+// sets (to true) when it scrubbed the request-describing entries of the
+// evidence under a script that left config.log.redact_run_evidence off. Those
+// entries (protocolEvidenceAuthoredKeys, and metadata.headers/params/soap) then
+// hold what the script authored with only exact platform-managed values and
+// project rules applied, so the archive sanitizer keeps them as they are.
+const ProtocolEvidenceAuthoredRequestMarker = "authored_request_retained"
+
+// protocolEvidenceAuthoredMetadataKeys are the protocol_evidence.metadata
+// entries that describe the request the action authored (protocol.evidenceMetadata).
+// Every other metadata entry (error, extractions, status, ...) is result or
+// response content and keeps the full scrub.
+var protocolEvidenceAuthoredMetadataKeys = map[string]struct{}{"headers": {}, "params": {}, "soap": {}}
+
+// scrubSensitiveProtocolEvidence scrubs a result's protocol_evidence. With
+// authored scrubbing on (or no script decision) it is scrubSensitiveEvidenceMap.
+// With config.log.redact_run_evidence off the request-describing entries —
+// target, operation, metadata.headers, metadata.params, metadata.soap — follow
+// the authored rule (scrubAuthoredEvidenceValue): a sensitively named value is
+// masked only when the exact runtime matcher or a project rule changes it.
+// Response-derived entries (rows, records, transcript, extractions, error,
+// network_trace, ...) keep the full scrubber.
+func scrubSensitiveProtocolEvidence(input map[string]any, config *RedactionConfig) map[string]any {
+	if len(input) == 0 {
+		return input
+	}
+	if config.scrubsAuthoredEvidence() || config.publicationUnavailable() {
+		if _, marked := input[ProtocolEvidenceAuthoredRequestMarker]; marked {
+			unmarked := make(map[string]any, len(input))
+			for key, value := range input {
+				if key != ProtocolEvidenceAuthoredRequestMarker {
+					unmarked[key] = value
+				}
+			}
+			input = unmarked
+		}
+		return scrubSensitiveEvidenceMap(input, config)
+	}
+	rest := make(map[string]any, len(input))
+	authored := map[string]any{}
+	var metadata map[string]any
+	for key, value := range input {
+		switch key {
+		case ProtocolEvidenceAuthoredRequestMarker:
+		case "target", "operation":
+			authored[key] = value
+		case "metadata":
+			if typed, ok := normalizeEvidenceValue(value).(map[string]any); ok {
+				metadata = typed
+			} else {
+				rest[key] = value
+			}
+		default:
+			rest[key] = value
+		}
+	}
+	out := scrubSensitiveEvidenceMap(rest, config)
+	if out == nil {
+		out = make(map[string]any, len(authored)+2)
+	}
+	for key, value := range authored {
+		out[key], _ = scrubAuthoredEvidenceValue(normalizeEvidenceValue(value), config)
+	}
+	if metadata != nil {
+		metadataRest := make(map[string]any, len(metadata))
+		metadataAuthored := map[string]any{}
+		for key, value := range metadata {
+			if _, ok := protocolEvidenceAuthoredMetadataKeys[key]; ok {
+				metadataAuthored[key] = value
+			} else {
+				metadataRest[key] = value
+			}
+		}
+		scrubbed := scrubSensitiveEvidenceMap(metadataRest, config)
+		if scrubbed == nil {
+			scrubbed = make(map[string]any, len(metadataAuthored))
+		}
+		for key, value := range metadataAuthored {
+			scrubbed[key], _ = scrubAuthoredEvidenceValue(normalizeEvidenceValue(value), config)
+		}
+		out["metadata"] = scrubbed
+	}
+	out[ProtocolEvidenceAuthoredRequestMarker] = true
+	return out
+}
+
+// scrubAuthoredEvidenceValue scrubs authored request evidence (see
+// scrubSensitiveProtocolEvidence). Strings go through scrubAuthoredTextWithConfig.
+// A sensitively named key keeps its authored value unless that scrub changed
+// something inside it, in which case the whole value is withheld, matching
+// scrubAuthoredHeaders. It reports whether anything changed.
+func scrubAuthoredEvidenceValue(value any, config *RedactionConfig) (any, bool) {
+	switch typed := value.(type) {
+	case string:
+		scrubbed := scrubAuthoredTextWithConfig(typed, config)
+		return scrubbed, scrubbed != typed
+	case []any:
+		out := make([]any, len(typed))
+		changed := false
+		for index := range typed {
+			var itemChanged bool
+			out[index], itemChanged = scrubAuthoredEvidenceValue(typed[index], config)
+			changed = changed || itemChanged
+		}
+		return out, changed
+	case map[string]any:
+		out := make(map[string]any, len(typed))
+		changed := false
+		for key, entry := range typed {
+			scrubbed, entryChanged := scrubAuthoredEvidenceValue(normalizeEvidenceValue(entry), config)
+			if entryChanged && (scrub.SensitiveName(key) || isSensitiveHeaderName(key)) {
+				scrubbed = redactedPayloadValue
+			}
+			out[key] = scrubbed
+			changed = changed || entryChanged
+		}
+		return out, changed
+	case map[string]string:
+		out := make(map[string]string, len(typed))
+		changed := false
+		for key, entry := range typed {
+			scrubbed := scrubAuthoredTextWithConfig(entry, config)
+			entryChanged := scrubbed != entry
+			if entryChanged && (scrub.SensitiveName(key) || isSensitiveHeaderName(key)) {
+				scrubbed = redactedPayloadValue
+			}
+			out[key] = scrubbed
+			changed = changed || entryChanged
+		}
+		return out, changed
+	default:
+		return value, false
+	}
 }

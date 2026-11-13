@@ -222,6 +222,7 @@ func New(cfg Config) (*Engine, error) {
 		cfg.RedactionConfig,
 		secretValues,
 		scriptSourcedValues,
+		scriptRedactsRunEvidence(cfg.Script),
 	)
 	runtimeRedaction, scriptSourcedDropped, err := buildRuntimeSecretRedaction(nil, secretValues, scriptSourcedValues)
 	if err != nil {
@@ -230,7 +231,8 @@ func New(cfg Config) (*Engine, error) {
 	if scriptSourcedDropped {
 		warnScriptSourcedRedactionDropped("script", cfg.Script.Name)
 	}
-	redactionConfig := ensureDynamicSecretRegistry(attachRuntimeSecretRedaction(cfg.RedactionConfig, runtimeRedaction))
+	redactionConfig := ensureDynamicSecretRegistry(attachRuntimeSecretRedaction(inboundRuntimeRedactionBase(cfg.RedactionConfig, runtimeRedaction), runtimeRedaction))
+	redactionConfig = withAuthoredEvidenceScrubbing(redactionConfig, scriptRedactsRunEvidence(cfg.Script))
 	runtimeResources, resourceErr := newEngineRuntimeResources([]GroupConfig{{Name: "", Script: cfg.Script, VUsers: cfg.VUsers, RuntimeResourcePeakVUsers: cfg.RuntimeResourcePeakVUsers, RuntimeResourceReservation: cfg.RuntimeResourceReservation}})
 	if resourceErr != nil {
 		return nil, resourceErr

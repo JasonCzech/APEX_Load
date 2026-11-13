@@ -311,6 +311,20 @@ func (s *Server) handleGetRunArchiveLLMLatencyDecomposition(w http.ResponseWrite
 	writeJSON(w, http.StatusOK, decomp)
 }
 
+// llmEvalSampleRequestBody is the exported prompt of an archived LLM request.
+// The engine marks a request body it scrubbed under a script that left
+// config.log.redact_run_evidence off (AuthoredRequestRetained); that body keeps
+// its authored values. Any other body gets the body-shape scrub.
+func llmEvalSampleRequestBody(snapshot *protocol.ErrorSnapshot) string {
+	if snapshot == nil {
+		return ""
+	}
+	if snapshot.AuthoredRequestRetained {
+		return snapshot.RequestBody
+	}
+	return scrub.BodyText(snapshot.RequestBody)
+}
+
 func (s *Server) handleExportRunArchiveLLMSamples(w http.ResponseWriter, r *http.Request) {
 	record, lease, ok := s.requireRunArchive(w, r)
 	if !ok {
@@ -336,7 +350,7 @@ func (s *Server) handleExportRunArchiveLLMSamples(w http.ResponseWriter, r *http
 		}
 		var reqBody, respBody string
 		if tx.Snapshot != nil {
-			reqBody = scrub.BodyText(tx.Snapshot.RequestBody)
+			reqBody = llmEvalSampleRequestBody(tx.Snapshot)
 			respBody = scrub.BodyText(tx.Snapshot.ResponseBody)
 		}
 		samples = append(samples, LLMEvalSampleRecord{
