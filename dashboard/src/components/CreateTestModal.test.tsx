@@ -182,22 +182,25 @@ describe('CreateTestModal', () => {
     })
 
     await clickRuntimeTab('Error Handling')
-    const continueOnErrorCheckbox = Array.from(container.querySelectorAll('input')).find(
-      input => input.getAttribute('type') === 'checkbox' && input.parentElement?.textContent?.includes('Continue on error'),
-    ) as HTMLInputElement | undefined
+    const continueOnErrorSelect = container.querySelector('select[aria-label="Continue on error"]') as HTMLSelectElement | null
     const snapshotOnErrorCheckbox = Array.from(container.querySelectorAll('input')).find(
       input => input.getAttribute('type') === 'checkbox' && input.parentElement?.textContent?.includes('Snapshot on error'),
     ) as HTMLInputElement | undefined
-    expect(continueOnErrorCheckbox).toBeTruthy()
+    expect(continueOnErrorSelect).toBeTruthy()
     expect(snapshotOnErrorCheckbox).toBeTruthy()
-    if (!continueOnErrorCheckbox || !snapshotOnErrorCheckbox) return
+    if (!continueOnErrorSelect || !snapshotOnErrorCheckbox) return
     // Continue-on-error is enabled for every scenario unless it is explicitly
-    // disabled, so the box starts checked; clicking it is the explicit opt-out,
-    // which has to reach the payload as a literal false rather than as silence.
-    expect(continueOnErrorCheckbox.checked).toBe(true)
+    // disabled, so the field starts inheriting "Enabled"; choosing Disabled is
+    // the explicit opt-out, which has to reach the payload as a literal false
+    // rather than as silence.
+    expect(continueOnErrorSelect.value).toBe('')
+    expect(continueOnErrorSelect.selectedOptions[0]?.textContent).toBe('Inherit (Enabled)')
     expect(snapshotOnErrorCheckbox.checked).toBe(false)
     await act(async () => {
-      continueOnErrorCheckbox.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      continueOnErrorSelect.value = 'false'
+      continueOnErrorSelect.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await act(async () => {
       snapshotOnErrorCheckbox.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
@@ -224,6 +227,11 @@ describe('CreateTestModal', () => {
         error_handling: expect.objectContaining({ continue_on_error: false, snapshot_on_error: true }),
       }),
     }))
+    const payload = apiMock.createTest.mock.calls[0][0] as { runtime_settings?: { override_fields?: string[] } }
+    expect(payload.runtime_settings?.override_fields).toEqual(expect.arrayContaining([
+      'error_handling.continue_on_error',
+      'error_handling.snapshot_on_error',
+    ]))
     expect(onCreated).toHaveBeenCalledWith({ id: 'test-1' })
   })
 

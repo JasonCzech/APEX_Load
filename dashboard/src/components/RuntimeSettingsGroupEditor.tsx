@@ -77,8 +77,10 @@ import {
   type RuntimeValueProvenance,
 } from './runtime-settings/canonicalRuntimeTaxonomy'
 import {
+  MaskedTextOverrideInput,
   RuntimeOverrideField,
   RuntimeOverridePanelList,
+  SecretOverrideInput,
   TriStateOverrideSelect,
 } from './runtime-settings/ScenarioOverrideFields'
 import { provenanceLabel } from './runtime-settings/scenarioOverrideValues'
@@ -269,6 +271,33 @@ const PACING_TYPE_PATHS = [
   'pacing.min_interval_ms',
   'pacing.max_interval_ms',
   'pacing.tps',
+] as const
+
+/**
+ * Tri-state override paths whose Go field is a plain bool (not *bool). The
+ * server stores false by dropping the value (omitempty) while override_fields
+ * keeps the path, so a covered path with no value reads back as Disabled.
+ */
+const PLAIN_BOOL_OVERRIDE_PATHS: ReadonlySet<string> = new Set([
+  'error_handling.honor_retry_after',
+  'http.tls.insecure_skip_verify',
+  'pacing.quota.adaptive_aimd',
+])
+
+/**
+ * The leaves that belong to the think time type, which Distribution: Inherit
+ * returns to inherited. The multiplier, limit and ignore leaves apply to every
+ * type and keep their own reset actions; the random distribution is reset only
+ * where the type change forced it (see thinkTimeTypeResetPaths).
+ */
+const THINK_TIME_TYPE_PATHS = [
+  'think_time.type',
+  'think_time.mean_ms',
+  'think_time.std_ms',
+  'think_time.min_ms',
+  'think_time.max_ms',
+  'think_time.min_percent',
+  'think_time.max_percent',
 ] as const
 
 /** The Author section each tab edits, so the canonical rail tracks and opens the right tab. */
@@ -533,14 +562,34 @@ export default function RuntimeSettingsGroupEditor({
   const overridden = (path: string) => isFieldOverridden(overrides[index], path)
   const overrideValue = (path: string) => overrideFieldValue(overrides[index], path)
   const listedPaths = runtimeOverrideFieldPaths(overrides[index])
-  /** This layer's boolean override, or undefined while it inherits. A listed
-   *  path with no value is an explicit empty (false); a v1 section that omits
-   *  the field leaves it to the engine default. */
+  /** This layer's boolean override, or undefined when it sets no value. A
+   *  covered path with no value (a v1 section that omits it, or a listed path
+   *  left empty) on a *bool field is applied as nil, which is the field's
+   *  default, not false: several fields (keep-alive, continue on error...)
+   *  default on. A plain bool field has no nil: the server drops false
+   *  (omitempty), so a covered path with no value is an explicit Disabled. */
   const boolOverride = (path: string): boolean | undefined => {
     if (!overridden(path)) return undefined
     const value = overrideValue(path)
-    if (value === undefined && !listedPaths.includes(path)) return undefined
+    if (value === undefined) return PLAIN_BOOL_OVERRIDE_PATHS.has(path) ? false : undefined
     return Boolean(value)
+  }
+  /** This layer covers `path` (a v1 whole section, or a listed path) without
+   *  setting it: the field takes its default, not the lower layers' value. */
+  const coveredWithoutValue = (path: string): boolean =>
+    overridden(path) && overrideValue(path) === undefined
+  /** What a tri-state's Inherit resolves to: the lower layers, or (when this
+   *  layer covers the field with no value) what the effective section yields. */
+  const triInherited = (paths: string | string[], inheritedValue: boolean, sectionValue: boolean): boolean =>
+    ([] as string[]).concat(paths).some(coveredWithoutValue) ? sectionValue : inheritedValue
+  /** This layer's string override, or undefined while it inherits. A covered
+   *  path with no value (a v1 whole section that omits it, or a listed path or
+   *  section ancestor that leaves it empty) is applied as "", so it reads as an
+   *  explicit clear, as in SoapOverrideTab and coveredWithoutValue. */
+  const stringOverride = (path: string): string | undefined => {
+    if (!overridden(path)) return undefined
+    const value = overrideValue(path)
+    return value === undefined || value === null ? '' : String(value)
   }
   // Paths a tab renders with its own control; the tab's panel list shows the
   // rest of its overridden fields, so every override has a reset action.
@@ -635,6 +684,19 @@ export default function RuntimeSettingsGroupEditor({
         : resetOverrideField(updated, 'think_time.distribution')
     }
     commit(updated)
+  }
+
+  // Distribution: Inherit resets the type leaves. A type change forced the
+  // random distribution when it cleared it (an explicit empty) or paired it with
+  // the exponential type; a distribution the user chose on its own is kept.
+  const thinkTimeTypeResetPaths = (): string[] => {
+    const paths: string[] = [...THINK_TIME_TYPE_PATHS]
+    if (overridden('think_time.distribution')) {
+      const distribution = String(overrideValue('think_time.distribution') ?? '').trim().toLowerCase()
+      const type = canonicalThinkTimeType(String(overrideValue('think_time.type') ?? ''))
+      if (distribution === '' || (distribution === 'exponential' && type === 'exponential')) paths.push('think_time.distribution')
+    }
+    return paths
   }
 
   const patchPacing = (next: Partial<PacingSettings>) => editSection('pacing', next)
@@ -1095,7 +1157,7 @@ export default function RuntimeSettingsGroupEditor({
                     onChange={event => {
                       const type = event.target.value
                       if (!type) {
-                        resetPaths('think_time')
+                        resetPaths(...thinkTimeTypeResetPaths())
                         return
                       }
                       // Exponential think time samples from the exponential distribution.
@@ -1106,7 +1168,7 @@ export default function RuntimeSettingsGroupEditor({
                     {THINK_TIME_TYPE_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
                   </select>
                 </label>
-              ))}
+              ), false, () => resetPaths(...thinkTimeTypeResetPaths()))}
               {field('think_time.distribution', 'Random distribution', (
                 <label>
                   <span>Random distribution</span>
@@ -1206,7 +1268,7 @@ export default function RuntimeSettingsGroupEditor({
                     ))}
                   </select>
                 </label>
-              ))}
+              ), false, () => resetPaths(...PACING_TYPE_PATHS))}
               {pacingType === 'fixed_delay' && field('pacing.delay_ms', 'Pacing delay (seconds)', (
                 <label>
                   <span>Pacing delay (seconds)</span>
@@ -1383,7 +1445,7 @@ export default function RuntimeSettingsGroupEditor({
                     <TriStateOverrideSelect
                       label="Adaptive AIMD throttling"
                       value={boolOverride('pacing.quota.adaptive_aimd')}
-                      inheritedValue={Boolean(inheritedPacingExt.quota?.adaptive_aimd)}
+                      inheritedValue={triInherited('pacing.quota.adaptive_aimd', Boolean(inheritedPacingExt.quota?.adaptive_aimd), Boolean(effectivePacing.quota?.adaptive_aimd))}
                       onChange={next => editSection('pacing', { quota: { adaptive_aimd: next } })}
                     />
                   ))}
@@ -1531,7 +1593,7 @@ export default function RuntimeSettingsGroupEditor({
                   label="Continue on error"
                   value={boolOverride('error_handling.continue_on_error')}
                   // Inside a scenario continue-on-error is on unless a layer disables it.
-                  inheritedValue={explicitInheritedContinueOnError ?? true}
+                  inheritedValue={triInherited('error_handling.continue_on_error', explicitInheritedContinueOnError ?? true, effectiveError.continue_on_error ?? true)}
                   onChange={next => (next === undefined ? resetPaths('error_handling.continue_on_error') : patchErrorHandling({ continue_on_error: next }))}
                 />
               ))}
@@ -1539,7 +1601,7 @@ export default function RuntimeSettingsGroupEditor({
                 <TriStateOverrideSelect
                   label="Fail transaction on error message"
                   value={boolOverride('error_handling.fail_transaction_on_error_message')}
-                  inheritedValue={Boolean(inheritedError.fail_transaction_on_error_message)}
+                  inheritedValue={triInherited('error_handling.fail_transaction_on_error_message', Boolean(inheritedError.fail_transaction_on_error_message), Boolean(effectiveError.fail_transaction_on_error_message))}
                   onChange={next => patchErrorHandling({ fail_transaction_on_error_message: next })}
                 />
               ))}
@@ -1605,7 +1667,7 @@ export default function RuntimeSettingsGroupEditor({
                 <TriStateOverrideSelect
                   label="Honor Retry-After"
                   value={boolOverride('error_handling.honor_retry_after')}
-                  inheritedValue={Boolean(inheritedError.honor_retry_after)}
+                  inheritedValue={triInherited('error_handling.honor_retry_after', Boolean(inheritedError.honor_retry_after), Boolean(effectiveError.honor_retry_after))}
                   onChange={next => patchErrorHandling({ honor_retry_after: next })}
                 />
               ))}
@@ -1760,10 +1822,10 @@ export default function RuntimeSettingsGroupEditor({
               {httpSubTab === 'request_defaults' && (
                 <div className="scenario-browser-grid" aria-label="Trace context overrides">
                   {field('http.traceparent', 'Trace context override', (
-                    <TriStateOverrideSelect label="Trace context override" value={boolOverride('http.traceparent')} inheritedValue={inheritedHttp.traceparent !== false} enabledLabel="Generate / propagate" disabledLabel="Disabled" onChange={next => patchHttp({ traceparent: next })} />
+                    <TriStateOverrideSelect label="Trace context override" value={boolOverride('http.traceparent')} inheritedValue={triInherited('http.traceparent', inheritedHttp.traceparent !== false, effectiveHttp.traceparent !== false)} enabledLabel="Generate / propagate" disabledLabel="Disabled" onChange={next => patchHttp({ traceparent: next })} />
                   ))}
                   {field('http.traceparent_sampled', 'Trace sampling override', (
-                    <TriStateOverrideSelect label="Trace sampling override" value={boolOverride('http.traceparent_sampled')} inheritedValue={inheritedHttp.traceparent_sampled !== false} enabledLabel="Sampled" disabledLabel="Not sampled" onChange={next => patchHttp({ traceparent_sampled: next })} />
+                    <TriStateOverrideSelect label="Trace sampling override" value={boolOverride('http.traceparent_sampled')} inheritedValue={triInherited('http.traceparent_sampled', inheritedHttp.traceparent_sampled !== false, effectiveHttp.traceparent_sampled !== false)} enabledLabel="Sampled" disabledLabel="Not sampled" onChange={next => patchHttp({ traceparent_sampled: next })} />
                   ))}
                 </div>
               )}
@@ -1782,16 +1844,16 @@ export default function RuntimeSettingsGroupEditor({
                 />
                 <div className="scenario-browser-grid" aria-label="Cookie jar and cache overrides">
                   {field('http.cookies_enabled', 'Cookie jar override', (
-                    <TriStateOverrideSelect label="Cookie jar override" value={boolOverride('http.cookies_enabled')} inheritedValue={inheritedHttp.cookies_enabled !== false} onChange={next => patchHttp({ cookies_enabled: next })} />
+                    <TriStateOverrideSelect label="Cookie jar override" value={boolOverride('http.cookies_enabled')} inheritedValue={triInherited('http.cookies_enabled', inheritedHttp.cookies_enabled !== false, effectiveHttp.cookies_enabled !== false)} onChange={next => patchHttp({ cookies_enabled: next })} />
                   ))}
                   {field('http.clear_cookies_per_iteration', 'Clear learned cookies override', (
-                    <TriStateOverrideSelect label="Clear learned cookies override" value={boolOverride('http.clear_cookies_per_iteration')} inheritedValue={Boolean(inheritedHttp.clear_cookies_per_iteration)} disabled={Boolean(effectiveBrowserEmulation.cache?.new_user_each_iteration)} onChange={next => patchHttp({ clear_cookies_per_iteration: next })} />
+                    <TriStateOverrideSelect label="Clear learned cookies override" value={boolOverride('http.clear_cookies_per_iteration')} inheritedValue={triInherited('http.clear_cookies_per_iteration', Boolean(inheritedHttp.clear_cookies_per_iteration), Boolean(effectiveHttp.clear_cookies_per_iteration))} disabled={Boolean(effectiveBrowserEmulation.cache?.new_user_each_iteration)} onChange={next => patchHttp({ clear_cookies_per_iteration: next })} />
                   ))}
                   {field('http.cache_enabled', 'HTTP cache override', (
                     <TriStateOverrideSelect
                       label="HTTP cache override"
                       value={boolOverride('browser_emulation.cache.simulate_cache') ?? boolOverride('http.cache_enabled')}
-                      inheritedValue={Boolean(inheritedBrowserEmulation.cache?.simulate_cache ?? inheritedHttp.cache_enabled)}
+                      inheritedValue={triInherited([...HTTP_CACHE_PATHS], Boolean(inheritedBrowserEmulation.cache?.simulate_cache ?? inheritedHttp.cache_enabled), Boolean(effectiveBrowserEmulation.cache?.simulate_cache ?? effectiveHttp.cache_enabled))}
                       onChange={next => (next === undefined ? resetPaths(...HTTP_CACHE_PATHS) : patchHTTPSettings({ cache_enabled: next }))}
                     />
                   ), false, () => resetPaths(...HTTP_CACHE_PATHS), [HTTP_CACHE_PATHS[1]])}
@@ -1836,7 +1898,7 @@ export default function RuntimeSettingsGroupEditor({
                   {field('http.max_idle_conns', 'Max idle connections', <label><span>Max idle connections</span><input className="settings-input" type="number" min={0} value={draft.http?.max_idle_conns ?? ''} onChange={event => patchHttp({ max_idle_conns: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder={inh(inheritedHttp.max_idle_conns)} /></label>)}
                   {field('http.max_redirects', 'Max redirects', <label><span>Max redirects</span><input className="settings-input" type="number" min={0} value={draft.http?.max_redirects ?? ''} onChange={event => patchHttp({ max_redirects: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder={inh(inheritedHttp.max_redirects)} /></label>)}
                   {field('http.keep_alive', 'Keep-alive', (
-                    <TriStateOverrideSelect label="Keep-alive" value={boolOverride('http.keep_alive')} inheritedValue={inheritedHttp.keep_alive !== false} onChange={next => patchHttp({ keep_alive: next })} />
+                    <TriStateOverrideSelect label="Keep-alive" value={boolOverride('http.keep_alive')} inheritedValue={triInherited('http.keep_alive', inheritedHttp.keep_alive !== false, effectiveHttp.keep_alive !== false)} onChange={next => patchHttp({ keep_alive: next })} />
                   ))}
                   <details className="http-advanced-options">
                     <summary>Advanced connection guidance</summary>
@@ -1875,7 +1937,7 @@ export default function RuntimeSettingsGroupEditor({
                     {field('http.tls.client_key_file', 'Client key file', <label><span>Client key file</span><input className="settings-input" type="text" value={draft.http?.tls?.client_key_file || ''} onChange={event => patchTls({ client_key_file: event.target.value || undefined })} placeholder={inh(inheritedHttp.tls?.client_key_file)} /></label>)}
                     {field('http.tls.ca_cert_file', 'CA cert file', <label><span>CA cert file</span><input className="settings-input" type="text" value={draft.http?.tls?.ca_cert_file || ''} onChange={event => patchTls({ ca_cert_file: event.target.value || undefined })} placeholder={inh(inheritedHttp.tls?.ca_cert_file)} /></label>)}
                     {field('http.tls.insecure_skip_verify', 'Skip TLS verification', (
-                      <TriStateOverrideSelect label="Skip TLS verification" value={boolOverride('http.tls.insecure_skip_verify')} inheritedValue={Boolean(inheritedHttp.tls?.insecure_skip_verify)} onChange={next => patchTls({ insecure_skip_verify: next })} />
+                      <TriStateOverrideSelect label="Skip TLS verification" value={boolOverride('http.tls.insecure_skip_verify')} inheritedValue={triInherited('http.tls.insecure_skip_verify', Boolean(inheritedHttp.tls?.insecure_skip_verify), Boolean(effectiveHttp.tls?.insecure_skip_verify))} onChange={next => patchTls({ insecure_skip_verify: next })} />
                     ))}
                   </div>
                   <p className="form-hint">Skipping TLS verification does not validate the server certificate (test environments only).</p>
@@ -1896,8 +1958,12 @@ export default function RuntimeSettingsGroupEditor({
                   </label>)}
                   {field('http.proxy.pac_url', 'PAC URL', <label><span>PAC URL</span><input className="settings-input" value={draft.http?.proxy?.pac_url || ''} onChange={event => patchProxy({ pac_url: event.target.value || undefined })} placeholder={inh(inheritedHttp.proxy?.pac_url)} /></label>)}
                   {field('http.proxy.url', 'Proxy URL', <label><span>Proxy URL</span><input className="settings-input" type="text" value={draft.http?.proxy?.url || ''} onChange={event => patchProxy({ url: event.target.value || undefined })} placeholder={inh(inheritedHttp.proxy?.url, 'http://proxy:8080')} /></label>)}
-                  {field('http.proxy.username', 'Proxy username', <label><span>Proxy username</span><input className="settings-input" type="text" autoComplete="off" value={draft.http?.proxy?.username || ''} onChange={event => patchProxy({ username: event.target.value || undefined })} placeholder="Inherit" /></label>)}
-                  {field('http.proxy.password', 'Proxy password', <label><span>Proxy password</span><input className="settings-input" type="password" autoComplete="off" value={draft.http?.proxy?.password || ''} onChange={event => patchProxy({ password: event.target.value || undefined })} placeholder="Inherit" /></label>)}
+                  {field('http.proxy.username', 'Proxy username', (
+                    <MaskedTextOverrideInput label="Proxy username" value={stringOverride('http.proxy.username')} inheritPlaceholder={inh(inheritedHttp.proxy?.username)} onChange={next => patchProxy({ username: next })} />
+                  ))}
+                  {field('http.proxy.password', 'Proxy password', (
+                    <SecretOverrideInput label="Proxy password" value={stringOverride('http.proxy.password')} inheritsValue={Boolean(inheritedHttp.proxy?.password)} onChange={next => patchProxy({ password: next })} />
+                  ))}
                   {field('http.proxy.no_proxy', 'No-proxy hosts', <label>
                     <span>No-proxy hosts</span>
                     <input className="settings-input" type="text" value={draft.http?.proxy?.no_proxy?.join(', ') || ''} onChange={event => {
@@ -1922,9 +1988,15 @@ export default function RuntimeSettingsGroupEditor({
                       <option value="digest">Digest</option>
                     </select>
                   </label>)}
-                  {field('http.auth.username', 'Auth username', <label><span>Auth username</span><input className="settings-input" type="text" value={draft.http?.auth?.username || ''} onChange={event => patchAuth({ username: event.target.value || undefined })} placeholder={inh(inheritedHttp.auth?.username)} /></label>)}
-                  {field('http.auth.password', 'Auth password', <label><span>Auth password</span><input className="settings-input" type="password" autoComplete="off" value={draft.http?.auth?.password || ''} onChange={event => patchAuth({ password: event.target.value || undefined })} placeholder="Inherit" /></label>)}
-                  {field('http.auth.token', 'Auth token', <label><span>Auth token</span><input className="settings-input" type="password" autoComplete="off" value={draft.http?.auth?.token || ''} onChange={event => patchAuth({ token: event.target.value || undefined })} placeholder="Inherit" /></label>)}
+                  {field('http.auth.username', 'Auth username', (
+                    <MaskedTextOverrideInput label="Auth username" value={stringOverride('http.auth.username')} inheritPlaceholder={inh(inheritedHttp.auth?.username)} onChange={next => patchAuth({ username: next })} />
+                  ))}
+                  {field('http.auth.password', 'Auth password', (
+                    <SecretOverrideInput label="Auth password" value={stringOverride('http.auth.password')} inheritsValue={Boolean(inheritedHttp.auth?.password)} onChange={next => patchAuth({ password: next })} />
+                  ))}
+                  {field('http.auth.token', 'Auth token', (
+                    <SecretOverrideInput label="Auth token" value={stringOverride('http.auth.token')} inheritsValue={Boolean(inheritedHttp.auth?.token)} onChange={next => patchAuth({ token: next })} />
+                  ))}
                   {field('http.auth.domain', 'Auth domain', <label><span>Auth domain</span><input className="settings-input" type="text" value={String(overrideValue('http.auth.domain') ?? '')} onChange={event => patchAuth({ domain: event.target.value || undefined })} placeholder={inh(inheritedHttp.auth?.domain, 'NTLM / Negotiate domain')} /></label>)}
                   {field('http.auth.hosts', 'Send credentials only to hosts', (
                     <AuthHostsField
@@ -2303,7 +2375,7 @@ export default function RuntimeSettingsGroupEditor({
                   label="Clear cache for a new user"
                   value={boolOverride('browser_emulation.cache.clear_cache_for_new_user')}
                   // Unset clears the cache for a new user (dsl BrowserCacheSimulationConfig).
-                  inheritedValue={inheritedBrowserEmulation.cache?.clear_cache_for_new_user ?? true}
+                  inheritedValue={triInherited('browser_emulation.cache.clear_cache_for_new_user', inheritedBrowserEmulation.cache?.clear_cache_for_new_user ?? true, effectiveBrowserEmulation.cache?.clear_cache_for_new_user ?? true)}
                   onChange={next => patchBrowserEmulation({ cache: { clear_cache_for_new_user: next } })}
                 />
               ))}

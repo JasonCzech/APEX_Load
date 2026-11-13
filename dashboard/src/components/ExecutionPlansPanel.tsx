@@ -59,7 +59,7 @@ import { planEntryRuntimeSecretError } from './executionPlanRuntimeSecrets'
 
 /** Every protocol family with protocol-gated runtime sections: a plan entry's
  *  overrides apply to every group of the scenario it runs. */
-const PLAN_ENTRY_RUNTIME_PROTOCOLS = ['http', 'browser', 'java_vuser', 'websocket']
+const PLAN_ENTRY_RUNTIME_PROTOCOLS = ['http', 'browser', 'java_vuser', 'websocket', 'soap']
 
 /** The paths an entry's stored row overrides, for its badge. */
 function planEntryOverridePaths(overrides?: PartialRuntimeSettingsOverride): string[] {

@@ -118,10 +118,14 @@ export function planEntryTypedCredentialPaths(overrides?: PartialRuntimeSettings
     requireReference('browser_config.http_credentials.password', browser.http_credentials?.password)
     requireReference('browser_config.proxy.password', browser.proxy?.password)
     requireCleanURL('browser_config.proxy.server', browser.proxy?.server)
+    // A Playwright cookies/localStorage snapshot is a session credential.
+    requireReference('browser_config.storage_state', browser.storage_state)
     browser.client_certificates?.forEach((certificate, index) =>
       requireReference(`browser_config.client_certificates.${index}.passphrase`, certificate.passphrase))
-    browser.session?.identities?.forEach((identity, index) =>
-      requireReference(`browser_config.session.identities.${index}.password`, identity.password))
+    browser.session?.identities?.forEach((identity, index) => {
+      requireReference(`browser_config.session.identities.${index}.password`, identity.password)
+      requireReference(`browser_config.session.identities.${index}.storage_state`, identity.storage_state)
+    })
     requireReference('browser_config.session.jwt.private_key', browser.session?.jwt?.private_key)
   }
 

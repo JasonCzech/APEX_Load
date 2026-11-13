@@ -484,6 +484,31 @@ describe('CreateTestGroupsEditor', () => {
       expect(onUpdateGroup).not.toHaveBeenCalled()
     })
 
+    it('keeps the compact iteration showing the row value when Apply changes another field', async () => {
+      mockApi({})
+      const onUpdateGroup = vi.fn()
+      await act(async () => {
+        root.render(
+          <CreateTestGroupsEditor
+            scenarioMode="vuser_driven"
+            groups={[draftGroup({ name: 'Buyers', iterations: 4, iterationPayloadSource: 'runtime', runtimeSettings: { log_level: '', auto_transactions: '', run_logic: { iterations: 4 }, http: { request_timeout_ms: 5000 }, override_fields: ['run_logic.iterations', 'http.request_timeout_ms'] } })]}
+            scripts={scripts}
+            onAddGroup={vi.fn()}
+            onUpdateGroup={onUpdateGroup}
+            onRemoveGroup={vi.fn()}
+          />,
+        )
+      })
+      await click(container, 'Runtime settings for Buyers')
+      await click(dialog()!, 'Clear HTTP transport override')
+      await click(dialog()!, 'Apply to group')
+      const patch = onUpdateGroup.mock.calls[0][1]
+      // The row still runs 4 iterations, so the card shows 4 rather than the script default.
+      expect(patch.iterations).toBe(4)
+      expect(patch.iterationPayloadSource).toBe('runtime')
+      expect(patch.runtimeSettings.override_fields).toEqual(['run_logic.iterations'])
+    })
+
     it('drops a compact iteration shown from the runtime row when the row stops owning it', async () => {
       mockApi({})
       const onUpdateGroup = vi.fn()

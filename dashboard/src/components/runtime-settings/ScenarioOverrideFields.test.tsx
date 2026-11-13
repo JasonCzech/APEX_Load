@@ -10,7 +10,7 @@ import {
   SecretOverrideInput,
   TriStateOverrideSelect,
 } from './ScenarioOverrideFields'
-import { formatOverrideValue, REDACTED_SECRET } from './scenarioOverrideValues'
+import { formatOverrideEntryValue, formatOverrideValue, REDACTED_SECRET } from './scenarioOverrideValues'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -139,6 +139,15 @@ describe('formatOverrideValue', () => {
     expect(formatOverrideValue(false)).toBe('Disabled')
     expect(formatOverrideValue([])).toBe('None')
     expect(formatOverrideValue(['5xx', '429'])).toBe('5xx, 429')
-    expect(formatOverrideValue({ a: 1 })).toBe('{"a":1}')
+    expect(formatOverrideValue({ a: 1 })).toBe('1 field set')
+  })
+
+  it('never echoes a credential in a section object, a secret leaf or a URL', () => {
+    expect(formatOverrideValue({ auth: { password: 'hunter2' }, request_timeout_ms: 5 })).toBe('2 fields set')
+    expect(formatOverrideValue('http://user:pw@proxy.example.com:8080')).toBe('http://***@proxy.example.com:8080')
+    expect(formatOverrideEntryValue('http', { auth: { password: 'hunter2' } })).toBe('Whole section (v1)')
+    expect(formatOverrideEntryValue('soap.ws_security.username_token.password', 'hunter2')).toBe('Set (hidden)')
+    expect(formatOverrideEntryValue('http.auth.token', REDACTED_SECRET)).toBe('Stored secret')
+    expect(formatOverrideEntryValue('http.page_timeout_ms', 30000)).toBe('30000')
   })
 })

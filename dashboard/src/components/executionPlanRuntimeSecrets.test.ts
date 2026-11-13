@@ -72,6 +72,19 @@ describe('planEntryTypedCredentialPaths', () => {
     expect(planEntryTypedCredentialPaths(row)).toEqual([])
   })
 
+  it('flags a typed browser storage state at the section level and per identity', () => {
+    const state = '{"cookies":[{"name":"sid","value":"abc"}]}'
+    expect(planEntryTypedCredentialPaths({
+      browser_config: { storage_state: state, session: { strategy: 'storage_state_pool', identities: [{ username: 'u', storage_state: state }] } },
+    } as PartialRuntimeSettingsOverride)).toEqual([
+      'browser_config.storage_state',
+      'browser_config.session.identities.0.storage_state',
+    ])
+    expect(planEntryTypedCredentialPaths({
+      browser_config: { storage_state: ref, session: { identities: [{ username: 'u', storage_state: ref }] } },
+    } as PartialRuntimeSettingsOverride)).toEqual([])
+  })
+
   it('refuses controller-reserved APEX_RUNTIME_OVERRIDE_ references and embedded references', () => {
     expect(planEntryTypedCredentialPaths({ http: { auth: { password: '{{secret.APEX_RUNTIME_OVERRIDE_HTTP_AUTH}}' } } })).toEqual(['http.auth.password'])
     expect(planEntryTypedCredentialPaths({ http: { proxy: { password: `x${ref}` } } })).toEqual(['http.proxy.password'])

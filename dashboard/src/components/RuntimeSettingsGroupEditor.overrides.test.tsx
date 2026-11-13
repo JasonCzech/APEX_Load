@@ -743,3 +743,259 @@ describe('RuntimeSettingsGroupEditor review fixes', () => {
     expect(container.querySelector('[data-testid="pacing-quota-editor"]')).toBeNull()
   })
 })
+
+describe('RuntimeSettingsGroupEditor HTTP credential lifecycle', () => {
+  const storedAuth = () => runtimeDraftFromOverride({
+    http: {
+      auth: { type: 'basic', username: '[REDACTED]', password: '[REDACTED]', token: '[REDACTED]' },
+      proxy: { username: '[REDACTED]', password: '[REDACTED]' },
+    } as RuntimeSettingsOverride['http'],
+    override_fields: ['http.auth.type', 'http.auth.username', 'http.auth.password', 'http.auth.token', 'http.proxy.username', 'http.proxy.password'],
+  })
+
+  it('shows masked HTTP credentials as placeholders and replaces them with only the typed text', () => {
+    mount({ group: HTTP_GROUP, initial: storedAuth() })
+    clickTab('HTTP Transport')
+    clickTab('Authentication')
+    const password = control<HTMLInputElement>('Auth password', 'input')
+    expect(password.type).toBe('password')
+    expect(password.value).toBe('')
+    expect(password.placeholder).toBe('Stored secret (unchanged)')
+    const username = control<HTMLInputElement>('Auth username', 'input')
+    expect(username.value).toBe('')
+    expect(username.placeholder).toBe('Stored value (unchanged)')
+
+    setInput(control<HTMLInputElement>('Auth password', 'input'), 'new')
+    setInput(control<HTMLInputElement>('Auth token', 'input'), 'tok')
+    setInput(control<HTMLInputElement>('Auth username', 'input'), 'alice')
+    expect(payload()?.http?.auth).toEqual({ type: 'basic', username: 'alice', password: 'new', token: 'tok' })
+
+    clickTab('Proxy')
+    setInput(control<HTMLInputElement>('Proxy password', 'input'), 'pp')
+    expect(payload()?.http?.proxy).toEqual({ username: '[REDACTED]', password: 'pp' })
+  })
+
+  it('restores the mask when typed text over a stored HTTP credential is erased', () => {
+    mount({ group: HTTP_GROUP, initial: storedAuth() })
+    clickTab('HTTP Transport')
+    clickTab('Authentication')
+    for (const label of ['Auth password', 'Auth token', 'Auth username']) {
+      setInput(control<HTMLInputElement>(label, 'input'), 'x')
+      setInput(control<HTMLInputElement>(label, 'input'), '')
+    }
+    clickTab('Proxy')
+    for (const label of ['Proxy password', 'Proxy username']) {
+      setInput(control<HTMLInputElement>(label, 'input'), 'x')
+      setInput(control<HTMLInputElement>(label, 'input'), '')
+    }
+    expect(payload()).toEqual(buildRuntimeSettingsPayload(storedAuth()!))
+  })
+
+  it('Clear stored secret sends an explicit empty HTTP credential', () => {
+    mount({ group: HTTP_GROUP, initial: storedAuth() })
+    clickTab('HTTP Transport')
+    clickTab('Authentication')
+    const clear = fieldFor('http.auth.password').querySelector('.runtime-override-secret-clear') as HTMLButtonElement
+    click(clear)
+    expect(payload()?.http?.auth?.password).toBe('')
+    expect(payload()?.override_fields).toContain('http.auth.password')
+    clickTab('Proxy')
+    click(fieldFor('http.proxy.password').querySelector('.runtime-override-secret-clear') as HTMLButtonElement)
+    expect(payload()?.http?.proxy?.password).toBe('')
+    expect(payload()?.override_fields).toContain('http.proxy.password')
+  })
+})
+
+describe('RuntimeSettingsGroupEditor think time Inherit', () => {
+  it('Distribution Inherit resets only the type leaves and keeps the multiplier override', () => {
+    mount({
+      group: HTTP_GROUP,
+      initial: runtimeDraftFromOverride({
+        think_time: { type: 'fixed', mean_ms: 1000, multiplier: 2 } as RuntimeSettingsOverride['think_time'],
+        override_fields: ['think_time.type', 'think_time.mean_ms', 'think_time.multiplier'],
+      }),
+    })
+    clickTab('Think Time')
+    setSelect(control<HTMLSelectElement>('Distribution', 'select'), '')
+    expect(payload()).toEqual({ think_time: { multiplier: 2 }, override_fields: ['think_time.multiplier'] })
+  })
+
+  it('Distribution Inherit keeps a random distribution the user chose and the field reset matches', () => {
+    mount({
+      group: HTTP_GROUP,
+      initial: runtimeDraftFromOverride({
+        think_time: { type: 'uniform', min_ms: 1, max_ms: 5, distribution: 'uniform', limit_ms: 5000 } as RuntimeSettingsOverride['think_time'],
+        override_fields: ['think_time.type', 'think_time.min_ms', 'think_time.max_ms', 'think_time.distribution', 'think_time.limit_ms'],
+      }),
+    })
+    clickTab('Think Time')
+    click(resetButton('think_time.type')!)
+    expect(payload()).toEqual({
+      think_time: { distribution: 'uniform', limit_ms: 5000 },
+      override_fields: ['think_time.distribution', 'think_time.limit_ms'],
+    })
+  })
+
+  it('Distribution Inherit drops the distribution the exponential type forced', () => {
+    mount({ group: HTTP_GROUP })
+    clickTab('Think Time')
+    setSelect(control<HTMLSelectElement>('Distribution', 'select'), 'exponential')
+    setSelect(control<HTMLSelectElement>('Distribution', 'select'), '')
+    expect(latest).toBeUndefined()
+  })
+})
+
+describe('RuntimeSettingsGroupEditor v1 whole-section rows', () => {
+  it('shows the engine default as Inherit for a tri-state a v1 http section omits', () => {
+    mount({
+      group: { ...HTTP_GROUP, scriptConfig: { base_url: '', http: { keep_alive: false, cookies_enabled: false } } },
+      initial: runtimeDraftFromOverride({ http: { request_timeout_ms: 5000 } as RuntimeSettingsOverride['http'] }),
+    })
+    clickTab('HTTP Transport')
+    clickTab('Connection')
+    const keepAlive = control<HTMLSelectElement>('Keep-alive', 'select')
+    expect(keepAlive.value).toBe('')
+    // The v1 section replaces the script's http, so the engine default (enabled) runs.
+    expect(keepAlive.options[0].textContent).toBe('Inherit (Enabled)')
+    clickTab('Session & Cache')
+    expect(control<HTMLSelectElement>('Cookie jar override', 'select').options[0].textContent).toBe('Inherit (Enabled)')
+  })
+
+  it('keeps keep-alive inherited and enabled after a leaf reset splits a v1 http section', () => {
+    mount({
+      group: { ...HTTP_GROUP, scriptConfig: { base_url: '', http: { keep_alive: false, cookies_enabled: false } } },
+      initial: runtimeDraftFromOverride({ http: { request_timeout_ms: 5000, max_redirects: 3 } as RuntimeSettingsOverride['http'] }),
+    })
+    clickTab('HTTP Transport')
+    clickTab('Connection')
+    click(resetButton('http.max_redirects')!)
+    // The split lists keep_alive with no value; Go applies nil, which keeps it on.
+    const keepAlive = control<HTMLSelectElement>('Keep-alive', 'select')
+    expect(keepAlive.value).toBe('')
+    expect(keepAlive.options[0].textContent).toBe('Inherit (Enabled)')
+    clickTab('Session & Cache')
+    const cookies = control<HTMLSelectElement>('Cookie jar override', 'select')
+    expect(cookies.value).toBe('')
+    expect(cookies.options[0].textContent).toBe('Inherit (Enabled)')
+  })
+
+  it('keeps continue on error inherited and enabled after a leaf reset splits a v1 error_handling section', () => {
+    mount({
+      group: HTTP_GROUP,
+      initial: runtimeDraftFromOverride({ error_handling: { max_retries: 2, retry_delay_ms: 100 } as RuntimeSettingsOverride['error_handling'] }),
+    })
+    clickTab('Error Handling')
+    click(resetButton('error_handling.max_retries')!)
+    const select = control<HTMLSelectElement>('Continue on error', 'select')
+    expect(select.value).toBe('')
+    expect(select.options[0].textContent).toBe('Inherit (Enabled)')
+    // A plain bool listed with no value applies as false: an explicit Disabled.
+    expect(control<HTMLSelectElement>('Honor Retry-After', 'select').value).toBe('false')
+  })
+})
+
+describe('RuntimeSettingsGroupEditor plain-bool reload', () => {
+  it('reads a saved Disabled plain-bool override back as Disabled, not Inherit', () => {
+    // The server drops false (omitempty) and keeps the path in override_fields.
+    mount({
+      group: {
+        ...HTTP_GROUP,
+        scriptConfig: { base_url: '', error_handling: { honor_retry_after: true }, http: { tls: { insecure_skip_verify: true } } },
+      },
+      initial: runtimeDraftFromOverride({ override_fields: ['error_handling.honor_retry_after', 'http.tls.insecure_skip_verify'] }),
+    })
+    clickTab('Error Handling')
+    expect(control<HTMLSelectElement>('Honor Retry-After', 'select').value).toBe('false')
+    expect(badgeText('error_handling.honor_retry_after')).toBe('Group override')
+    // Inherit is a real change back to the script's Enabled.
+    setSelect(control<HTMLSelectElement>('Honor Retry-After', 'select'), '')
+    expect(payload()?.override_fields).toEqual(['http.tls.insecure_skip_verify'])
+    clickTab('HTTP Transport')
+    clickTab('TLS / SSL')
+    expect(control<HTMLSelectElement>('Skip TLS verification', 'select').value).toBe('false')
+  })
+
+  it('keeps a listed *bool path with no value as Inherit', () => {
+    mount({
+      group: { ...HTTP_GROUP, scriptConfig: { base_url: '', http: { keep_alive: false } } },
+      initial: runtimeDraftFromOverride({ override_fields: ['http.keep_alive'] }),
+    })
+    clickTab('HTTP Transport')
+    clickTab('Connection')
+    expect(control<HTMLSelectElement>('Keep-alive', 'select').value).toBe('')
+  })
+})
+
+describe('RuntimeSettingsGroupEditor v1 section credentials', () => {
+  // The backend applies a v1 section, or a listed section ancestor, whole: a
+  // credential it omits is cleared for the run, not inherited.
+  const scriptWithCredentials: RuntimeEditorGroup = {
+    ...HTTP_GROUP,
+    scriptConfig: {
+      base_url: '',
+      http: {
+        auth: { type: 'basic', username: 'script-user', password: '{{secret.SCRIPT_PASS}}', token: '{{secret.SCRIPT_TOKEN}}' },
+        proxy: { url: 'http://proxy.test:8080', username: 'proxy-user', password: '{{secret.PROXY_PASS}}' },
+      },
+    } as ScriptConfig,
+  }
+  const expectCleared = () => {
+    clickTab('HTTP Transport')
+    clickTab('Authentication')
+    for (const label of ['Auth password', 'Auth token', 'Auth username']) {
+      expect(control<HTMLInputElement>(label, 'input').placeholder).toBe('Cleared')
+    }
+    expect(Array.from(container.querySelectorAll('button')).some(b => (b.textContent || '').trim() === 'Override with no value')).toBe(false)
+  }
+
+  it('reads credentials a v1 http row omits as Cleared, not inherited', () => {
+    mount({ group: scriptWithCredentials, initial: runtimeDraftFromOverride({ http: { request_timeout_ms: 5000 } as RuntimeSettingsOverride['http'] }) })
+    expectCleared()
+    clickTab('Proxy')
+    for (const label of ['Proxy password', 'Proxy username']) {
+      expect(control<HTMLInputElement>(label, 'input').placeholder).toBe('Cleared')
+    }
+  })
+
+  it('reads credentials a listed section ancestor omits as Cleared', () => {
+    mount({
+      group: scriptWithCredentials,
+      initial: runtimeDraftFromOverride({ http: { auth: { type: 'basic' } } as RuntimeSettingsOverride['http'], override_fields: ['http.auth'] }),
+    })
+    expectCleared()
+  })
+
+  it('does not echo a password typed into a v1 http row in the panel list', () => {
+    mount({ group: HTTP_GROUP, initial: runtimeDraftFromOverride({ http: { request_timeout_ms: 5000 } as RuntimeSettingsOverride['http'] }) })
+    clickTab('HTTP Transport')
+    clickTab('Authentication')
+    setInput(control<HTMLInputElement>('Auth password', 'input'), 'hunter2secret')
+    clickTab('Proxy')
+    setInput(control<HTMLInputElement>('Proxy password', 'input'), 'proxysecret')
+    expect(payload()?.http?.auth?.password).toBe('hunter2secret')
+    for (const sub of ['Request Defaults', 'Authentication', 'Proxy', 'Connection', 'Timeouts']) {
+      clickTab(sub)
+      const text = container.textContent || ''
+      expect(text).not.toContain('hunter2secret')
+      expect(text).not.toContain('proxysecret')
+    }
+    clickTab('Request Defaults')
+    const entry = container.querySelector('[data-testid="runtime-override-panel-list"] li[data-override-path="http"]')
+    expect(entry?.querySelector('.runtime-override-panel-value')?.textContent).toBe('Whole section (v1)')
+  })
+})
+
+describe('RuntimeSettingsGroupEditor pacing field reset', () => {
+  it('the Pacing badge reset removes the delay, interval and TPS leaves like Inherit', () => {
+    mount({
+      group: { ...HTTP_GROUP, scriptConfig: { base_url: '', pacing: { type: 'random_delay', min_delay_ms: 100, max_delay_ms: 200 } } as ScriptConfig },
+      initial: runtimeDraftFromOverride({
+        pacing: { type: 'random_delay', min_delay_ms: 1000, max_delay_ms: 3000, arrival_process: 'poisson' } as RuntimeSettingsOverride['pacing'],
+        override_fields: ['pacing.type', 'pacing.min_delay_ms', 'pacing.max_delay_ms', 'pacing.arrival_process'],
+      }),
+    })
+    clickTab('Iteration Pacing')
+    click(resetButton('pacing.type')!)
+    expect(payload()).toEqual({ pacing: { arrival_process: 'poisson' }, override_fields: ['pacing.arrival_process'] })
+  })
+})

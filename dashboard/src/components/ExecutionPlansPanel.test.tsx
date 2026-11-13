@@ -1156,6 +1156,25 @@ describe('ExecutionPlansPanel', () => {
       expect(saved.entries[1].runtime_overrides).toEqual({ soap: { ws_security: { username_token: { username: 'svc', password: 'hunter2' } } }, pacing: { type: 'fixed_delay', delay_ms: 5 } })
     })
 
+    it('shows the SOAP tab so a typed SOAP password can be replaced with a reference', async () => {
+      await openEditor([
+        { order: 0, scenario_id: 's1', enabled: true, runtime_overrides: { soap: { ws_security: { username_token: { username: 'svc', password: 'hunter2' } } } } },
+      ])
+      const dialog = await openEntryRuntime(1)
+      const soapTab = Array.from(dialog.querySelectorAll<HTMLButtonElement>('[role="tab"]')).find(candidate => (candidate.textContent || '').trim() === 'SOAP')
+      expect(soapTab).toBeDefined()
+      await act(async () => soapTab!.click())
+      await flush()
+      const password = Array.from(dialog.querySelectorAll('label')).find(candidate => candidate.querySelector('span')?.textContent === 'WS-Security password')?.querySelector('input') ?? null
+      expect(password).not.toBeNull()
+      await act(async () => setValue(password, '{{secret.SOAP_PASSWORD}}'))
+      await clickIn(dialog, 'Apply to entry')
+      expect(document.querySelector('[data-testid="plan-entry-runtime-dialog"]')).toBeNull()
+      const saved = await savePlan()
+      expect(JSON.stringify(saved)).not.toContain('hunter2')
+      expect(saved.entries[0].runtime_overrides?.soap?.ws_security?.username_token).toEqual({ username: 'svc', password: '{{secret.SOAP_PASSWORD}}' })
+    })
+
     async function openHttpSubTab(dialog: HTMLElement, label: string) {
       for (const tabLabel of ['HTTP Transport', label]) {
         const tab = Array.from(dialog.querySelectorAll<HTMLButtonElement>('[role="tab"]')).find(candidate => (candidate.textContent || '').trim() === tabLabel)

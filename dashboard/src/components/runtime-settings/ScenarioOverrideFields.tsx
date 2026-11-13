@@ -1,7 +1,8 @@
-import { useRef, type ReactNode } from 'react'
+import type { ReactNode } from 'react'
 import './ScenarioOverrideFields.css'
 import { RUNTIME_VALUE_PROVENANCE_LABELS, type RuntimeValueProvenance } from './canonicalRuntimeTaxonomy'
-import { formatOverrideValue, parseTriStateSelectValue, REDACTED_SECRET, triStateSelectValue } from './scenarioOverrideValues'
+import { formatOverrideEntryValue, parseTriStateSelectValue, REDACTED_SECRET, triStateSelectValue } from './scenarioOverrideValues'
+import { useValueBeforeTyping } from './useValueBeforeTyping'
 
 // Field-level building blocks for the scenario and group override editor: a
 // provenance badge and "Reset to inherited" action per field, a three-state
@@ -98,25 +99,6 @@ export function TriStateOverrideSelect({
   )
 }
 
-/**
- * Typing over a stored secret (REDACTED_SECRET) or a cleared value and then
- * erasing the text returns the field to what it held before the typing began,
- * so the server keeps the stored secret; a field that inherited goes back to
- * inheriting. Returns the value to emit for the input's new text.
- */
-export function useValueBeforeTyping(value: string | undefined): (next: string) => string | undefined {
-  const typedRef = useRef<string | undefined>(undefined)
-  const beforeRef = useRef<string | undefined>(value)
-  return (next: string) => {
-    // A value this field did not type (first keystroke, or a draft swapped in
-    // from outside) is the new "before": only a mask or a clear is restorable.
-    const typedHere = typedRef.current !== undefined && value === typedRef.current
-    if (!typedHere) beforeRef.current = value === REDACTED_SECRET || value === '' ? value : undefined
-    typedRef.current = next === '' ? undefined : next
-    return next === '' ? beforeRef.current : next
-  }
-}
-
 export interface SecretOverrideInputProps {
   label: string
   ariaLabel?: string
@@ -168,6 +150,40 @@ export function SecretOverrideInput({ label, ariaLabel, value, inheritsValue, on
   )
 }
 
+export interface MaskedTextOverrideInputProps {
+  label: string
+  /** This layer's value: undefined inherits, REDACTED_SECRET is a stored masked value, "" is an explicit clear. */
+  value: string | undefined
+  /** Placeholder while the field inherits. */
+  inheritPlaceholder?: string
+  /** undefined returns to inherited, REDACTED_SECRET keeps the stored value. */
+  onChange: (next: string | undefined) => void
+}
+
+/**
+ * A visible text field (a username) the server may return masked. A masked
+ * stored value shows as a placeholder and is sent back as the mask until the
+ * user types a replacement; erasing typed text restores the mask.
+ */
+export function MaskedTextOverrideInput({ label, value, inheritPlaceholder, onChange }: MaskedTextOverrideInputProps) {
+  const stored = value === REDACTED_SECRET
+  const emitFor = useValueBeforeTyping(value)
+  return (
+    <label>
+      <span>{label}</span>
+      <input
+        className="settings-input"
+        type="text"
+        autoComplete="off"
+        aria-label={label}
+        value={stored ? '' : value ?? ''}
+        placeholder={stored ? 'Stored value (unchanged)' : value === '' ? 'Cleared' : inheritPlaceholder}
+        onChange={event => onChange(emitFor(event.target.value))}
+      />
+    </label>
+  )
+}
+
 export interface RuntimeOverridePanelListProps {
   entries: ReadonlyArray<{ path: string; value: unknown }>
   provenance: RuntimeValueProvenance
@@ -185,7 +201,7 @@ export function RuntimeOverridePanelList({ entries, provenance, badgeLabel, onRe
         {entries.map(entry => (
           <li key={entry.path} data-override-path={entry.path}>
             <code>{entry.path}</code>
-            <span className="runtime-override-panel-value">{formatOverrideValue(entry.value)}</span>
+            <span className="runtime-override-panel-value">{formatOverrideEntryValue(entry.path, entry.value)}</span>
             <RuntimeFieldProvenanceBadge provenance={provenance} label={badgeLabel} />
             <ResetToInheritedButton fieldLabel={entry.path} onReset={() => onReset(entry.path)} />
           </li>

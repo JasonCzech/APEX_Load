@@ -181,6 +181,12 @@ func (tr *TestRunner) buildExecutionPlanRunView(run *storage.ExecutionPlanRun, s
 	var started, ended *time.Time
 	for _, entry := range run.Entries {
 		entryView := ExecutionPlanRunEntryView{ExecutionPlanRunEntry: entry}
+		// A run snapshot of a legacy plan row can hold a typed credential;
+		// every run view the API returns masks it, while the stored snapshot
+		// keeps it for resume.
+		if masked, changed := maskExecutionPlanRuntimeOverridesRow(entry.RuntimeOverrides); changed {
+			entryView.RuntimeOverrides = masked
+		}
 		if entry.Stopped {
 			stopped = true
 		}

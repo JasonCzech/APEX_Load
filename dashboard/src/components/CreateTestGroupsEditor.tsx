@@ -13,6 +13,7 @@ import {
   isFieldOverridden,
   isPartialRuntimeDraft,
   isRuntimeDraftEmpty,
+  overrideFieldValue,
   runtimeDraftOwnsIterations,
   runtimeOverrideRowFromDraft,
   setOverrideField,
@@ -61,7 +62,7 @@ function sameStageTargets(left?: LoadStageDraft[], right?: LoadStageDraft[]): bo
 /**
  * The group patch a runtime editor change makes. A runtime iteration override and the compact
  * Iterations field are alternate representations of one setting, so when the edited row owns the
- * iteration the compact field is cleared; a partial row that lists run_logic without its
+ * iteration the compact field shows the row's value (and is not sent on its own); a partial row that lists run_logic without its
  * iteration first adopts the compact value, so the row does not silently drop it.
  */
 function groupRuntimePatch(group: ScenarioDraftGroup, next: ScenarioRuntimeSettingsDraft | undefined): Partial<ScenarioDraftGroup> {
@@ -70,8 +71,8 @@ function groupRuntimePatch(group: ScenarioDraftGroup, next: ScenarioRuntimeSetti
     && runtimeSettings.run_logic !== undefined && !isFieldOverridden(runtimeSettings, 'run_logic.iterations')) {
     runtimeSettings = setOverrideField(runtimeSettings, 'run_logic.iterations', group.iterations)
   }
-  if (runtimeDraftOwnsIterations(runtimeSettings)) {
-    return { runtimeSettings, iterations: undefined, iterationPayloadSource: 'runtime' }
+  if (runtimeSettings && runtimeDraftOwnsIterations(runtimeSettings)) {
+    return { runtimeSettings, iterations: rowIterations(runtimeSettings), iterationPayloadSource: 'runtime' }
   }
   // The row no longer carries the iteration: a compact value displayed from it goes too, so a
   // reset to inherited is not re-pinned as a top-level iteration.
@@ -79,6 +80,14 @@ function groupRuntimePatch(group: ScenarioDraftGroup, next: ScenarioRuntimeSetti
     return { runtimeSettings, iterations: undefined, iterationPayloadSource: undefined }
   }
   return { runtimeSettings }
+}
+
+/** The iteration count a row that owns the iteration runs (undefined: the engine default). */
+function rowIterations(runtimeSettings: ScenarioRuntimeSettingsDraft): number | undefined {
+  const value = isPartialRuntimeDraft(runtimeSettings)
+    ? overrideFieldValue(runtimeSettings, 'run_logic.iterations')
+    : runtimeSettings.run_logic !== undefined ? runtimeSettings.run_logic.iterations : runtimeSettings.iterations
+  return typeof value === 'number' ? value : undefined
 }
 
 /** A stored script carries its config only when the library returned the full definition. */
