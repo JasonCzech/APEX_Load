@@ -182,9 +182,17 @@ func TestPhaseLatencyThresholdAlertsAndSustainedStop(t *testing.T) {
 		_, _, stopped := runner.shouldStopForSustainedPhaseLatency(test, live, thresholds)
 		return stopped
 	}
-	if stop(phaseLive(800, true)) || stop(phaseLive(800, true)) {
-		t.Fatal("stopped before 3 consecutive breaches")
+	// Each call advances the breach streak, so the samples are fed one at a
+	// time rather than as a repeated (and therefore suspicious) expression.
+	breachTwice := func(when string) {
+		t.Helper()
+		for sample := 1; sample <= 2; sample++ {
+			if stop(phaseLive(800, true)) {
+				t.Fatalf("stopped at breach %d of 3 %s", sample, when)
+			}
+		}
 	}
+	breachTwice("before the reset")
 	// Unknown data (an older generator joined) is no data: it never counts
 	// as a breach and starts the streak over.
 	if stop(phaseLive(0, false)) {
@@ -193,9 +201,7 @@ func TestPhaseLatencyThresholdAlertsAndSustainedStop(t *testing.T) {
 	if test.phaseLatencyBreachConsecutive["phase_connect_p95_ms"] != 0 {
 		t.Fatalf("unknown data kept the streak %v", test.phaseLatencyBreachConsecutive)
 	}
-	if stop(phaseLive(800, true)) || stop(phaseLive(800, true)) {
-		t.Fatal("stopped before 3 consecutive breaches after the reset")
-	}
+	breachTwice("after the reset")
 	rule, value, stopped := runner.shouldStopForSustainedPhaseLatency(test, phaseLive(800, true), thresholds)
 	if !stopped || rule.Phase != "connect" || value != 800 {
 		t.Fatalf("third consecutive breach: stopped=%v rule=%+v value=%v", stopped, rule, value)
