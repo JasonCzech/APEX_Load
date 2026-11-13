@@ -479,7 +479,7 @@ func (m *ScriptDebugManager) StartChecked(scriptID string, script *dsl.Script, r
 			RunID:           session.RunID,
 			ContinueOnError: &continueOnError,
 			DebugController: scriptDebugController{manager: m, session: session},
-			UnredactedDebug: false,
+			UnredactedDebug: true,
 			// Native captures are retired; debug HAR exports use retained observations.
 			DiscardHAR: retireReplayHARArtifacts,
 			OnProgress: func(event engine.ReplayProgressEvent) {

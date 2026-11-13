@@ -52,11 +52,58 @@ type Database struct {
 	readOnly                 bool
 	rollbackOnTeardown       bool
 	unredactedDebugSnapshots bool
-	redactionMu              sync.RWMutex
-	redactor                 protocol.TextRedactor
+	// retainAuthoredEvidence is the inverse of the script's config.log.redact_run_evidence
+	// (protocol.RedactsAuthoredEvidence). Off, the authored SQL, request
+	// headers, params and request body keep their values minus exact
+	// platform-managed ones. Query RESULT cells are server content and keep the
+	// column-name masking either way.
+	retainAuthoredEvidence bool
+	redactionMu            sync.RWMutex
+	redactor               protocol.TextRedactor
+	authoredRedactor       protocol.TextRedactor
 }
 
-var _ protocol.RuntimeTextRedactorSetter = (*Database)(nil)
+var (
+	_ protocol.RuntimeTextRedactorSetter         = (*Database)(nil)
+	_ protocol.RuntimeAuthoredTextRedactorSetter = (*Database)(nil)
+)
+
+func (d *Database) SetRuntimeAuthoredTextRedactor(redactor protocol.TextRedactor) {
+	d.redactionMu.Lock()
+	d.authoredRedactor = redactor
+	d.redactionMu.Unlock()
+}
+
+// redactAuthoredText scrubs script-authored REQUEST content: redactText with
+// config.log.redact_run_evidence on; otherwise only the engine's exact runtime
+// matcher and project rules.
+func (d *Database) redactAuthoredText(value string) string {
+	if !d.retainAuthoredEvidence {
+		return d.redactText(value)
+	}
+	if value == "" {
+		return ""
+	}
+	d.redactionMu.RLock()
+	redactor := d.authoredRedactor
+	d.redactionMu.RUnlock()
+	if redactor != nil {
+		return redactor(value)
+	}
+	return value
+}
+
+// redactAuthoredNamedValue masks an authored value under a sensitive NAME: always
+// with the setting on, otherwise only when it carries an exact platform value.
+func (d *Database) redactAuthoredNamedValue(value string) string {
+	if !d.retainAuthoredEvidence {
+		return scrub.Redacted
+	}
+	if scrubbed := d.redactAuthoredText(value); scrubbed != value {
+		return scrub.Redacted
+	}
+	return value
+}
 
 func (d *Database) SetRuntimeTextRedactor(redactor protocol.TextRedactor) {
 	d.redactionMu.Lock()
@@ -75,14 +122,11 @@ func (d *Database) redactText(value string) string {
 	if value == "" {
 		return ""
 	}
+	// The configured DSN is not masked here by value: its credential parts reach
+	// the engine runtime redactor as platform-managed values when the DSN is
+	// secret-backed, and as script-sourced values only when the script sets
+	// config.log.redact_run_evidence to true.
 	out := value
-	if d.dsn != "" && d.dsn != ":memory:" && !strings.HasPrefix(strings.ToLower(d.dsn), "file::memory:") {
-		sanitizedDSN := scrub.Value(d.dsn, scrub.Policy{})
-		if sanitizedDSN == d.dsn {
-			sanitizedDSN = "[REDACTED]"
-		}
-		out = strings.ReplaceAll(out, d.dsn, sanitizedDSN)
-	}
 	if redactor := d.currentRedactor(); redactor != nil {
 		out = redactor(out)
 	}
@@ -102,6 +146,7 @@ func (d *Database) Name() string { return "database" }
 
 func (d *Database) Init(ctx context.Context, config map[string]any) error {
 	d.unredactedDebugSnapshots, _ = config[protocol.ReplayUnredactedDebugConfigKey].(bool)
+	d.retainAuthoredEvidence = !protocol.RedactsAuthoredEvidence(config)
 	configuredDriver := strings.ToLower(strings.TrimSpace(protocol.ConfigString(config, "database_driver")))
 	if err := validateDatabaseDriver(configuredDriver); err != nil {
 		return err
@@ -275,7 +320,7 @@ func (d *Database) Execute(ctx context.Context, action *protocol.Action) (*proto
 		if rawTarget == "" {
 			rawTarget = sqlText(action)
 		}
-		copied.RedactedTarget = d.redactText(rawTarget)
+		copied.RedactedTarget = d.redactAuthoredText(rawTarget)
 		copied.RedactedHeaders = d.redactHeaders(action)
 		copied.RedactedParams = d.redactParamsMap(action.RedactedParams, action.Params)
 		evidenceAction = &copied
@@ -1116,16 +1161,16 @@ func (d *Database) redactHeaders(action *protocol.Action) map[string]string {
 	policy := scrub.Policy{}
 	for key, value := range action.Headers {
 		if policy.SensitiveHeader(key) {
-			out[key] = scrub.Redacted
+			out[key] = d.redactAuthoredNamedValue(value)
 		} else {
-			out[key] = d.redactText(value)
+			out[key] = d.redactAuthoredText(value)
 		}
 	}
 	for key, value := range action.RedactedHeaders {
 		if policy.SensitiveHeader(key) {
-			out[key] = scrub.Redacted
+			out[key] = d.redactAuthoredNamedValue(value)
 		} else {
-			out[key] = d.redactText(value)
+			out[key] = d.redactAuthoredText(value)
 		}
 	}
 	return out
@@ -1142,8 +1187,14 @@ func (d *Database) redactParamsMap(redacted, raw map[string]any) map[string]any 
 	out := make(map[string]any, len(src))
 	for k, v := range src {
 		if scrub.SensitiveName(k) {
-			out[k] = scrub.Redacted
-			continue
+			if text, ok := v.(string); ok {
+				out[k] = d.redactAuthoredNamedValue(text)
+				continue
+			}
+			if !d.retainAuthoredEvidence {
+				out[k] = scrub.Redacted
+				continue
+			}
 		}
 		out[k] = d.redactParamValue(v, 0)
 	}
@@ -1159,11 +1210,11 @@ func (d *Database) redactParamValue(v any, depth int) any {
 	}
 	switch typed := v.(type) {
 	case string:
-		return d.redactText(typed)
+		return d.redactAuthoredText(typed)
 	case []string:
 		cp := make([]string, len(typed))
 		for i, item := range typed {
-			cp[i] = d.redactText(item)
+			cp[i] = d.redactAuthoredText(item)
 		}
 		return cp
 	case []any:
@@ -1176,16 +1227,18 @@ func (d *Database) redactParamValue(v any, depth int) any {
 		cp := make(map[string]string, len(typed))
 		for k, item := range typed {
 			if scrub.SensitiveName(k) {
-				cp[k] = scrub.Redacted
+				cp[k] = d.redactAuthoredNamedValue(item)
 			} else {
-				cp[k] = d.redactText(item)
+				cp[k] = d.redactAuthoredText(item)
 			}
 		}
 		return cp
 	case map[string]any:
 		cp := make(map[string]any, len(typed))
 		for k, item := range typed {
-			if scrub.SensitiveName(k) {
+			if text, ok := item.(string); ok && scrub.SensitiveName(k) {
+				cp[k] = d.redactAuthoredNamedValue(text)
+			} else if scrub.SensitiveName(k) && !d.retainAuthoredEvidence {
 				cp[k] = scrub.Redacted
 			} else {
 				cp[k] = d.redactParamValue(item, depth+1)
@@ -1228,9 +1281,9 @@ func (d *Database) databaseSnapshot(action *protocol.Action, result *protocol.Re
 	}
 	return &protocol.ErrorSnapshot{
 		RequestMethod:  action.Type,
-		RequestURL:     d.redactText(requestURL),
+		RequestURL:     d.redactAuthoredText(requestURL),
 		RequestHeaders: d.redactHeaders(action),
-		RequestBody:    d.redactText(requestBody),
+		RequestBody:    d.redactAuthoredText(requestBody),
 		ResponseStatus: result.StatusCode,
 		ResponseBody:   d.redactText(result.ResponseBody),
 	}

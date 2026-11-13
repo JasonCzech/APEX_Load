@@ -1241,18 +1241,20 @@ func (service *Service) prepareAssignmentStage(ctx context.Context, plan *assign
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "prepare runtime secret redaction: %v", err)
 	}
-	// Literal credentials in the executable DSL are unconditionally registered as
-	// script-sourced runtime redaction material alongside the platform-managed
-	// secret bundle, while keeping HasRuntimeSecretMaterial() scoped strictly to
-	// platform-managed secrets. Structural locator errors fail closed, whereas a
-	// script-sourced matcher budget overflow degrades best-effort without
-	// disturbing the platform-managed matcher (matching engine.New / NewMultiGroup).
+	// Literal credentials in the executable DSL are registered as script-sourced
+	// runtime redaction material alongside the platform-managed secret bundle
+	// only when the script sets config.log.redact_run_evidence to true, while
+	// HasRuntimeSecretMaterial() stays scoped strictly to platform-managed
+	// secrets. Structural locator errors fail closed whatever the setting,
+	// whereas a script-sourced matcher budget overflow degrades best-effort
+	// without disturbing the platform-managed matcher (matching engine.New /
+	// NewMultiGroup).
 	importedCredentials, err := engine.ImportedCredentialValues(&script)
 	if err != nil {
 		msg := scrub.ValueLabel(redactionConfig.ScrubText(err.Error()), scrub.Policy{})
 		return nil, status.Errorf(codes.InvalidArgument, "inspect script-sourced credentials: %s", msg)
 	}
-	if len(importedCredentials) > 0 {
+	if engine.ScriptRedactsRunEvidence(&script) && len(importedCredentials) > 0 {
 		if scriptSourcedRedaction, scriptSourcedErr := engine.WithScriptSourcedSecretValueRedaction(
 			redactionConfig,
 			importedCredentials,
@@ -1690,7 +1692,7 @@ func stagingValidationRedactionConfig(script *dsl.Script, bundle map[string]stri
 			rc = withBundle
 		}
 	}
-	if script != nil {
+	if engine.ScriptRedactsRunEvidence(script) {
 		if imported, inspectErr := engine.ImportedCredentialValues(script); inspectErr == nil && len(imported) > 0 {
 			if withScript, attachErr := engine.WithScriptSourcedSecretValueRedaction(rc, imported); attachErr == nil {
 				rc = withScript

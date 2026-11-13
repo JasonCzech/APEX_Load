@@ -244,9 +244,9 @@ func TestScriptDataLocatorsReachTheRunChokepointInBothModes(t *testing.T) {
 					platformManaged)
 			}
 			for _, value := range []string{scriptDataTargetListValue, scriptDataTargetColumnValue} {
-				if !containsExactString(scriptSourced, value) {
-					t.Fatalf("script-sourced values = %#v, want %q registered",
-						scriptSourced, value)
+				if containsExactString(scriptSourced, value) != redact {
+					t.Fatalf("script-sourced values = %#v, want %q registered=%t",
+						scriptSourced, value, redact)
 				}
 			}
 		})

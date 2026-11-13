@@ -1,6 +1,10 @@
 package engine
 
-import "reflect"
+import (
+	"errors"
+	"reflect"
+	"strings"
+)
 
 // Unredacted debugger replay shows runtime values as the protocol saw them,
 // with one exception: values resolved from the project's secret store. Every
@@ -34,7 +38,9 @@ func newDebugSecretMask(managedSecretValues []string) (*RedactionConfig, error) 
 // earlier consumer still holds is never mutated. Screenshots are dropped: they
 // can show a secret as pixels the text matcher cannot find.
 func maskDebugSecrets[T any](mask *RedactionConfig, value T) T {
-	if mask == nil {
+	// A mask with nothing to match (a dynamic-registry layer no protocol has
+	// registered into yet) leaves the value, screenshots included, as is.
+	if mask == nil || !hasRuntimeSecretReplacers(mask) {
 		return value
 	}
 	masked, changed := maskDebugSecretValue(mask, reflect.ValueOf(&value).Elem(), 0)
@@ -51,7 +57,7 @@ func maskDebugSecretValue(mask *RedactionConfig, value reflect.Value, depth int)
 	switch value.Kind() {
 	case reflect.String:
 		text := value.String()
-		masked := scrubRuntimeSecretText(text, mask)
+		masked := maskDebugSecretText(text, mask)
 		if masked == text {
 			return value, false
 		}
@@ -86,7 +92,7 @@ func maskDebugSecretValue(mask *RedactionConfig, value reflect.Value, depth int)
 		}
 		if value.Type().Elem().Kind() == reflect.Uint8 {
 			text := string(value.Bytes())
-			masked := scrubRuntimeSecretText(text, mask)
+			masked := maskDebugSecretText(text, mask)
 			if masked == text {
 				return value, false
 			}
@@ -153,6 +159,16 @@ func maskDebugSecretValue(mask *RedactionConfig, value reflect.Value, depth int)
 	}
 }
 
+// maskDebugSecretText replaces secret-store values and the reversible
+// spellings the runtime matcher derives for them. A WS-Security
+// PasswordDigest is a keyed hash no value matcher can find, so a digest
+// computed from a secret-store value is withheld with its nonce first
+// (maskPlatformDerivedWSSecurityDigests over the mask's values only, which
+// leaves a digest of a script-literal password visible).
+func maskDebugSecretText(text string, mask *RedactionConfig) string {
+	return scrubRuntimeSecretText(maskPlatformDerivedWSSecurityDigests(text, mask), mask)
+}
+
 // maskDebugSecretStruct rewrites exported fields only; unexported fields keep
 // their engine-owned values in the copy.
 func maskDebugSecretStruct(mask *RedactionConfig, value reflect.Value, depth int) (reflect.Value, bool) {
@@ -195,4 +211,104 @@ func (vu *VUser) maskDebugSecrets(action ReplayDebugAction) ReplayDebugAction {
 		return action
 	}
 	return maskDebugSecrets(vu.debugSecretMask, action)
+}
+
+// debugMaskedRuntimeCredentialScopes are the platform-managed per-action scopes
+// whose values embed a secret-store value in a spelling the bare-value matcher
+// cannot derive (Basic pairs, SASL payloads, URL userinfo composites).
+// debugMaskedRuntimeCredentialScopePrefixes name the runtime-minted scopes: the
+// token an http_oauth2_token action fetched ("oauth:<save_as>"). Both are
+// platform secrets the unredacted debugger never shows. Values observed under a
+// sensitive name in a response ("extraction:observed") stay visible (10/30
+// decision), and script-sourced scopes are never masked here. Secrets a
+// protocol mints through RuntimeSecretRegistrar (Kafka OAuth, browser JWTs) live
+// in the run's dynamic registry, which the debugger mask carries as a layer
+// (attachDebugSecretMaskRegistry).
+var debugMaskedRuntimeCredentialScopes = []string{
+	runtimeCredentialActionScope,
+	runtimeCredentialOAuthURLScope,
+}
+
+var debugMaskedRuntimeCredentialScopePrefixes = []string{
+	"oauth:",
+}
+
+func isDebugMaskedRuntimeCredentialScope(name string) bool {
+	for _, masked := range debugMaskedRuntimeCredentialScopes {
+		if name == masked {
+			return true
+		}
+	}
+	for _, prefix := range debugMaskedRuntimeCredentialScopePrefixes {
+		if strings.HasPrefix(name, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+var errDebugSecretMaskCapacity = errors.New("debugger secret masking capacity exceeded")
+
+// extendDebugSecretMask adds the debug-masked scopes' values to the VUser's
+// cumulative debugger mask. The set only grows: the returned report still
+// carries events from actions whose scope values have since been replaced.
+func (vu *VUser) extendDebugSecretMask(scopes map[string][]string) error {
+	if vu == nil || !vu.unredactedDebug {
+		return nil
+	}
+	added := false
+	for name, values := range scopes {
+		if !isDebugMaskedRuntimeCredentialScope(name) {
+			continue
+		}
+		for _, value := range values {
+			if value == "" {
+				continue
+			}
+			if _, exists := vu.debugSecretMaskValues[value]; exists {
+				continue
+			}
+			if vu.debugSecretMaskValues == nil {
+				vu.debugSecretMaskValues = make(map[string]struct{})
+			}
+			vu.debugSecretMaskValues[value] = struct{}{}
+			added = true
+		}
+	}
+	if !added {
+		return nil
+	}
+	mask, err := newDebugSecretMask(sortedRuntimeSecretValues(vu.debugSecretMaskValues))
+	if err != nil {
+		return errDebugSecretMaskCapacity
+	}
+	vu.debugSecretMask = mask
+	vu.attachDebugSecretMaskRegistry()
+	return nil
+}
+
+// attachDebugSecretMaskRegistry layers the run's dynamic secret registry under
+// the debugger mask, so a secret a protocol registers through
+// RuntimeSecretRegistrar is masked from the moment it is registered, even when
+// the protocol registers it from its own goroutine: the registry publishes an
+// immutable overlay the mask reads atomically. It runs on the VUser's own
+// goroutine (setup and extendDebugSecretMask).
+func (vu *VUser) attachDebugSecretMaskRegistry() {
+	if vu == nil || !vu.unredactedDebug {
+		return
+	}
+	reg := vu.RedactionConfig.findDynamicRegistry()
+	if reg == nil {
+		return
+	}
+	if vu.debugSecretMask != nil && vu.debugSecretMask.findDynamicRegistry() == reg {
+		return
+	}
+	base := vu.debugSecretMask
+	if base == nil {
+		base = &RedactionConfig{}
+	}
+	if attached := attachDynamicSecretRegistry(base, reg); attached != nil && !attached.publicationUnavailable() {
+		vu.debugSecretMask = attached
+	}
 }

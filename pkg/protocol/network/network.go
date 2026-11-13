@@ -3,7 +3,6 @@ package network
 import (
 	"context"
 	"crypto/tls"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -49,11 +48,66 @@ type Network struct {
 	baseDN                   string
 	allowedTargetHosts       []string
 	unredactedDebugSnapshots bool
-	redactionMu              sync.RWMutex
-	redactor                 protocol.TextRedactor
+	// retainAuthoredEvidence is the inverse of the script's config.log.redact_run_evidence
+	// (protocol.RedactsAuthoredEvidence). Off, request-side evidence (target,
+	// request headers, params, request body) keeps what the script authored,
+	// minus exact platform-managed values.
+	retainAuthoredEvidence bool
+	redactionMu            sync.RWMutex
+	redactor               protocol.TextRedactor
+	authoredRedactor       protocol.TextRedactor
 }
 
-var _ protocol.RuntimeTextRedactorSetter = (*Network)(nil)
+var (
+	_ protocol.RuntimeTextRedactorSetter         = (*Network)(nil)
+	_ protocol.RuntimeAuthoredTextRedactorSetter = (*Network)(nil)
+)
+
+func (n *Network) SetRuntimeAuthoredTextRedactor(redactor protocol.TextRedactor) {
+	n.redactionMu.Lock()
+	n.authoredRedactor = redactor
+	n.redactionMu.Unlock()
+}
+
+func (n *Network) currentAuthoredRedactor() protocol.TextRedactor {
+	n.redactionMu.RLock()
+	redactor := n.authoredRedactor
+	n.redactionMu.RUnlock()
+	return redactor
+}
+
+// redactAuthoredText scrubs script-authored REQUEST content. With
+// config.log.redact_run_evidence on it is redactActionText. Off, only the
+// engine's exact runtime matcher (platform-managed secrets, their SASL/Basic
+// composites, runtime-minted tokens) and project rules apply, so an authored
+// literal password or token stays visible.
+func (n *Network) redactAuthoredText(action *protocol.Action, value string) string {
+	if !n.retainAuthoredEvidence {
+		return n.redactActionText(action, value)
+	}
+	if value == "" {
+		return ""
+	}
+	if redactor := n.currentAuthoredRedactor(); redactor != nil {
+		return redactor(value)
+	}
+	return value
+}
+
+// redactAuthoredNamedValue scrubs one authored value whose NAME is sensitive
+// (a header like Authorization, a param like password). With the setting on the
+// name masks it; off, it is masked only when it carries an exact platform-managed
+// value.
+func (n *Network) redactAuthoredNamedValue(action *protocol.Action, value string) string {
+	if !n.retainAuthoredEvidence {
+		return scrub.Redacted
+	}
+	scrubbed := n.redactAuthoredText(action, value)
+	if scrubbed != value {
+		return scrub.Redacted
+	}
+	return scrubbed
+}
 
 func (n *Network) SetRuntimeTextRedactor(redactor protocol.TextRedactor) {
 	n.redactionMu.Lock()
@@ -68,39 +122,16 @@ func (n *Network) currentRedactor() protocol.TextRedactor {
 	return redactor
 }
 
-func (n *Network) redactActionText(action *protocol.Action, value string) string {
+// redactActionText applies the engine runtime redactor (which carries the
+// platform-managed secret-store values and, only when the script sets
+// config.log.redact_run_evidence to true, the script-sourced literal
+// credentials and their SASL wire forms) and the generic value-shape scrub.
+// Configured literal credentials are deliberately not masked here by value.
+func (n *Network) redactActionText(_ *protocol.Action, value string) string {
 	if value == "" {
 		return ""
 	}
-	var actionUser, actionPass string
-	if action != nil {
-		actionUser = actionParamString(action.Params, "username")
-		actionPass = actionParamString(action.Params, "password")
-	}
 	out := value
-	for _, pair := range [][2]string{
-		{protocol.FirstNonEmpty(actionUser, n.username), protocol.FirstNonEmpty(actionPass, n.password)},
-		{n.username, n.password},
-	} {
-		user, pass := pair[0], pair[1]
-		if pass == "" {
-			continue
-		}
-		candidates := []string{
-			"AUTH PLAIN " + base64.StdEncoding.EncodeToString([]byte("\x00"+user+"\x00"+pass)),
-			base64.StdEncoding.EncodeToString([]byte("\x00" + user + "\x00" + pass)),
-			base64.RawStdEncoding.EncodeToString([]byte("\x00" + user + "\x00" + pass)),
-			"AUTH LOGIN " + base64.StdEncoding.EncodeToString([]byte(pass)),
-			base64.StdEncoding.EncodeToString([]byte(pass)),
-			base64.RawStdEncoding.EncodeToString([]byte(pass)),
-			pass,
-		}
-		for _, candidate := range candidates {
-			if candidate != "" && candidate != scrub.Redacted {
-				out = strings.ReplaceAll(out, candidate, scrub.Redacted)
-			}
-		}
-	}
 	if redactor := n.currentRedactor(); redactor != nil {
 		out = redactor(out)
 	}
@@ -139,6 +170,7 @@ func (n *Network) Init(_ context.Context, config map[string]any) error {
 	n.baseDN = protocol.ConfigString(config, "network_base_dn")
 	n.allowedTargetHosts = protocol.TargetPolicyHosts(config)
 	n.unredactedDebugSnapshots, _ = config[protocol.ReplayUnredactedDebugConfigKey].(bool)
+	n.retainAuthoredEvidence = !protocol.RedactsAuthoredEvidence(config)
 	return nil
 }
 
@@ -828,16 +860,16 @@ func (n *Network) redactHeaders(action *protocol.Action) map[string]string {
 	policy := scrub.Policy{}
 	for key, value := range action.Headers {
 		if policy.SensitiveHeader(key) {
-			out[key] = scrub.Redacted
+			out[key] = n.redactAuthoredNamedValue(action, value)
 		} else {
-			out[key] = n.redactActionText(action, value)
+			out[key] = n.redactAuthoredText(action, value)
 		}
 	}
 	for key, value := range action.RedactedHeaders {
 		if policy.SensitiveHeader(key) {
-			out[key] = scrub.Redacted
+			out[key] = n.redactAuthoredNamedValue(action, value)
 		} else {
-			out[key] = n.redactActionText(action, value)
+			out[key] = n.redactAuthoredText(action, value)
 		}
 	}
 	return out
@@ -854,8 +886,14 @@ func (n *Network) redactParamsMap(action *protocol.Action, redacted, raw map[str
 	out := make(map[string]any, len(src))
 	for k, v := range src {
 		if scrub.SensitiveName(k) {
-			out[k] = scrub.Redacted
-			continue
+			if text, ok := v.(string); ok {
+				out[k] = n.redactAuthoredNamedValue(action, text)
+				continue
+			}
+			if !n.retainAuthoredEvidence {
+				out[k] = scrub.Redacted
+				continue
+			}
 		}
 		out[k] = n.redactParamValue(action, v, 0)
 	}
@@ -871,11 +909,11 @@ func (n *Network) redactParamValue(action *protocol.Action, v any, depth int) an
 	}
 	switch typed := v.(type) {
 	case string:
-		return n.redactActionText(action, typed)
+		return n.redactAuthoredText(action, typed)
 	case []string:
 		cp := make([]string, len(typed))
 		for i, item := range typed {
-			cp[i] = n.redactActionText(action, item)
+			cp[i] = n.redactAuthoredText(action, item)
 		}
 		return cp
 	case []any:
@@ -888,16 +926,18 @@ func (n *Network) redactParamValue(action *protocol.Action, v any, depth int) an
 		cp := make(map[string]string, len(typed))
 		for k, item := range typed {
 			if scrub.SensitiveName(k) {
-				cp[k] = scrub.Redacted
+				cp[k] = n.redactAuthoredNamedValue(action, item)
 			} else {
-				cp[k] = n.redactActionText(action, item)
+				cp[k] = n.redactAuthoredText(action, item)
 			}
 		}
 		return cp
 	case map[string]any:
 		cp := make(map[string]any, len(typed))
 		for k, item := range typed {
-			if scrub.SensitiveName(k) {
+			if text, ok := item.(string); ok && scrub.SensitiveName(k) {
+				cp[k] = n.redactAuthoredNamedValue(action, text)
+			} else if scrub.SensitiveName(k) && !n.retainAuthoredEvidence {
 				cp[k] = scrub.Redacted
 			} else {
 				cp[k] = n.redactParamValue(action, item, depth+1)
@@ -915,7 +955,7 @@ func (n *Network) redactedEvidenceAction(action *protocol.Action) *protocol.Acti
 	}
 	copied := *action
 	target := protocol.FirstNonEmpty(action.RedactedTarget, action.Target)
-	copied.RedactedTarget = n.redactActionText(action, target)
+	copied.RedactedTarget = n.redactAuthoredText(action, target)
 	copied.RedactedHeaders = n.redactHeaders(action)
 	copied.RedactedParams = n.redactParamsMap(action, action.RedactedParams, action.Params)
 	return &copied
@@ -949,9 +989,9 @@ func (n *Network) networkSnapshot(action *protocol.Action, result *protocol.Resu
 	}
 	return &protocol.ErrorSnapshot{
 		RequestMethod:  action.Type,
-		RequestURL:     n.redactActionText(action, requestURL),
+		RequestURL:     n.redactAuthoredText(action, requestURL),
 		RequestHeaders: n.redactHeaders(action),
-		RequestBody:    n.redactActionText(action, requestBody),
+		RequestBody:    n.redactAuthoredText(action, requestBody),
 		ResponseStatus: result.StatusCode,
 		ResponseBody:   n.redactActionText(action, result.ResponseBody),
 	}

@@ -139,7 +139,7 @@ func (vu *VUser) replaceRuntimeCredentialScopes(updates map[string][]string) err
 	if len(updates) == 0 {
 		return nil
 	}
-	redactScriptSourced := scriptRedactsCredentials(vu.Script)
+	redactScriptSourced := scriptRedactsRunEvidence(vu.Script)
 	prospective := cloneRuntimeCredentialScopes(vu.runtimeCredentialScopes)
 	for name, values := range updates {
 		name = strings.TrimSpace(name)
@@ -163,6 +163,10 @@ func (vu *VUser) replaceRuntimeCredentialScopes(updates map[string][]string) err
 	}
 	if runtimeCredentialScopesEqual(vu.runtimeCredentialScopes, prospective) {
 		return nil
+	}
+	// Install the debugger mask before the protocol can publish the new spelling.
+	if err := vu.extendDebugSecretMask(prospective); err != nil {
+		return err
 	}
 	if err := vu.publishRuntimeCredentialRedaction(prospective); err != nil {
 		return err
@@ -230,7 +234,7 @@ func runtimeCredentialScopesEqual(left, right map[string][]string) bool {
 // snapshots has no remaining input.
 func (vu *VUser) publishRuntimeCredentialRedaction(scopes map[string][]string) error {
 	platformManaged, scriptSourced := runtimeCredentialScopeValues(scopes)
-	if !scriptRedactsCredentials(vu.Script) {
+	if !scriptRedactsRunEvidence(vu.Script) {
 		scriptSourced = nil
 	}
 	platformManaged = filterRuntimeCredentialBaseValues(platformManaged, vu.runtimeCredentialBase, false)
@@ -394,7 +398,7 @@ func (vu *VUser) refreshImportedCredentialRuntimeValues() error {
 // expressions against the VUser's current variables, parameters, data row, and
 // environment. An expression that does not resolve contributes nothing.
 func (vu *VUser) resolvedScriptSourcedTemplateValues() []string {
-	if vu == nil || !scriptRedactsCredentials(vu.Script) {
+	if vu == nil || !scriptRedactsRunEvidence(vu.Script) {
 		return nil
 	}
 	expressions := scriptSourcedTemplateExpressions(vu.importedCredentialInspection.templatePlan())

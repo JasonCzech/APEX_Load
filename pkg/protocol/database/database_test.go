@@ -767,3 +767,31 @@ func TestDatabaseScalarAndDSNErrorRedaction(t *testing.T) {
 		}
 	}
 }
+
+// The configured DSN is not masked by value inside the protocol: the engine
+// runtime redactor decides, carrying its credential parts when the DSN is
+// secret-store backed or when the script sets config.log.redact_run_evidence.
+// Generic shape scrubbing (URL userinfo) still applies either way.
+func TestDatabaseConfiguredDSNFollowsEngineRedactor(t *testing.T) {
+	const literalDSN = "orders-literal-dsn-9103.db"
+	message := "open " + literalDSN + ": no such file"
+
+	visible := &Database{dsn: literalDSN}
+	if got := visible.redactText(message); !strings.Contains(got, literalDSN) {
+		t.Fatalf("protocol masked a configured literal DSN the engine redactor does not carry: %q", got)
+	}
+
+	redacted := &Database{dsn: literalDSN}
+	redacted.SetRuntimeTextRedactor(func(s string) string {
+		return strings.ReplaceAll(s, literalDSN, "[REDACTED]")
+	})
+	if got := redacted.redactText(message); strings.Contains(got, literalDSN) {
+		t.Fatalf("engine redactor carrying the DSN did not hide it: %q", got)
+	}
+
+	const dsnSecret = "synth-db-dsn-secret-9104"
+	userinfo := &Database{dsn: "postgres://dbadmin:" + dsnSecret + "@db.example.test:5432/orders"}
+	if err := userinfo.redactError(errors.New("dial postgres://dbadmin:" + dsnSecret + "@db.example.test:5432/orders: refused")); err == nil || strings.Contains(err.Error(), dsnSecret) {
+		t.Fatalf("URL userinfo shape scrub no longer hides the DSN password: %v", err)
+	}
+}

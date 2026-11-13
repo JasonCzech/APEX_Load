@@ -27,6 +27,9 @@ func snapshotJSON(snapshot *protocol.ErrorSnapshot) string {
 			ResponseBody:     "[snapshot truncated: exceeded metrics transport limit]",
 			PageURL:          truncateSnapshotField(snapshot.PageURL, 2048),
 			PageTitle:        truncateSnapshotField(snapshot.PageTitle, 1024),
+			// Keep the engine's authored-request marker (see
+			// protocol.ErrorSnapshot.AuthoredRequestRetained).
+			AuthoredRequestRetained: snapshot.AuthoredRequestRetained,
 		}
 		data, err = json.Marshal(truncated)
 		if err != nil {

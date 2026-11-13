@@ -77,6 +77,14 @@ type platformManagedCredentialSurface struct {
 	saslMail    bool
 	oauthMethod string
 
+	// integrated marks an NTLM/Negotiate/negotiate_any surface. Before the
+	// challenge the HTTP transport sends a Basic pair over the NTLM user name —
+	// DOMAIN\user when a domain is configured (integratedAuthUser in
+	// pkg/protocol/http) — and negotiate_any answers a Basic challenge with the
+	// bare user, so both spellings are registered (appendIntegratedAuthPairComposites).
+	integrated     bool
+	resolvedDomain string
+
 	// connectionString marks a surface whose resolvedPassword is a whole
 	// credential-bearing connection string rather than one half of a pair. Its
 	// spellings come from collectDSN, which understands DSN, JDBC and
@@ -164,6 +172,10 @@ func appendPlatformManagedCompositeValues(
 			values = appendMailSASLComposites(values, surface.resolvedUsername, surface.resolvedPassword)
 			continue
 		}
+		if surface.integrated {
+			values = appendIntegratedAuthPairComposites(values, surface.resolvedUsername, surface.resolvedPassword, surface.resolvedDomain)
+			continue
+		}
 		if !surface.basic {
 			continue
 		}
@@ -207,6 +219,54 @@ func appendScriptSourcedCompositeValues(
 		pair := surface.resolvedUsername + ":" + surface.resolvedPassword
 		payload := base64.StdEncoding.EncodeToString([]byte(pair))
 		values = append(values, pair, payload, "Basic "+payload)
+	}
+	return values
+}
+
+// isIntegratedHTTPAuthType mirrors pkg/protocol/http.IsIntegratedAuthType.
+func isIntegratedHTTPAuthType(authType string) bool {
+	switch strings.ToLower(strings.TrimSpace(authType)) {
+	case "ntlm", "negotiate", "negotiate_any":
+		return true
+	}
+	return false
+}
+
+// appendBasicPairComposites appends the Basic wire spellings of one pair.
+func appendBasicPairComposites(values []string, username, password string) []string {
+	pair := username + ":" + password
+	payload := base64.StdEncoding.EncodeToString([]byte(pair))
+	return append(values, pair, payload, "Basic "+payload)
+}
+
+// appendIntegratedAuthPairComposites derives the pre-challenge Basic pairs an
+// NTLM/Negotiate surface sends: over the bare user name and, when a domain is
+// configured and the user name carries none, over DOMAIN\user.
+func appendIntegratedAuthPairComposites(values []string, username, password, domain string) []string {
+	if username == "" && password == "" {
+		return values
+	}
+	values = appendBasicPairComposites(values, username, password)
+	if domain = strings.TrimSpace(domain); domain != "" && !strings.ContainsAny(username, `\@`) {
+		values = appendBasicPairComposites(values, domain+`\`+username, password)
+	}
+	return values
+}
+
+// appendTypedAuthComposites derives the wire spellings typed HTTP auth builds
+// from resolved halves: the Basic pair, or the integrated pre-challenge pairs.
+func appendTypedAuthComposites(values []string, auth *protocol.AuthConfig) []string {
+	if auth == nil {
+		return values
+	}
+	switch {
+	case strings.EqualFold(strings.TrimSpace(auth.Type), "basic"):
+		if auth.Username == "" && auth.Password == "" {
+			return values
+		}
+		return appendBasicPairComposites(values, auth.Username, auth.Password)
+	case isIntegratedHTTPAuthType(auth.Type):
+		return appendIntegratedAuthPairComposites(values, auth.Username, auth.Password, auth.Domain)
 	}
 	return values
 }
@@ -415,6 +475,17 @@ func scriptCredentialCompositeSurfaces(
 	appendPair("config.http.auth", httpAuth.Username, httpAuth.Password,
 		"auth_username", "auth_password",
 		strings.EqualFold(strings.TrimSpace(protocol.ConfigString(config, "auth_type")), "basic"))
+	if isIntegratedHTTPAuthType(protocol.ConfigString(config, "auth_type")) {
+		surfaces = append(surfaces, platformManagedCredentialSurface{
+			name:             "config.http.auth",
+			authoredUsername: httpAuth.Username,
+			authoredPassword: httpAuth.Password,
+			resolvedUsername: protocol.ConfigString(config, "auth_username"),
+			resolvedPassword: protocol.ConfigString(config, "auth_password"),
+			resolvedDomain:   protocol.ConfigString(config, "auth_domain"),
+			integrated:       true,
+		})
+	}
 	appendPair("config.http.proxy", httpProxy.Username, httpProxy.Password,
 		"proxy_username", "proxy_password",
 		protocol.ConfigString(config, "proxy_username") != "" ||
@@ -505,7 +576,9 @@ func actionCredentialCompositeSurfaces(
 			authoredPassword: authored.Auth.Password,
 			resolvedUsername: resolved.Auth.Username,
 			resolvedPassword: resolved.Auth.Password,
+			resolvedDomain:   resolved.Auth.Domain,
 			basic:            strings.EqualFold(strings.TrimSpace(resolved.Auth.Type), "basic"),
+			integrated:       isIntegratedHTTPAuthType(resolved.Auth.Type),
 		})
 	}
 	if surface, ok := urlUserinfoCredentialSurface(

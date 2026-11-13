@@ -185,9 +185,12 @@ func actionLogAttrs(actionName string, resolved *protocol.Action, result *protoc
 		if len(resolved.RedactedBody) > 0 {
 			requestBody = string(resolved.RedactedBody)
 		}
+		// The target and request body are what the script authored; they
+		// follow config.log.redact_run_evidence like every other request-side
+		// surface. The response body below keeps the full scrub.
 		attrs = append(attrs,
-			"target", scrubSensitiveTextWithConfig(target, redactionConfig),
-			"request_body", scrubSensitiveTextWithConfig(requestBody, redactionConfig),
+			"target", authoredLogText(scrubAuthoredTextWithConfig(target, redactionConfig)),
+			"request_body", authoredLogText(scrubAuthoredTextWithConfig(requestBody, redactionConfig)),
 		)
 	}
 	if _, ok := options["data_returned"]; ok {
@@ -284,6 +287,7 @@ func (vu *VUser) bindRuntimeTextRedactor() {
 	}
 	if _, ok := vu.Proto.(protocol.RuntimeSecretRegistrarSetter); ok {
 		vu.ensureDynamicRedactionRegistry()
+		vu.attachDebugSecretMaskRegistry()
 	}
 	vu.runtimeRedaction.Store(vu.resultPublicationRedactionConfig())
 	bindProtocolRuntimeRedaction(vu.Proto, vu.runtimeRedaction.Load, vu.runtimeRedaction.snapshot)
@@ -300,6 +304,11 @@ func bindProtocolRuntimeRedaction(proto protocol.Protocol, provider func() *Reda
 	if setter, ok := proto.(protocol.RuntimeTextRedactorSetter); ok {
 		setter.SetRuntimeTextRedactor(func(value string) string {
 			return scrubSensitiveTextWithConfig(value, currentRedactionConfig(provider))
+		})
+	}
+	if setter, ok := proto.(protocol.RuntimeAuthoredTextRedactorSetter); ok {
+		setter.SetRuntimeAuthoredTextRedactor(func(value string) string {
+			return scrubAuthoredTextWithConfig(value, currentRedactionConfig(provider))
 		})
 	}
 	if setter, ok := proto.(protocol.RuntimeBoundedTextRedactorSetter); ok {
@@ -338,6 +347,7 @@ func (vu *VUser) resolveAction(action dsl.Action) *protocol.Action {
 	vu.unresolvedVariableRefs = nil
 	vu.bodyResolutionError = nil
 	vu.structuredBodyResolvedAction = nil
+	vu.transformedBodySpellings.reset()
 	vu.recordUnresolvedVariables = true
 	defer func() { vu.recordUnresolvedVariables = false }()
 	target, redactedTarget := vu.interpolateWithSecrets(action.Target)
@@ -365,6 +375,13 @@ func (vu *VUser) resolveAction(action dsl.Action) *protocol.Action {
 		templateValueEncoding,
 		action.Metadata[dsl.ImportAuraTemplateContractMetadataKey],
 	)
+	if vu.transformedBodySpellings.overflow {
+		// More distinct script-sourced spellings than one action may file:
+		// rather than leave some unregistered, the request body evidence is
+		// withheld (fail closed). Platform spellings are never capped, so every
+		// one still reaches the run matcher and the debugger mask.
+		redactedBody = withheldTransformedRequestBody
+	}
 	auth, redactedAuth := toProtocolAuthConfig(action.Auth, vu)
 	soapAction, redactedSOAPAction := toProtocolSOAPActions(action.SOAP, vu)
 	params, redactedParams := vu.interpolateAnyMapWithSecrets(action.Params)
@@ -448,9 +465,21 @@ func (vu *VUser) resolveAction(action dsl.Action) *protocol.Action {
 	if actionBodyTemplateValueEncoding(action.Metadata) == dsl.ImportAuraJSONTemplateValueEncoding && vu.bodyResolutionError == nil {
 		vu.structuredBodyResolvedAction = resolved
 	}
+	composites := runtimeActionCompositeValuesForScript(vu.Script, &action, resolved, vu.SecretResolver)
+	spellings := &vu.transformedBodySpellings
+	if len(spellings.platform) > 0 {
+		composites = append(composites, spellings.platform...)
+	}
+	var scriptSpellings []string
+	if len(spellings.script) > 0 {
+		scriptSpellings = append([]string(nil), spellings.script...)
+	}
+	spellings.reset()
 	vu.actionCredentialComposites = resolvedActionCredentialComposites{
-		action: resolved,
-		values: runtimeActionCompositeValuesForScript(vu.Script, &action, resolved, vu.SecretResolver),
+		action:                    resolved,
+		values:                    composites,
+		scriptValues:              scriptSpellings,
+		bodyMayCarryPlatformValue: bodyEncodingRespellsResolvedBody(action.BodyEncoding) && vu.bodyTemplatesMayCarryPlatformValueMemo(action.Body),
 	}
 	vu.prepareLLMConversationAction(action, resolved)
 	return resolved
@@ -543,18 +572,22 @@ func (vu *VUser) interpolateActionBody(body, encoding, templateValueEncoding str
 			if budget := vu.concurrentPreparation; budget != nil {
 				allowance = &budget.templatesRemaining
 			}
-			transform := func(index int, _ string, actual, safe string) (string, string, error) {
-				if !templateContext.IsFormWireToken(index) {
-					return actual, safe, nil
+			transform := func(index int, token string, actual, safe string) (string, string, error) {
+				if templateContext.IsFormWireToken(index) {
+					decoded, err := url.QueryUnescape(actual)
+					if err != nil {
+						return "", "", &aurapayload.Error{Code: aurapayload.InvalidForm}
+					}
+					if safe == actual {
+						safe = decoded
+					}
+					actual = decoded
 				}
-				decoded, err := url.QueryUnescape(actual)
-				if err != nil {
-					return "", "", &aurapayload.Error{Code: aurapayload.InvalidForm}
-				}
-				if safe == actual {
-					safe = decoded
-				}
-				return decoded, safe, nil
+				// The codec re-quotes the leaf once per enclosing JSON-string
+				// layer and form-escapes the message: those spellings of a
+				// platform value are not in the matcher's variants.
+				vu.noteTransformedBodySpellings(token, actual, templateContext.WireSpellings)
+				return actual, safe, nil
 			}
 			actual, safe, err := vu.interpolateWithSecretsPolicyBounded(value, transform, aurapayload.MaxBodyBytes, allowance, templateContext.IsLiteralToken)
 			if err != nil {
@@ -605,13 +638,11 @@ func (vu *VUser) interpolateActionBody(body, encoding, templateValueEncoding str
 		interpolate = vu.interpolateURLFormTemplateValuesWithSecrets
 		if strings.EqualFold(encoding, "windows-1252") {
 			interpolate = func(s string) (string, string) {
-				return vu.interpolateWithSecretsTransform(s, func(value string) string {
-					raw, err := charmap.Windows1252.NewEncoder().String(value)
-					if err != nil {
-						vu.unresolvedParameterRefs = append(vu.unresolvedParameterRefs, "form value is not representable in Windows-1252")
-						return ""
-					}
-					return url.QueryEscape(raw)
+				return vu.interpolateWithSecretsOccurrenceTransform(s, func(_ int, token, actual, safe string) (string, string) {
+					// url.QueryEscape(cp1252(value)) spells a non-ASCII platform
+					// value in bytes the UTF-8 matcher variants never produce.
+					vu.noteTransformedBodySpellings(token, actual, windows1252FormSpellings)
+					return windows1252FormValue(vu, actual), windows1252FormValue(vu, safe)
 				})
 			}
 		}
@@ -1143,6 +1174,230 @@ func (vu *VUser) interpolateWithSecrets(s string) (string, string) {
 // intact so the existing secret/file/parameter execution gates can reject them.
 func (vu *VUser) interpolateURLFormTemplateValuesWithSecrets(s string) (string, string) {
 	return vu.interpolateWithSecretsTransform(s, url.QueryEscape)
+}
+
+// bodyEncodingRespellsResolvedBody reports whether appendPlatformDerivedBodySpellings
+// derives spellings for a body encoding (base64, UTF-16LE); only those read
+// bodyMayCarryPlatformValue.
+func bodyEncodingRespellsResolvedBody(encoding string) bool {
+	return strings.EqualFold(strings.TrimSpace(encoding), "base64") || bodyencoding.IsUTF16LE(encoding)
+}
+
+// maxBodyPlatformTemplateMemo bounds bodyPlatformTemplates; the memo is reset
+// when it fills. Keys are authored bodies, which share the script's storage.
+const maxBodyPlatformTemplateMemo = 256
+
+// bodyTemplatesMayCarryPlatformValueMemo is bodyTemplatesMayCarryPlatformValue
+// computed once per authored body.
+func (vu *VUser) bodyTemplatesMayCarryPlatformValueMemo(body string) bool {
+	if !strings.Contains(body, "{{") {
+		return false
+	}
+	if answer, ok := vu.bodyPlatformTemplates[body]; ok {
+		return answer
+	}
+	answer := bodyTemplatesMayCarryPlatformValue(body)
+	if vu.bodyPlatformTemplates == nil || len(vu.bodyPlatformTemplates) >= maxBodyPlatformTemplateMemo {
+		vu.bodyPlatformTemplates = make(map[string]bool)
+	}
+	vu.bodyPlatformTemplates[body] = answer
+	return answer
+}
+
+// bodyTemplatesMayCarryPlatformValue reports whether an authored body has a
+// template whose value can hold a platform value: anything but the
+// script-data sources ({{param.*}}, {{file.*}}) and the value generators
+// ({{fn.*}}, {{fake.*}}). {{data.*}} reads the variable map, so it counts. A
+// body without one sends only authored text and script data.
+func bodyTemplatesMayCarryPlatformValue(body string) bool {
+	if !strings.Contains(body, "{{") {
+		return false
+	}
+	for _, match := range templatePattern.FindAllStringSubmatch(body, -1) {
+		expr := strings.TrimSpace(match[1])
+		switch {
+		case expr == "",
+			strings.HasPrefix(expr, "param."),
+			strings.HasPrefix(expr, "file."),
+			strings.HasPrefix(expr, "fn."),
+			strings.HasPrefix(expr, "fake."):
+			continue
+		}
+		return true
+	}
+	return false
+}
+
+// windows1252FormValue is the url-form wire spelling of a template value in a
+// Windows-1252 body: the query escape of its Windows-1252 bytes.
+func windows1252FormValue(vu *VUser, value string) string {
+	raw, err := charmap.Windows1252.NewEncoder().String(value)
+	if err != nil {
+		vu.unresolvedParameterRefs = append(vu.unresolvedParameterRefs, "form value is not representable in Windows-1252")
+		return ""
+	}
+	return url.QueryEscape(raw)
+}
+
+// windows1252FormSpellings returns the spellings a Windows-1252 url-form body
+// gives a substring of a template value: its Windows-1252 bytes and their query
+// escape in upper- and lowercase hex.
+func windows1252FormSpellings(value string) []string {
+	raw, err := charmap.Windows1252.NewEncoder().String(value)
+	if err != nil || raw == "" {
+		return nil
+	}
+	out := []string{raw}
+	if escaped := url.QueryEscape(raw); escaped != raw {
+		out = append(out, escaped)
+		if lower := lowerPercentHexDigits(escaped); lower != escaped {
+			out = append(out, lower)
+		}
+	}
+	return out
+}
+
+// lowerPercentHexDigits lowercases the hex digits of every percent escape.
+func lowerPercentHexDigits(value string) string {
+	b := []byte(value)
+	for i := 0; i+2 < len(b); i++ {
+		if b[i] != '%' {
+			continue
+		}
+		for j := i + 1; j <= i+2; j++ {
+			if b[j] >= 'A' && b[j] <= 'F' {
+				b[j] += 'a' - 'A'
+			}
+		}
+		i += 2
+	}
+	return string(b)
+}
+
+// maxPlatformBodySpellings bounds the distinct SCRIPT-SOURCED spellings one
+// action's transformed body can file. Platform spellings are never capped: the
+// debugger snapshot, the replay HAR and response echoes are scrubbed by the
+// matcher and the mask rather than by RedactedBody, so a platform spelling left
+// unfiled would reach them raw. Their count is bounded by the preparation byte
+// budget, and a matcher or mask past capacity fails closed. A variable so tests
+// can lower it.
+var maxPlatformBodySpellings = 4096
+
+// withheldTransformedRequestBody replaces the request body evidence of an
+// action whose transformed body holds more distinct script-sourced spellings
+// than maxPlatformBodySpellings.
+const withheldTransformedRequestBody = "[REDACTED: request body withheld]"
+
+// transformedBodySpellingSet is the per-action record behind
+// noteTransformedBodySpellings. seen deduplicates spellings as they are
+// recorded, so repeated occurrences of one value do not use up the budget; its
+// value is true once a spelling is filed as platform-managed.
+type transformedBodySpellingSet struct {
+	platform []string
+	script   []string
+	seen     map[string]bool
+	// overflow is set when the distinct script-sourced spellings exceed the
+	// budget; the body evidence is then withheld instead of dropping
+	// spellings. Platform spellings keep being filed after it is set.
+	overflow bool
+}
+
+func (s *transformedBodySpellingSet) reset() {
+	s.platform = nil
+	s.script = nil
+	s.overflow = false
+	clear(s.seen)
+}
+
+func (s *transformedBodySpellingSet) add(run string, platform bool, spell func(string) []string) {
+	for _, spelled := range spell(run) {
+		if spelled == "" || spelled == run {
+			continue
+		}
+		filedPlatform, seen := s.seen[spelled]
+		if seen && (filedPlatform || !platform) {
+			continue
+		}
+		if !platform && (s.overflow || len(s.script) >= maxPlatformBodySpellings) {
+			s.overflow = true
+			return
+		}
+		if s.seen == nil {
+			s.seen = make(map[string]bool)
+		}
+		s.seen[spelled] = platform
+		if platform {
+			s.platform = append(s.platform, spelled)
+		} else {
+			s.script = append(s.script, spelled)
+		}
+	}
+}
+
+// noteTransformedBodySpellings records, for a template occurrence a body
+// transform re-spells, the wire spellings of every secret value the occurrence
+// inserts. Platform values — the whole value of a {{secret.*}} reference,
+// otherwise each span of the value the platform matcher matches (a variable
+// assigned from {{secret.*}}, a runtime-minted token) — are always recorded;
+// resolveAction files them as platform-managed action composites, which reach
+// the run matcher and the debugger mask in every mode. With
+// config.log.redact_run_evidence on (and outside the unredacted debugger) the
+// spans the full run matcher matches for script-sourced values are recorded
+// too and filed under the script-sourced action scope, so they follow the
+// setting; with it off, and in the debugger, script values stay visible.
+func (vu *VUser) noteTransformedBodySpellings(token, actual string, spell func(string) []string) {
+	if vu == nil || actual == "" || spell == nil {
+		return
+	}
+	set := &vu.transformedBodySpellings
+	expr := strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(token, "{{"), "}}"))
+	if strings.HasPrefix(expr, "secret.") {
+		set.add(actual, true, spell)
+		return
+	}
+	cache := vu.platformCarrierState()
+	matcher := cache.config
+	if cache.unredacted {
+		matcher = cache.mask
+	}
+	withScript := !cache.unredacted && scriptRedactsRunEvidence(vu.Script)
+	for _, run := range runtimeSecretMatchedRuns(actual, matcher) {
+		if cache.carries(run) {
+			set.add(run, true, spell)
+		} else if withScript && !set.overflow {
+			set.add(run, false, spell)
+		}
+	}
+}
+
+// interpolateWithSecretsOccurrenceTransform is interpolateWithSecretsTransform
+// with a transform that also sees each occurrence's index and token.
+func (vu *VUser) interpolateWithSecretsOccurrenceTransform(s string, transform func(int, string, string, string) (string, string)) (string, string) {
+	occurrence := func(budget *httpPreparationBudget) func(int, string, string, string) (string, string, error) {
+		return func(index int, token, actual, safe string) (string, string, error) {
+			if budget != nil && (len(actual) > budget.bytesRemaining/3 || len(safe) > budget.bytesRemaining/3) {
+				return "", "", fmt.Errorf("concurrent HTTP preparation byte limit exceeded")
+			}
+			resolved, redacted := transform(index, token, actual, safe)
+			return resolved, redacted, nil
+		}
+	}
+	if budget := vu.concurrentPreparation; budget != nil {
+		if budget.err != nil {
+			return "", ""
+		}
+		if budget.bytesRemaining <= 0 && s != "" {
+			budget.err = fmt.Errorf("concurrent HTTP preparation byte limit exceeded")
+			return "", ""
+		}
+		resolved, redacted, err := vu.interpolateWithSecretsOccurrenceTransformBounded(s, occurrence(budget), budget.bytesRemaining, &budget.templatesRemaining)
+		if err != nil {
+			budget.err = err
+		}
+		return resolved, redacted
+	}
+	resolved, redacted, _ := vu.interpolateWithSecretsOccurrenceTransformBounded(s, occurrence(nil), 0, nil)
+	return resolved, redacted
 }
 
 func (vu *VUser) interpolateWithSecretsTransform(s string, transform func(string) string) (string, string) {

@@ -75,9 +75,9 @@ func TestStagedAssignmentScriptSourcedRedactionFollowsScriptSetting(t *testing.T
 		redactRunEvidence *bool
 		redacted          bool
 	}{
-		{name: "unset_defaults_to_redacted", redactRunEvidence: nil, redacted: true},
+		{name: "unset_defaults_to_visible", redactRunEvidence: nil, redacted: false},
 		{name: "redaction_on", redactRunEvidence: &redactOn, redacted: true},
-		{name: "redaction_off_still_redacts_secrets", redactRunEvidence: &redactOff, redacted: true},
+		{name: "redaction_off", redactRunEvidence: &redactOff, redacted: false},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
 			service := newIsolatedService(t, 10, WithExecution())
@@ -352,9 +352,10 @@ func TestValidateWorkAssignmentAndStagingAllowLiteralDSLSecretsAndJavaVMProperti
 	if cfg.HasRuntimeSecretMaterial() {
 		t.Fatalf("HasRuntimeSecretMaterial() = true for literal-only staged assignment")
 	}
+	// redact_run_evidence is unset, so the script's own literals stay visible.
 	for _, secret := range []string{javaVMSecret, headerSecret} {
-		if got := cfg.ScrubText("value=" + secret); strings.Contains(got, secret) {
-			t.Fatalf("staged RedactionConfig leaked literal secret %q: %q", secret, got)
+		if got := cfg.ScrubText("value=" + secret); !strings.Contains(got, secret) {
+			t.Fatalf("staged RedactionConfig scrubbed literal %q with redact_run_evidence unset: %q", secret, got)
 		}
 	}
 
@@ -452,33 +453,47 @@ func TestValidateWorkAssignmentAndStagingAllowLiteralDSLSecretsAndJavaVMProperti
 	service.mu.Unlock()
 
 	// Round-4 Finding 4a regression: prepareAssignmentStage scrubs literal credentials
-	// embedded in validation issues (e.g. actions[0].Name) before returning InvalidArgument.
-	badValidationPayload, err := json.Marshal(map[string]any{
-		"name":     "bad-validation-stage",
-		"protocol": "http",
-		"config":   map[string]any{"base_url": "https://example.test"},
-		"actions": []any{map[string]any{
-			"name":    "step-" + headerSecret,
-			"type":    "unsupported_action_type",
-			"headers": map[string]any{"Authorization": "Bearer " + headerSecret},
-		}},
-	})
-	if err != nil {
-		t.Fatalf("marshal bad-validation script: %v", err)
+	// embedded in validation issues (e.g. actions[0].Name) before returning
+	// InvalidArgument — only when the script sets redact_run_evidence; with it
+	// off the operator's own literal stays readable in the error.
+	for _, mode := range []struct {
+		name   string
+		redact bool
+	}{{name: "on", redact: true}, {name: "off", redact: false}} {
+		badValidationPayload, err := json.Marshal(map[string]any{
+			"name":     "bad-validation-stage",
+			"protocol": "http",
+			"config": map[string]any{
+				"base_url": "https://example.test",
+				"log":      map[string]any{"redact_run_evidence": mode.redact},
+			},
+			"actions": []any{map[string]any{
+				"name":    "step-" + headerSecret,
+				"type":    "unsupported_action_type",
+				"headers": map[string]any{"Authorization": "Bearer " + headerSecret},
+			}},
+		})
+		if err != nil {
+			t.Fatalf("marshal bad-validation script: %v", err)
+		}
+		runID := "run-bad-validation-" + mode.name
+		reqBadValidation := stageRequest(runID, "script-bad-validation-"+mode.name, 1)
+		reqBadValidation.ScriptContent = badValidationPayload
+		valBadValidation := validatedStageRequest(t, reqBadValidation)
+		service.mu.Lock()
+		decBadValidation := service.lifecycleCoordinator.reserveStageLocked(service, valBadValidation)
+		service.mu.Unlock()
+		_, valStageErr := service.prepareAssignmentStage(context.Background(), decBadValidation.plan)
+		if status.Code(valStageErr) != codes.InvalidArgument {
+			t.Fatalf("%s: expected InvalidArgument on invalid script in prepareAssignmentStage, got %v", mode.name, valStageErr)
+		}
+		if leaked := strings.Contains(valStageErr.Error(), headerSecret); leaked == mode.redact {
+			t.Fatalf("%s: validation error literal %q leaked=%t: %v", mode.name, headerSecret, leaked, valStageErr)
+		}
+		service.mu.Lock()
+		service.lifecycleCoordinator.rollbackStageLocked(runID, decBadValidation.plan.token)
+		service.mu.Unlock()
 	}
-	reqBadValidation := stageRequest("run-bad-validation", "script-bad-validation", 1)
-	reqBadValidation.ScriptContent = badValidationPayload
-	valBadValidation := validatedStageRequest(t, reqBadValidation)
-	service.mu.Lock()
-	decBadValidation := service.lifecycleCoordinator.reserveStageLocked(service, valBadValidation)
-	service.mu.Unlock()
-	_, valStageErr := service.prepareAssignmentStage(context.Background(), decBadValidation.plan)
-	if status.Code(valStageErr) != codes.InvalidArgument || strings.Contains(valStageErr.Error(), headerSecret) {
-		t.Fatalf("expected scrubbed InvalidArgument on invalid script in prepareAssignmentStage, got %v", valStageErr)
-	}
-	service.mu.Lock()
-	service.lifecycleCoordinator.rollbackStageLocked("run-bad-validation", decBadValidation.plan.token)
-	service.mu.Unlock()
 
 	// Round-8 Finding 2 regression: when script-sourced credentials exceed the
 	// runtime matcher value budget (> 101,024 distinct CSV values), distributed
@@ -494,7 +509,11 @@ func TestValidateWorkAssignmentAndStagingAllowLiteralDSLSecretsAndJavaVMProperti
 	overflowPayload, err := json.Marshal(map[string]any{
 		"name":     "script-sourced-overflow",
 		"protocol": "http",
-		"config":   map[string]any{"base_url": "https://example.test"},
+		// Redaction on, so the script-sourced half is actually attempted.
+		"config": map[string]any{
+			"base_url": "https://example.test",
+			"log":      map[string]any{"redact_run_evidence": true},
+		},
 		"data_sources": []any{map[string]any{
 			"name":        "creds",
 			"type":        "csv",

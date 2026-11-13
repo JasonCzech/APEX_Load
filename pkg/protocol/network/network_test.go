@@ -461,72 +461,118 @@ func TestNetworkProtocolAssertionFailureCapturesEvidence(t *testing.T) {
 	}
 }
 
+// The protocol no longer masks its configured literal credentials by value:
+// whether they are hidden is decided by the engine runtime redactor, which
+// carries them when they are secret-store backed or when the script sets
+// config.log.redact_run_evidence. Name-based scrubbing of headers and params
+// applies either way.
 func TestNetworkSMTPSASLBase64AuthEchoRedactedInResponseAndErrors(t *testing.T) {
 	const (
-		smtpUser = "mailer@example.test"
-		smtpPwd  = "synth-smtp-wire-pwd-9501"
+		smtpUser  = "mailer@example.test"
+		smtpPwd   = "synth-smtp-wire-pwd-9501"
+		dynSecret = "synth-net-redactor-secret-9502"
 	)
 	authPlain := base64.StdEncoding.EncodeToString([]byte("\x00" + smtpUser + "\x00" + smtpPwd))
 
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("listen: %v", err)
-	}
-	defer listener.Close()
+	for _, testCase := range []struct {
+		name string
+		// engineRedacts is what the engine runtime redactor carries besides dynSecret.
+		engineRedacts []string
+		literalHidden bool
+	}{
+		{name: "engine_redactor_carries_credentials", engineRedacts: []string{authPlain, smtpPwd}, literalHidden: true},
+		{name: "engine_redactor_without_credentials", engineRedacts: nil, literalHidden: false},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			listener, err := net.Listen("tcp", "127.0.0.1:0")
+			if err != nil {
+				t.Fatalf("listen: %v", err)
+			}
+			defer listener.Close()
 
-	go func() {
-		conn, acceptErr := listener.Accept()
-		if acceptErr != nil {
-			return
-		}
-		defer conn.Close()
-		_, _ = conn.Write([]byte("220 smtp.example.test ESMTP\r\n"))
-		buf := make([]byte, 1024)
-		// EHLO
-		_, _ = conn.Read(buf)
-		_, _ = conn.Write([]byte("250-smtp.example.test\r\n250 AUTH PLAIN\r\n"))
-		// AUTH PLAIN
-		_, _ = conn.Read(buf)
-		_, _ = conn.Write([]byte("535 5.7.8 rejected credential " + authPlain + " and " + smtpPwd + "\r\n"))
-	}()
+			go func() {
+				conn, acceptErr := listener.Accept()
+				if acceptErr != nil {
+					return
+				}
+				defer conn.Close()
+				_, _ = conn.Write([]byte("220 smtp.example.test ESMTP\r\n"))
+				buf := make([]byte, 1024)
+				// EHLO
+				_, _ = conn.Read(buf)
+				_, _ = conn.Write([]byte("250-smtp.example.test\r\n250 AUTH PLAIN\r\n"))
+				// AUTH PLAIN
+				_, _ = conn.Read(buf)
+				_, _ = conn.Write([]byte("535 5.7.8 rejected credential " + authPlain + " and " + smtpPwd + "\r\n"))
+				// Stay connected until the client hangs up. Closing right after
+				// the 535 races the client's read and can surface a broken pipe
+				// instead of the reply this test inspects.
+				for {
+					n, readErr := conn.Read(buf)
+					if readErr != nil {
+						return
+					}
+					if strings.HasPrefix(strings.ToUpper(string(buf[:n])), "QUIT") {
+						_, _ = conn.Write([]byte("221 bye\r\n"))
+						return
+					}
+					_, _ = conn.Write([]byte("502 unsupported\r\n"))
+				}
+			}()
 
-	netProto := &Network{}
-	if err := netProto.Init(context.Background(), map[string]any{
-		"network_timeout_ms": float64(2000),
-		"network_username":   smtpUser,
-		"network_password":   smtpPwd,
-		"network_from":       smtpUser,
-		"network_to":         []any{"dest@example.test"},
-	}); err != nil {
-		t.Fatalf("init network: %v", err)
-	}
-	const dynSecret = "synth-net-redactor-secret-9502"
-	netProto.SetRuntimeTextRedactor(func(s string) string {
-		return strings.ReplaceAll(s, dynSecret, "[REDACTED]")
-	})
-	result, err := netProto.Execute(context.Background(), &protocol.Action{
-		Name:    "smtp-auth-echo",
-		Type:    "smtp_send",
-		Target:  listener.Addr().String(),
-		Headers: map[string]string{"X-AccPassword": "short-net-hdr-pwd", "X-Trace": dynSecret},
-		Params: map[string]any{
-			"tags": map[string]string{
-				"password": "short-net-param-pwd",
-				"trace":    dynSecret,
-				"smtp":     smtpPwd,
-				"env":      "staging",
-			},
-		},
-		Body: []byte("hello " + smtpPwd + " " + dynSecret),
-	})
-	if err != nil {
-		t.Fatalf("Execute: %v", err)
-	}
-	snapJSON, _ := json.Marshal(result.Snapshot)
-	evJSON, _ := json.Marshal(result.ProtocolEvidence)
-	for _, secret := range []string{smtpPwd, authPlain, dynSecret, "short-net-hdr-pwd", "short-net-param-pwd"} {
-		if strings.Contains(result.ResponseBody, secret) || strings.Contains(result.ErrorMessage, secret) || strings.Contains(string(snapJSON), secret) || strings.Contains(string(evJSON), secret) {
-			t.Fatalf("SMTP response/error/snapshot leaked %q: body=%q err=%q snap=%s ev=%s", secret, result.ResponseBody, result.ErrorMessage, snapJSON, evJSON)
-		}
+			netProto := &Network{}
+			if err := netProto.Init(context.Background(), map[string]any{
+				"network_timeout_ms": float64(2000),
+				"network_username":   smtpUser,
+				"network_password":   smtpPwd,
+				"network_from":       smtpUser,
+				"network_to":         []any{"dest@example.test"},
+			}); err != nil {
+				t.Fatalf("init network: %v", err)
+			}
+			redacted := append([]string{dynSecret}, testCase.engineRedacts...)
+			netProto.SetRuntimeTextRedactor(func(s string) string {
+				for _, value := range redacted {
+					s = strings.ReplaceAll(s, value, "[REDACTED]")
+				}
+				return s
+			})
+			result, err := netProto.Execute(context.Background(), &protocol.Action{
+				Name:    "smtp-auth-echo",
+				Type:    "smtp_send",
+				Target:  listener.Addr().String(),
+				Headers: map[string]string{"X-AccPassword": "short-net-hdr-pwd", "X-Trace": dynSecret},
+				Params: map[string]any{
+					"tags": map[string]string{
+						"password": "short-net-param-pwd",
+						"trace":    dynSecret,
+						"env":      "staging",
+					},
+				},
+				Body: []byte("hello " + dynSecret),
+			})
+			if err != nil {
+				t.Fatalf("Execute: %v", err)
+			}
+			snapJSON, _ := json.Marshal(result.Snapshot)
+			evJSON, _ := json.Marshal(result.ProtocolEvidence)
+			surfaces := result.ResponseBody + "\n" + result.ErrorMessage + "\n" + string(snapJSON) + "\n" + string(evJSON)
+			for _, secret := range []string{dynSecret, "short-net-hdr-pwd", "short-net-param-pwd"} {
+				if strings.Contains(surfaces, secret) {
+					t.Fatalf("SMTP response/error/snapshot leaked %q: %s", secret, surfaces)
+				}
+			}
+			// The visibility checks below are only meaningful on the server's
+			// 535 echo; a transport error would make the hidden row pass vacuously.
+			if !strings.Contains(result.ErrorMessage, "535") {
+				t.Fatalf("SMTP error = %q, want the server's 535 reply", result.ErrorMessage)
+			}
+			for _, literal := range []string{smtpPwd, authPlain} {
+				if leaked := strings.Contains(result.ErrorMessage, literal); leaked == testCase.literalHidden {
+					t.Fatalf("configured SMTP literal %q leaked=%t in error, want hidden=%t: %q",
+						literal, leaked, testCase.literalHidden, result.ErrorMessage)
+				}
+			}
+		})
 	}
 }

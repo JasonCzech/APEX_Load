@@ -293,6 +293,27 @@ type RuntimeTextRedactorSetter interface {
 	SetRuntimeTextRedactor(TextRedactor)
 }
 
+// RuntimeAuthoredTextRedactorSetter is an optional protocol capability for
+// script-authored REQUEST content (targets, request headers' values, request
+// bodies, action params). The bound redactor applies the run's exact runtime
+// values and project rules; it applies the built-in name/shape scrubber only
+// when the script turned config.log.redact_run_evidence on. Server response
+// content keeps using the RuntimeTextRedactorSetter redactor.
+type RuntimeAuthoredTextRedactorSetter interface {
+	SetRuntimeAuthoredTextRedactor(TextRedactor)
+}
+
+// RedactsAuthoredEvidence reports whether a protocol's own name/shape masking
+// (sensitive header names, sensitive param keys) applies to script-authored
+// request content under config. The engine always sets
+// RedactAuthoredEvidenceConfigKey from the script's
+// config.log.redact_run_evidence; a config without it (direct protocol callers
+// and tests) keeps the historical full masking.
+func RedactsAuthoredEvidence(config map[string]any) bool {
+	value, ok := config[RedactAuthoredEvidenceConfigKey].(bool)
+	return !ok || value
+}
+
 // BoundedTextRedactor projects a complete, bounded piece of diagnostic text.
 // A false result means the value cannot be safely disclosed and must be
 // omitted in its entirety. It is an in-memory capability, never wire data.
@@ -567,6 +588,25 @@ type NetworkEntry struct {
 	// Aura names the actions of a Salesforce Aura request (/aura) and how
 	// each ended: names only, never what the actions sent.
 	Aura *AuraBatch `json:"aura,omitempty"`
+	// ScriptRequest is set in-process by the adapter that sent this request
+	// directly from the script's action (the action's own first wire hop),
+	// as opposed to traffic a page or a redirect produced. Only such an entry's
+	// request side is script-authored content that follows
+	// config.log.redact_run_evidence. It is never serialized.
+	ScriptRequest bool `json:"-"`
+	// RequestCookieNotAuthored is set in-process on a ScriptRequest entry
+	// whose recorded Cookie header is not what the script authored: the
+	// cookie jar added (or appended) cookies a server issued earlier. That
+	// header is server-sourced and keeps the full name mask whatever
+	// config.log.redact_run_evidence says. It is never serialized.
+	RequestCookieNotAuthored bool `json:"-"`
+	// AuthoredRequestRetained is set by the engine on a ScriptRequest entry
+	// when the script left config.log.redact_run_evidence off: the request side
+	// (URL, request headers, request body) then keeps what the script
+	// authored, with only exact platform-managed values removed. Later
+	// archive/report/HAR sanitizers honour it by skipping their own name/shape
+	// scrub of the request side.
+	AuthoredRequestRetained bool `json:"authored_request_retained,omitempty"`
 }
 
 // AuraBatch is one Aura request's actions, in order.
@@ -963,6 +1003,10 @@ const (
 	// ReplayUnredactedDebugConfigKey enables raw protocol snapshots for an interactive
 	// debugger. The engine must scrub these before publishing to ordinary sinks.
 	ReplayUnredactedDebugConfigKey = "apexload_internal_unredacted_debug"
+	// RedactAuthoredEvidenceConfigKey carries the script's
+	// config.log.redact_run_evidence (bool) to protocol adapters. See
+	// RedactsAuthoredEvidence.
+	RedactAuthoredEvidenceConfigKey = "apexload_internal_redact_authored_evidence"
 	// MaxCorrelationEvidenceBytes bounds the aggregate private request/response
 	// exchange before it is copied into replay-only correlation evidence.
 	MaxCorrelationEvidenceBytes = 12 << 20
@@ -1070,6 +1114,15 @@ type ErrorSnapshot struct {
 	ConsoleEntries                []ConsoleEntry     `json:"console_entries,omitempty"`
 	NetworkEntries                []NetworkEntry     `json:"network_entries,omitempty"`
 	DOMSummary                    *DOMSummary        `json:"dom_summary,omitempty"`
+	// AuthoredRequestRetained: see NetworkEntry.AuthoredRequestRetained. It
+	// covers the action's own RequestURL, RequestHeaders and RequestBody;
+	// page-discovered Resources keep the full scrub.
+	AuthoredRequestRetained bool `json:"authored_request_retained,omitempty"`
+	// RequestURLNotAuthored is set in-process when RequestURL came from the
+	// server rather than the script (a meta-refresh follow-up navigates to a
+	// URL the response named). That URL keeps the full scrub whatever
+	// config.log.redact_run_evidence says. It is never serialized.
+	RequestURLNotAuthored bool `json:"-"`
 }
 
 func ClassifyPayloadSize(value int64) string {

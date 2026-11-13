@@ -40,10 +40,12 @@ type VUser struct {
 	replayRuntime     *replayRuntimeState
 	unredactedDebug   bool
 	// debugSecretMask hides secret-store values from unredacted debug output.
-	debugSecretMask      *RedactionConfig
-	debugRetryEvidence   *ReplayActionEvent
-	debugRetryError      error
-	debugRetryGroupCount int
+	debugSecretMask *RedactionConfig
+	// debugSecretMaskValues is the cumulative value set behind debugSecretMask.
+	debugSecretMaskValues map[string]struct{}
+	debugRetryEvidence    *ReplayActionEvent
+	debugRetryError       error
+	debugRetryGroupCount  int
 
 	webSocketCallbackSteps []dsl.Action
 	inWebSocketCallback    bool
@@ -174,6 +176,18 @@ type VUser struct {
 	// filterRuntimeCredentialBaseValues drops it in that case. Per-VUser (single
 	// goroutine), like unresolvedSecretRefs.
 	actionCredentialComposites resolvedActionCredentialComposites
+	// transformedBodySpellings collects, while resolveAction interpolates a
+	// transformed body (a Windows-1252 url-form body, a structured Aura body),
+	// the wire spellings the body transform gives each platform value it
+	// inserts and, with config.log.redact_run_evidence on, each script-sourced
+	// value. resolveAction files them with actionCredentialComposites.
+	transformedBodySpellings transformedBodySpellingSet
+	// bodyPlatformTemplates memoizes bodyTemplatesMayCarryPlatformValue per
+	// authored body (bounded; see maxBodyPlatformTemplateMemo).
+	bodyPlatformTemplates map[string]bool
+	// platformCarrier memoizes platformSecretCarrier per matcher publication
+	// (see platformCarrierCache). Per-VUser (single goroutine).
+	platformCarrier *platformCarrierCache
 	// extractedVariables accounts only for values persisted from protocol
 	// responses. It prevents data-driven extractor names from growing the VUser
 	// variable map for the lifetime of a long run.
@@ -251,6 +265,15 @@ type VUser struct {
 type resolvedActionCredentialComposites struct {
 	action *protocol.Action
 	values []string
+	// scriptValues are the transformed-body spellings of script-sourced values
+	// (recorded only with config.log.redact_run_evidence on); they are filed
+	// under the script-sourced action scope, so they follow the setting.
+	scriptValues []string
+	// bodyMayCarryPlatformValue reports whether the authored body has a
+	// template that can insert a runtime value (bodyTemplatesMayCarryPlatformValue).
+	// It is computed only for the encodings appendPlatformDerivedBodySpellings
+	// reads it for (base64, UTF-16LE).
+	bodyMayCarryPlatformValue bool
 }
 
 type PauseController interface {

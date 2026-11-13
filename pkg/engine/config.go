@@ -290,6 +290,10 @@ func buildProtoConfigWithSecretResolver(script *dsl.Script, resolver SecretResol
 		"ignore_think_time":   script.Config.ThinkTime.Ignore,
 		"think_time_limit_ms": script.Config.ThinkTime.LimitMs,
 	}
+	// Name/shape masking of script-authored request content follows the
+	// operator's config.log.redact_run_evidence; adapters read it through
+	// protocol.RedactsAuthoredEvidence.
+	cfg[protocol.RedactAuthoredEvidenceConfigKey] = scriptRedactsRunEvidence(script)
 	if script.Metadata != nil && script.Metadata.RuntimePolicy != nil && len(script.Metadata.RuntimePolicy.AllowedTargetHosts) > 0 {
 		cfg[protocol.TargetPolicyConfigKey] = append([]string(nil), script.Metadata.RuntimePolicy.AllowedTargetHosts...)
 	}

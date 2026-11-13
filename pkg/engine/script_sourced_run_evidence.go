@@ -36,21 +36,20 @@ const scriptSourcedRedactionDroppedWarning = "script-sourced run-evidence redact
 	"platform-managed secrets remain redacted"
 
 // ScriptRedactsRunEvidence exposes the explicit operator setting
-// script.Config.Log.RedactRunEvidence (default false when nil) for non-secret
+// script.Config.Log.RedactRunEvidence (default false when nil). It gates every
+// script-sourced credential contribution to run-output redaction (literal DSL
+// values, imported credentials, resolved action credentials) and non-secret
 // run-evidence policy consumers such as business-key digest-only archiving.
-// Literal and script-sourced credentials are redacted unconditionally via
-// scriptRedactsCredentials regardless of this flag.
+// Platform-managed secret-store values are redacted regardless of this flag.
 func ScriptRedactsRunEvidence(script *dsl.Script) bool {
-	if script == nil {
-		return false
-	}
-	return logConfigRedactsRunEvidence(script.Config.Log)
+	return scriptRedactsRunEvidence(script)
 }
 
-// scriptRedactsCredentials reports whether script-sourced credential values
-// participate in run-output redaction. Every non-nil script participates.
-func scriptRedactsCredentials(script *dsl.Script) bool {
-	return script != nil
+// scriptRedactsRunEvidence reports whether script-sourced credential values
+// participate in run-output redaction: only when the operator explicitly set
+// config.log.redact_run_evidence to true.
+func scriptRedactsRunEvidence(script *dsl.Script) bool {
+	return script != nil && logConfigRedactsRunEvidence(script.Config.Log)
 }
 
 func logConfigRedactsRunEvidence(logCfg dsl.LogConfig) bool {
@@ -72,7 +71,8 @@ func RuntimeProtocolAuthCompositeValues(script *dsl.Script, resolver SecretResol
 // platformManaged carries whatever the caller already snapshotted from the secret
 // resolver. The returned platform-managed slice adds the composite spellings that
 // only exist once protocol config is built. The returned script-sourced slice
-// includes all literal credentials extracted from the script.
+// holds the literal credentials extracted from the script, and is nil unless
+// the script sets config.log.redact_run_evidence to true.
 //
 // The third return is the value-free result of the same locator walk, and every
 // caller MUST pass it to each VUser it builds (VUser.importedCredentialInspection).
@@ -90,7 +90,7 @@ func runtimeSecretValuesForScript(
 		return nil, nil, nil, err
 	}
 	inspection := &importedCredentialInspection{plan: plan}
-	if !scriptRedactsCredentials(script) {
+	if !scriptRedactsRunEvidence(script) {
 		return platformManaged, nil, inspection, nil
 	}
 	return platformManaged, scriptSourced, inspection, nil

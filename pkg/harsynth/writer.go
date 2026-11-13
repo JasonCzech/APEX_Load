@@ -212,7 +212,7 @@ func (w *Writer) Add(e Entry) error {
 		w.omitted[reason]++
 		return nil
 	}
-	raw, err := scrubEntry(entry, w.meta.Policy)
+	raw, err := scrubEntryKeepingAuthoredRequest(entry, w.meta.Policy, e.Network.AuthoredRequestRetained)
 	if err != nil {
 		w.omitted[OmittedUnscrubbable]++
 		return nil //nolint:nilerr // an entry that cannot be scrubbed is counted omitted and never written
@@ -413,6 +413,28 @@ func scrubEntry(entry harEntry, policy scrub.Policy) ([]byte, error) {
 		return nil, err
 	}
 	delete(doc, "_apexloadSensitivity")
+	return json.Marshal(doc)
+}
+
+// scrubEntryKeepingAuthoredRequest is scrubEntry for an observation whose
+// request side the engine marked as already scrubbed under a script that left
+// config.log.redact_run_evidence off (protocol.NetworkEntry.AuthoredRequestRetained):
+// the response side is scrubbed as always, the request (URL, headers, query,
+// postData) keeps the authored values the engine let through.
+func scrubEntryKeepingAuthoredRequest(entry harEntry, policy scrub.Policy, keepRequest bool) ([]byte, error) {
+	scrubbed, err := scrubEntry(entry, policy)
+	if err != nil || !keepRequest {
+		return scrubbed, err
+	}
+	request, err := json.Marshal(entry.Request)
+	if err != nil {
+		return nil, err
+	}
+	var doc map[string]json.RawMessage
+	if err := json.Unmarshal(scrubbed, &doc); err != nil {
+		return nil, err
+	}
+	doc["request"] = request
 	return json.Marshal(doc)
 }
 
