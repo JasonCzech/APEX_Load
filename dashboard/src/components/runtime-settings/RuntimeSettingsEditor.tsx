@@ -7,23 +7,17 @@ import type {
 } from '../scriptEditorRuntimeSettingsModel'
 import ScriptRuntimeSettingsView from '../ScriptRuntimeSettingsView'
 import {
-  CANONICAL_RUNTIME_GROUPS,
   getCanonicalGroupDestinationForPaths,
-  getCanonicalGroupForPath,
   getCanonicalGroupForSection,
-  getCanonicalRuntimeGroup,
-  getCanonicalRuntimeGroupsForProtocol,
   isLocationInCanonicalGroup,
-  isOverrideProvenance,
   normalizeRuntimeProtocol,
-  RUNTIME_VALUE_PROVENANCE_LABELS,
   type CanonicalCatalogFieldRef,
-  type CanonicalRuntimeGroupDefinition,
   type CanonicalRuntimeGroupId,
   type RuntimeFieldLocation,
   type RuntimeSettingsEditorMode,
   type RuntimeValueProvenance,
 } from './canonicalRuntimeTaxonomy'
+import { CanonicalRuntimeGroupRail } from './CanonicalRuntimeGroupRail'
 
 export interface RuntimeSettingsEditorProps {
   mode?: RuntimeSettingsEditorMode
@@ -50,75 +44,6 @@ export interface RuntimeSettingsEditorProps {
   /** Effective-value provenance by config path, shown as legend and per-group badges in debug and scenario modes. */
   provenance?: Readonly<Record<string, RuntimeValueProvenance>>
   children?: ReactNode
-}
-
-const PROVENANCE_MODES: readonly RuntimeSettingsEditorMode[] = ['debug', 'scenario']
-
-/**
- * The config paths of a group that a rail search hits by path or catalog
- * label. A path counts for the group it resolves to (catalog first), so a
- * pill is never credited with a field the catalog places elsewhere.
- */
-function canonicalGroupSearchFieldMatches(
-  group: CanonicalRuntimeGroupDefinition,
-  query: string,
-  catalogFields?: readonly CanonicalCatalogFieldRef[],
-): string[] {
-  const needle = query.trim().toLowerCase()
-  if (!needle) {
-    return []
-  }
-  const candidates: Array<{ path: string; label: string }> = group.configPaths.map(path => ({ path, label: '' }))
-  for (const field of catalogFields ?? []) {
-    if (field.group === group.id) {
-      candidates.push({ path: field.path, label: field.label ?? '' })
-    }
-  }
-  const matches: string[] = []
-  for (const { path, label } of candidates) {
-    if (!path.toLowerCase().includes(needle) && !label.toLowerCase().includes(needle)) continue
-    if (getCanonicalGroupForPath(path, catalogFields) !== group.id) continue
-    if (!matches.includes(path)) matches.push(path)
-  }
-  return matches
-}
-
-/** Whether a canonical group matches a rail search by label, description, or field label or path. */
-function canonicalGroupMatchesSearch(
-  group: CanonicalRuntimeGroupDefinition,
-  query: string,
-  catalogFields?: readonly CanonicalCatalogFieldRef[],
-): boolean {
-  const needle = query.trim().toLowerCase()
-  if (!needle) {
-    return true
-  }
-  if ([group.label, group.description].some(text => text.toLowerCase().includes(needle))) {
-    return true
-  }
-  return canonicalGroupSearchFieldMatches(group, needle, catalogFields).length > 0
-}
-
-/** Override-provenance paths per canonical group. */
-function overridePathsByCanonicalGroup(
-  provenance?: Readonly<Record<string, RuntimeValueProvenance>>,
-  catalogFields?: readonly CanonicalCatalogFieldRef[],
-): Partial<Record<CanonicalRuntimeGroupId, string[]>> {
-  const paths: Partial<Record<CanonicalRuntimeGroupId, string[]>> = {}
-  for (const [path, source] of Object.entries(provenance ?? {})) {
-    if (!isOverrideProvenance(source)) continue
-    const groupId = getCanonicalGroupForPath(path, catalogFields)
-    if (!groupId) continue
-    ;(paths[groupId] ??= []).push(path)
-  }
-  return paths
-}
-
-const MODE_LABELS: Record<RuntimeSettingsEditorMode, string> = {
-  author: 'Author VUsers runtime settings',
-  import: 'Imported VUsers runtime settings',
-  debug: 'Debug VUsers session overrides',
-  scenario: 'Scenario VUsers runtime overrides',
 }
 
 export function RuntimeSettingsEditor({
@@ -158,11 +83,6 @@ export function RuntimeSettingsEditor({
   const [pinnedGroup, setPinnedGroup] = useState<({ groupId: CanonicalRuntimeGroupId } & RuntimeFieldLocation) | null>(null)
   const [search, setSearch] = useState('')
 
-  const supportedGroups = useMemo(
-    () => getCanonicalRuntimeGroupsForProtocol(effectiveProtocol, mode),
-    [effectiveProtocol, mode],
-  )
-
   const derivedGroupId = useMemo(
     () => getCanonicalGroupForSection(currentSection, currentHttpTab),
     [currentSection, currentHttpTab],
@@ -189,16 +109,6 @@ export function RuntimeSettingsEditor({
     }
   }, [pinnedGroup, pinnedGroupId])
   const currentGroupId = activeGroupId ?? pinnedGroupId ?? derivedGroupId
-  const showProvenance = PROVENANCE_MODES.includes(mode)
-  const overridePaths = useMemo(
-    () => (showProvenance ? overridePathsByCanonicalGroup(provenance, catalogFields) : {}),
-    [showProvenance, provenance, catalogFields],
-  )
-  const visibleGroups = supportedGroups.filter(group =>
-    canonicalGroupMatchesSearch(group, search, catalogFields),
-  )
-  const currentGroup = getCanonicalRuntimeGroup(currentGroupId)
-
   const handleSelectSection = (nextSection: RuntimeSettingsSectionId) => {
     if (onSelectSection) {
       onSelectSection(nextSection)
@@ -215,20 +125,9 @@ export function RuntimeSettingsEditor({
     }
   }
 
-  // A pill standing for specific fields (search hits, else overridden paths)
-  // opens the panel that renders them, not only the group's default panel.
-  const focusPathsForGroup = (group: CanonicalRuntimeGroupDefinition): string[] =>
-    search.trim()
-      ? canonicalGroupSearchFieldMatches(group, search, catalogFields)
-      : overridePaths[group.id] ?? []
-
-  const handleSelectCanonicalGroup = (groupId: CanonicalRuntimeGroupId) => {
+  const handleSelectCanonicalGroup = (groupId: CanonicalRuntimeGroupId, focusPaths: string[]) => {
     onSelectGroup?.(groupId)
-    const destination = getCanonicalGroupDestinationForPaths(
-      groupId,
-      effectiveProtocol,
-      focusPathsForGroup(getCanonicalRuntimeGroup(groupId)),
-    )
+    const destination = getCanonicalGroupDestinationForPaths(groupId, effectiveProtocol, focusPaths)
     pinReachedRef.current = false
     setPinnedGroup({ groupId, ...destination })
     handleSelectSection(destination.section)
@@ -273,95 +172,16 @@ export function RuntimeSettingsEditor({
       data-runtime-editor-mode={mode}
       data-runtime-protocol={effectiveProtocol}
     >
-      <div className="runtime-canonical-header">
-        <div className="runtime-canonical-header-meta">
-          <span
-            className="repository-status-pill"
-            data-testid="runtime-editor-mode-badge"
-          >
-            {MODE_LABELS[mode]}
-          </span>
-          <span
-            className="repository-status-pill"
-            data-testid="runtime-editor-protocol-badge"
-          >
-            {effectiveProtocol}
-          </span>
-          <span
-            className="text-muted"
-            data-testid="runtime-editor-active-group-summary"
-          >
-            {currentGroup.label} — {currentGroup.description}
-          </span>
-        </div>
-        <input
-          type="search"
-          autoComplete="off"
-          className="runtime-canonical-group-search"
-          aria-label="Search runtime settings groups"
-          placeholder="Search groups and settings"
-          data-testid="runtime-settings-canonical-group-search"
-          value={search}
-          onChange={event => setSearch(event.target.value)}
-        />
-        {showProvenance && (
-          <ul
-            className="runtime-canonical-provenance-legend"
-            aria-label="Value provenance"
-            data-testid="runtime-settings-provenance-legend"
-          >
-            {(Object.keys(RUNTIME_VALUE_PROVENANCE_LABELS) as RuntimeValueProvenance[]).map(source => (
-              <li key={source} data-provenance={source}>
-                <span className={`repository-status-pill provenance-${source}`}>
-                  {RUNTIME_VALUE_PROVENANCE_LABELS[source]}
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
-        <nav
-          className="runtime-canonical-groups-rail"
-          aria-label="Canonical runtime settings groups"
-          data-testid="runtime-settings-canonical-groups"
-        >
-          {CANONICAL_RUNTIME_GROUPS.map((group, index) => {
-            if (!visibleGroups.some(item => item.id === group.id)) {
-              return null
-            }
-            const isActive = group.id === currentGroupId
-            const groupOverridePaths = overridePaths[group.id] ?? []
-            const overrides = groupOverridePaths.length
-            return (
-              <button
-                key={group.id}
-                type="button"
-                className={`runtime-canonical-group-pill ${isActive ? 'active' : ''}`}
-                data-testid={`runtime-settings-canonical-group-${group.id}`}
-                data-canonical-group={group.id}
-                aria-pressed={isActive}
-                onClick={() => handleSelectCanonicalGroup(group.id)}
-              >
-                <span className="runtime-canonical-group-index">{index + 1}.</span>
-                <span>{group.label}</span>
-                {overrides > 0 && (
-                  <span
-                    className="repository-status-pill"
-                    data-testid={`runtime-settings-canonical-group-overrides-${group.id}`}
-                    title={groupOverridePaths.join(', ')}
-                  >
-                    {overrides === 1 ? '1 override' : `${overrides} overrides`}
-                  </span>
-                )}
-              </button>
-            )
-          })}
-          {visibleGroups.length === 0 && (
-            <span className="text-muted" role="status" data-testid="runtime-settings-canonical-group-search-empty">
-              No runtime settings groups match this search.
-            </span>
-          )}
-        </nav>
-      </div>
+      <CanonicalRuntimeGroupRail
+        mode={mode}
+        protocol={effectiveProtocol}
+        currentGroupId={currentGroupId}
+        search={search}
+        onSearchChange={setSearch}
+        onSelectGroup={handleSelectCanonicalGroup}
+        catalogFields={catalogFields}
+        provenance={provenance}
+      />
       {children ? (
         children
       ) : (

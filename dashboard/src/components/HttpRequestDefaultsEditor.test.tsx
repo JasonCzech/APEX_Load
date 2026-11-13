@@ -77,6 +77,27 @@ describe('HttpRequestDefaultsEditor', () => {
     return { onAddRuntimeAction, onChange }
   }
 
+  it('hides the two-state cookie, cache and trace context controls only when asked', () => {
+    const texts = () => Array.from(container.querySelectorAll('label')).map(label => (label.querySelector('strong, span')?.textContent || '').trim())
+    render({}, 'session')
+    expect(texts()).toEqual(expect.arrayContaining(['Enable cookie jar', 'Clear learned cookies each iteration', 'Simulate HTTP cache']))
+    render({}, 'request')
+    expect(texts()).toEqual(expect.arrayContaining(['Trace context', 'Generated trace sampling']))
+    for (const section of ['session', 'request'] as const) {
+      act(() => {
+        root.render(<HttpRequestDefaultsEditor hideBooleanPolicyControls onChange={vi.fn()} section={section} value={{}} />)
+      })
+      for (const hidden of ['Enable cookie jar', 'Clear learned cookies each iteration', 'Simulate HTTP cache', 'Trace context', 'Generated trace sampling']) {
+        expect(texts()).not.toContain(hidden)
+      }
+    }
+    // The new-user toggle has no three-state twin and stays.
+    act(() => {
+      root.render(<HttpRequestDefaultsEditor hideBooleanPolicyControls onChange={vi.fn()} section="session" value={{}} />)
+    })
+    expect(container.textContent).toContain('Simulate a new user each iteration')
+  })
+
   it('promotes legacy headers into the ordered list when editing', () => {
     const { onChange } = render({ default_headers: { 'X-Legacy': 'one' } })
 

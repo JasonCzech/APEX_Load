@@ -22,6 +22,8 @@ import {
   generatorDisabledReason,
   getEffectiveRuntimeDefaults,
   groupHiddenPartialTiming,
+  groupInheritedRuntimeText,
+  groupRunOverrideWithRuntimeRow,
   groupOverrideCount,
   groupOverrideKey,
   groupPlacementSummary,
@@ -1310,5 +1312,63 @@ describe('groupHiddenPartialTiming', () => {
     expect(groupHiddenPartialTiming('think_time', scenario.scripts[0], scenario, runDefaults)?.groupOwned).toBe(false)
     const typed = { ...scenario.scripts[0], runtime_settings: { think_time: { type: 'fixed', mean_ms: 5 }, override_fields: ['think_time'] } as RuntimeSettingsOverride }
     expect(groupHiddenPartialTiming('think_time', typed, scenario, runDefaults)).toBeUndefined()
+  })
+})
+
+describe('group inherit options and the full runtime editor row', () => {
+  function inheritScenario(groupRuntime?: RuntimeSettingsOverride, scenarioRuntime?: RuntimeSettingsOverride): StoredScenario {
+    const scenario = scenarioFixture()
+    return {
+      ...scenario,
+      runtime_settings: scenarioRuntime,
+      scripts: [{ ...scenario.scripts[0], runtime_settings: groupRuntime }],
+    }
+  }
+  const script = { log: { level: 'extended' }, run_logic: { auto_transactions: 'per_action' } } as unknown as Parameters<typeof groupInheritedRuntimeText>[5]
+  const engine = { log: { level: 'standard' } } as unknown as Parameters<typeof groupInheritedRuntimeText>[6]
+
+  it('leaves an unset select on inherit and names the run level, then the script, then the engine', () => {
+    const runDefaults = buildEmptyRunDefaultOverrides()
+    const unset = inheritScenario()
+    expect(buildGroupEditDraft(unset.scripts[0], unset, runDefaults).log_level).toBe('')
+    expect(buildGroupEditDraft(unset.scripts[0], unset, runDefaults).auto_transactions).toBe('')
+    expect(groupInheritedRuntimeText('log_level', unset.scripts[0], unset, runDefaults, undefined, script, engine)).toBe('extended')
+    expect(groupInheritedRuntimeText('log_level', unset.scripts[0], unset, runDefaults, undefined, undefined, engine)).toBe('standard')
+    expect(groupInheritedRuntimeText('auto_transactions', unset.scripts[0], unset, runDefaults)).toBeUndefined()
+    const rootSet = inheritScenario(undefined, { log_level: 'disabled' })
+    expect(groupInheritedRuntimeText('log_level', rootSet.scripts[0], rootSet, runDefaults, undefined, script, engine)).toBe('disabled')
+  })
+
+  it('names the run level behind a value the group sets, but not behind a group row that clears it', () => {
+    const runDefaults = buildEmptyRunDefaultOverrides()
+    const groupSets = inheritScenario({ log: { level: 'extended' } }, { log_level: 'disabled' })
+    expect(buildGroupEditDraft(groupSets.scripts[0], groupSets, runDefaults).log_level).toBe('extended')
+    expect(groupInheritedRuntimeText('log_level', groupSets.scripts[0], groupSets, runDefaults, undefined, script)).toBe('disabled')
+    // A v1 log section without a level replaces the script's log section whole at run time
+    // (applyRuntimeOverrides), so neither the run level nor the script reaches it: the engine
+    // default runs.
+    const groupClears = inheritScenario({ log: { on_error_only: true } }, { log_level: 'disabled' })
+    expect(buildGroupEditDraft(groupClears.scripts[0], groupClears, runDefaults).log_level).toBe('')
+    expect(groupInheritedRuntimeText('log_level', groupClears.scripts[0], groupClears, runDefaults, undefined, script, engine)).toBe('standard')
+    expect(groupInheritedRuntimeText('log_level', groupClears.scripts[0], groupClears, runDefaults, undefined, script)).toBeUndefined()
+    // Same for a v1 run_logic section without auto_transactions.
+    const runLogicClears = inheritScenario({ run_logic: { iterations: 2 } })
+    expect(groupInheritedRuntimeText('auto_transactions', runLogicClears.scripts[0], runLogicClears, runDefaults, undefined, script, engine)).toBeUndefined()
+  })
+
+  it('stores the full editor row as the run override and submits exactly its paths', () => {
+    const scenario = inheritScenario({ http: { request_timeout_ms: 5000 }, log: { level: 'extended' } })
+    const key = groupOverrideKey(scenario.scripts[0])
+    const existing: GroupRunOverride = { vusers: 4 }
+    const row = { log: { level: 'extended' }, override_fields: ['log.level'] } as RuntimeSettingsOverride
+    const next = groupRunOverrideWithRuntimeRow(existing, row)
+    expect(next.vusers).toBe(4)
+    expect(next.runtime_settings).not.toBe(row)
+    const submitted = buildGroupsForRunPayload(scenario, { [key]: next })?.[0].runtime_settings
+    expect(resolveRuntimeOverrideFields(submitted)).toEqual(['log.level'])
+    // A row that resets everything stays an explicit empty partial row.
+    const cleared = buildGroupsForRunPayload(scenario, { [key]: groupRunOverrideWithRuntimeRow(undefined, { override_fields: [] } as RuntimeSettingsOverride) })?.[0].runtime_settings
+    expect(resolveRuntimeOverrideFields(cleared)).toEqual([])
+    expect(cleared?.http).toBeUndefined()
   })
 })

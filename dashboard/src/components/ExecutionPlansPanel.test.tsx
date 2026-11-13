@@ -1064,4 +1064,182 @@ describe('ExecutionPlansPanel', () => {
     expect(saved.entries[0].runtime_overrides).toEqual(runtimeOverrides)
     expect(saved.entries[1].runtime_overrides).toBeUndefined()
   })
+
+  describe('entry runtime settings', () => {
+    function mockConfigDefaults() {
+      vi.spyOn(globalThis, 'fetch').mockImplementation(async () => new Response(JSON.stringify({ config: {} }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
+    }
+    async function openEditor(entries: ExecutionPlan['entries']) {
+      mockConfigDefaults()
+      plansApiMock.listExecutionPlans.mockResolvedValue({ execution_plans: [plan({ revision: 2, entries })], count: 1 })
+      plansApiMock.updateExecutionPlan.mockResolvedValue({ id: 'p1' })
+      await act(async () => { root.render(<ExecutionPlansPanel projectId="proj-a" canManage />) })
+      await flush()
+      await act(async () => { Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Edit')?.click() })
+    }
+    async function openEntryRuntime(entryNumber: number) {
+      await act(async () => { (document.querySelector(`[data-testid="entry-${entryNumber}-runtime-settings"]`) as HTMLButtonElement).click() })
+      await flush()
+      return document.querySelector('[data-testid="plan-entry-runtime-dialog"]') as HTMLElement
+    }
+    async function clickIn(scope: ParentNode, label: string) {
+      const button = Array.from(scope.querySelectorAll<HTMLButtonElement>('button')).find(candidate => candidate.textContent === label || candidate.getAttribute('aria-label') === label)
+      if (!button) throw new Error(`button ${label} not found`)
+      await act(async () => button.click())
+      await flush()
+    }
+    async function savePlan() {
+      await clickIn(document, 'Save')
+      return plansApiMock.updateExecutionPlan.mock.calls[0][1] as { entries: ExecutionPlan['entries'] }
+    }
+    afterEach(() => vi.restoreAllMocks())
+
+    it('edits one entry as a partial row and keeps every other entry exactly as saved', async () => {
+      const partial = { log: { level: 'extended' }, http: { request_timeout_ms: 5000 }, override_fields: ['log.level', 'http.request_timeout_ms'] }
+      const emptyRow = {}
+      await openEditor([
+        { order: 0, scenario_id: 's1', enabled: true, runtime_overrides: structuredClone(partial) },
+        { order: 1, scenario_id: 's2', enabled: true, runtime_overrides: emptyRow },
+      ])
+      const dialog = await openEntryRuntime(1)
+      expect(dialog.textContent).toContain('replace the scenario')
+      await clickIn(dialog, 'Clear Log level override')
+      await clickIn(dialog, 'Apply to entry')
+      expect(document.querySelector('[data-testid="plan-entry-runtime-dialog"]')).toBeNull()
+      const saved = await savePlan()
+      // Only the cleared path left the row; the sibling path stays listed with its value.
+      expect(saved.entries[0].runtime_overrides).toEqual({ http: { request_timeout_ms: 5000 }, override_fields: ['http.request_timeout_ms'] })
+      // An untouched entry keeps even an empty row (it replaces the scenario's defaults).
+      expect(saved.entries[1].runtime_overrides).toEqual({})
+    })
+
+    it('keeps a stored row byte-for-byte when the editor is applied without a change', async () => {
+      const v1 = { log_level: 'extended', error_handling: { continue_on_error: false, max_retries: 3 } }
+      await openEditor([{ order: 0, scenario_id: 's1', enabled: true, runtime_overrides: structuredClone(v1) }])
+      const dialog = await openEntryRuntime(1)
+      await clickIn(dialog, 'Apply to entry')
+      const saved = await savePlan()
+      expect(saved.entries[0].runtime_overrides).toEqual(v1)
+    })
+
+    it('removes the overrides when every field is reset and Cancel discards edits', async () => {
+      await openEditor([{ order: 0, scenario_id: 's1', enabled: true, runtime_overrides: { http: { request_timeout_ms: 5000 }, override_fields: ['http.request_timeout_ms'] } }])
+      let dialog = await openEntryRuntime(1)
+      await clickIn(dialog, 'Clear HTTP transport override')
+      await clickIn(dialog, 'Cancel')
+      expect(document.querySelector('[data-testid="entry-1-runtime-overrides-badge"]')).not.toBeNull()
+      dialog = await openEntryRuntime(1)
+      await clickIn(dialog, 'Clear HTTP transport override')
+      await clickIn(dialog, 'Apply to entry')
+      expect(document.querySelector('[data-testid="entry-1-runtime-overrides-badge"]')).toBeNull()
+      const saved = await savePlan()
+      expect(saved.entries[0].runtime_overrides).toBeUndefined()
+    })
+
+    it('round-trips a SOAP credential reference and refuses a typed SOAP password', async () => {
+      const soap = { version: '1.2', ws_security: { username_token: { username: 'svc', password: '{{secret.SOAP_PASSWORD}}' } } }
+      await openEditor([
+        { order: 0, scenario_id: 's1', enabled: true, runtime_overrides: { soap: structuredClone(soap), pacing: { type: 'fixed_delay', delay_ms: 5 } } },
+        { order: 1, scenario_id: 's2', enabled: true, runtime_overrides: { soap: { ws_security: { username_token: { username: 'svc', password: 'hunter2' } } }, pacing: { type: 'fixed_delay', delay_ms: 5 } } },
+      ])
+      let dialog = await openEntryRuntime(1)
+      await clickIn(dialog, 'Clear Pacing override')
+      await clickIn(dialog, 'Apply to entry')
+      dialog = await openEntryRuntime(2)
+      await clickIn(dialog, 'Clear Pacing override')
+      await clickIn(dialog, 'Apply to entry')
+      expect(dialog.querySelector('[role="alert"]')?.textContent).toContain('{{secret.NAME}}')
+      await clickIn(dialog, 'Cancel')
+      const saved = await savePlan()
+      expect(saved.entries[0].runtime_overrides).toEqual({ soap, override_fields: ['soap'] })
+      // The refused edit was not applied; the stored row is kept as it was.
+      expect(saved.entries[1].runtime_overrides).toEqual({ soap: { ws_security: { username_token: { username: 'svc', password: 'hunter2' } } }, pacing: { type: 'fixed_delay', delay_ms: 5 } })
+    })
+
+    it('shows the SOAP tab so a typed SOAP password can be replaced with a reference', async () => {
+      await openEditor([
+        { order: 0, scenario_id: 's1', enabled: true, runtime_overrides: { soap: { ws_security: { username_token: { username: 'svc', password: 'hunter2' } } } } },
+      ])
+      const dialog = await openEntryRuntime(1)
+      const soapTab = Array.from(dialog.querySelectorAll<HTMLButtonElement>('[role="tab"]')).find(candidate => (candidate.textContent || '').trim() === 'SOAP')
+      expect(soapTab).toBeDefined()
+      await act(async () => soapTab!.click())
+      await flush()
+      const password = Array.from(dialog.querySelectorAll('label')).find(candidate => candidate.querySelector('span')?.textContent === 'WS-Security password')?.querySelector('input') ?? null
+      expect(password).not.toBeNull()
+      await act(async () => setValue(password, '{{secret.SOAP_PASSWORD}}'))
+      await clickIn(dialog, 'Apply to entry')
+      expect(document.querySelector('[data-testid="plan-entry-runtime-dialog"]')).toBeNull()
+      const saved = await savePlan()
+      expect(JSON.stringify(saved)).not.toContain('hunter2')
+      expect(saved.entries[0].runtime_overrides?.soap?.ws_security?.username_token).toEqual({ username: 'svc', password: '{{secret.SOAP_PASSWORD}}' })
+    })
+
+    async function openHttpSubTab(dialog: HTMLElement, label: string) {
+      for (const tabLabel of ['HTTP Transport', label]) {
+        const tab = Array.from(dialog.querySelectorAll<HTMLButtonElement>('[role="tab"]')).find(candidate => (candidate.textContent || '').trim() === tabLabel)
+        if (!tab) throw new Error(`${tabLabel} tab not found`)
+        await act(async () => tab.click())
+        await flush()
+      }
+    }
+    function inputLabelled(dialog: HTMLElement, label: string) {
+      return Array.from(dialog.querySelectorAll('label')).find(candidate => candidate.querySelector('span')?.textContent === label)?.querySelector('input') ?? null
+    }
+
+    it.each([
+      ['Authentication', 'Auth password', 'hunter2'],
+      ['Authentication', 'Auth token', 'eyJhbGciOi.typed'],
+      ['Proxy', 'Proxy password', 'hunter2'],
+      ['Proxy', 'Proxy URL', 'http://ops:hunter2@proxy.example.test:8080'],
+    ])('refuses a typed %s credential (%s) and never sends it to the plan API', async (subTab, label, typed) => {
+      await openEditor([{ order: 0, scenario_id: 's1', enabled: true }])
+      const dialog = await openEntryRuntime(1)
+      await openHttpSubTab(dialog, subTab)
+      await act(async () => setValue(inputLabelled(dialog, label), typed))
+      await clickIn(dialog, 'Apply to entry')
+      const alert = dialog.querySelector('[role="alert"]')?.textContent ?? ''
+      expect(alert).toContain('{{secret.NAME}}')
+      expect(document.querySelector('[data-testid="plan-entry-runtime-dialog"]')).not.toBeNull()
+      await clickIn(dialog, 'Cancel')
+      const saved = await savePlan()
+      expect(JSON.stringify(saved)).not.toContain('hunter2')
+      expect(JSON.stringify(saved)).not.toContain('eyJhbGciOi')
+      expect(saved.entries[0].runtime_overrides).toBeUndefined()
+    })
+
+    it('accepts an HTTP auth password typed as a project credential reference', async () => {
+      await openEditor([{ order: 0, scenario_id: 's1', enabled: true }])
+      const dialog = await openEntryRuntime(1)
+      await openHttpSubTab(dialog, 'Authentication')
+      await act(async () => setValue(inputLabelled(dialog, 'Auth password'), '{{secret.API_PASSWORD}}'))
+      await clickIn(dialog, 'Apply to entry')
+      expect(document.querySelector('[data-testid="plan-entry-runtime-dialog"]')).toBeNull()
+      const saved = await savePlan()
+      expect(saved.entries[0].runtime_overrides).toEqual({ http: { auth: { password: '{{secret.API_PASSWORD}}' } }, override_fields: ['http.auth.password'] })
+    })
+
+    it('refuses a controller-reserved credential reference for the HTTP proxy password', async () => {
+      await openEditor([{ order: 0, scenario_id: 's1', enabled: true }])
+      const dialog = await openEntryRuntime(1)
+      await openHttpSubTab(dialog, 'Proxy')
+      await act(async () => setValue(inputLabelled(dialog, 'Proxy password'), '{{secret.APEX_RUNTIME_OVERRIDE_X}}'))
+      await clickIn(dialog, 'Apply to entry')
+      expect(dialog.querySelector('[role="alert"]')?.textContent).toContain('http.proxy.password')
+    })
+
+    it('offers the WebSocket section, since an entry row applies to every group of its scenario', async () => {
+      await openEditor([{ order: 0, scenario_id: 's1', enabled: true }])
+      const dialog = await openEntryRuntime(1)
+      const tab = Array.from(dialog.querySelectorAll<HTMLButtonElement>('[role="tab"]')).find(candidate => (candidate.textContent || '').trim() === 'Error Handling')
+      if (!tab) throw new Error('Error Handling tab not found')
+      await act(async () => tab.click())
+      await flush()
+      const label = Array.from(dialog.querySelectorAll('label')).find(candidate => candidate.querySelector('span')?.textContent === 'WebSocket callback interval (ms)')
+      await act(async () => setValue(label?.querySelector('input') ?? null, '250'))
+      await clickIn(dialog, 'Apply to entry')
+      const saved = await savePlan()
+      expect(saved.entries[0].runtime_overrides).toEqual({ websocket: { callback_interval_ms: 250 }, override_fields: ['websocket.callback_interval_ms'] })
+    })
+  })
 })
