@@ -238,8 +238,16 @@ func TestCommandCenterRuntimeFieldCoverage(t *testing.T) {
 		BrowserEmulation: &dsl.BrowserEmulationConfig{
 			BrowserType: "chrome",
 		},
-		BaseURL: "https://coverage.example",
-		Env:     map[string]string{"PLAIN": "value"},
+		Kafka:     &dsl.KafkaConfig{Topic: "orders"},
+		JMS:       &dsl.JMSConfig{Destination: "orders"},
+		EventHubs: &dsl.EventHubsConfig{EventHub: "orders"},
+		GRPC:      &dsl.GRPCConfig{Authority: "orders.example"},
+		Database:  &dsl.DatabaseConfig{MaxRows: 10},
+		Network:   &dsl.NetworkConfig{Host: "mail.example"},
+		Appium:    &dsl.AppiumConfig{ElementTimeoutMs: 1000},
+		JavaHTTP:  &dsl.JavaHTTPConfig{Codec: "json"},
+		BaseURL:   "https://coverage.example",
+		Env:       map[string]string{"PLAIN": "value"},
 	}
 	overrideType := reflect.TypeOf(*fullyPopulated)
 	jsonFieldNames := map[string]bool{}

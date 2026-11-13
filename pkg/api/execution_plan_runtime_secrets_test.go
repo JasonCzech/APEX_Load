@@ -505,3 +505,49 @@ func TestExecutionPlanReadsMaskCaseVariantDuplicateKeyRows(t *testing.T) {
 		}
 	}
 }
+
+// A schema upgrade changes which runtime-override keys a run applies, so an
+// approval granted over the schema-0 row must not cover the schema-1 row,
+// while a schema-0 row keeps the hash it had before the schema existed.
+func TestExecutionPlanApprovalHashCoversRuntimeOverridesSchema(t *testing.T) {
+	server, store := newTimeslotServer(t)
+	plan := legacyExecutionPlanWithRow(t, server, store, json.RawMessage(`{"database":{"driver":"postgres","dsn":"{{secret.PROD_DSN}}"}}`))
+	if plan.Entries[0].RuntimeOverridesSchema != 0 {
+		t.Fatalf("legacy row schema = %d, want 0", plan.Entries[0].RuntimeOverridesSchema)
+	}
+	legacyHash := server.runner.executionPlanApprovalContentHash(plan)
+	now := time.Now().UTC()
+	approval := &storage.ExecutionPlanApproval{
+		ID: "appr-schema", PlanID: plan.ID, ProjectID: plan.ProjectID, Policy: "quota_burst", Status: "approved",
+		PlanContentHash: legacyHash, RequestedAt: now, CreatedAt: now, UpdatedAt: now,
+	}
+	if err := store.SaveExecutionPlanApproval(approval); err != nil {
+		t.Fatalf("SaveExecutionPlanApproval: %v", err)
+	}
+	if err := server.runner.validateExecutionPlanApprovalMaterialization(plan.ID, "run-1", approval); err != nil {
+		t.Fatalf("schema-0 approval before upgrade: %v", err)
+	}
+	plan.Entries[0].RuntimeOverridesSchema = executionPlanRuntimeOverridesSchema
+	if err := store.SaveExecutionPlan(plan); err != nil {
+		t.Fatalf("SaveExecutionPlan: %v", err)
+	}
+	upgraded, err := store.GetExecutionPlan(plan.ID)
+	if err != nil || upgraded == nil || upgraded.Entries[0].RuntimeOverridesSchema != executionPlanRuntimeOverridesSchema {
+		t.Fatalf("upgraded plan = %+v, %v", upgraded, err)
+	}
+	if got := server.runner.executionPlanApprovalContentHash(upgraded); got == legacyHash {
+		t.Fatalf("content hash %s unchanged by the schema upgrade", got)
+	}
+	if err := server.runner.validateExecutionPlanApprovalMaterialization(plan.ID, "run-1", approval); err == nil {
+		t.Fatal("approval granted over the schema-0 row still covers the schema-1 row")
+	}
+	// Schema 0 adds nothing to the fingerprint, so approvals stored before
+	// the schema existed keep their hash.
+	data, err := json.Marshal(executionPlanApprovalEntryFingerprint{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), "runtime_overrides_schema") {
+		t.Fatalf("schema-0 fingerprint = %s, want no schema key", data)
+	}
+}

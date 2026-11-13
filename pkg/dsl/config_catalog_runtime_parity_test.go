@@ -376,7 +376,7 @@ func TestConfigCatalogThinkTimeForceIsActionLevel(t *testing.T) {
 }
 
 func TestConfigCatalogScenarioScopeFollowsOverrideSections(t *testing.T) {
-	for _, path := range []string{"config.kafka.brokers", "config.jms.broker_url", "config.java_vuser.runner_command", "config.java_vuser.harness_jar", "config.java_vuser.enabled", "config.observability.trace_carrier"} {
+	for _, path := range []string{"config.java_vuser.runner_command", "config.java_vuser.harness_jar", "config.java_vuser.enabled", "config.java_vuser.work_dir", "config.java_vuser.max_processes", "config.observability.trace_carrier"} {
 		meta := catalogEntry(t, path)
 		if slices.Contains(meta.Scopes, ConfigScopeScenario) {
 			t.Errorf("%s: a scenario override cannot carry this field", path)
@@ -385,14 +385,31 @@ func TestConfigCatalogScenarioScopeFollowsOverrideSections(t *testing.T) {
 			t.Errorf("%s: dropping scenario must keep the other scopes, got %v", path, meta.Scopes)
 		}
 	}
-	for _, path := range []string{"config.http.version", "config.java_vuser.jdk_home", "config.soap.fault_handling.fail_on_fault", "config.base_url"} {
+	for _, path := range []string{
+		"config.http.version", "config.java_vuser.jdk_home", "config.soap.fault_handling.fail_on_fault", "config.base_url",
+		// Native protocol sections a scenario override carries (Phase 4A).
+		"config.kafka.brokers", "config.kafka.sasl_password", "config.kafka.oauth.client_secret", "config.kafka.producer.retries",
+		"config.jms.broker_url", "config.jms.password", "config.eventhubs.connection_string", "config.grpc.metadata",
+		"config.database.dsn", "config.network.password", "config.appium.server_url", "config.java_http.codec",
+		"config.java_vuser.startup_timeout_ms", "config.java_vuser.action_timeout_ms",
+		"config.java_vuser.param_left_brace", "config.java_vuser.param_right_brace",
+	} {
 		if !slices.Contains(catalogEntry(t, path).Scopes, ConfigScopeScenario) {
 			t.Errorf("%s: scenario-overridable field lost the scenario scope", path)
 		}
 	}
+	kafkaScenario := 0
 	for _, entry := range ConfigCatalogForFilter("kafka", ConfigScopeScenario) {
 		if strings.HasPrefix(entry.Path, "config.kafka.") {
-			t.Errorf("kafka scenario catalog lists %s", entry.Path)
+			kafkaScenario++
+		}
+	}
+	if kafkaScenario == 0 {
+		t.Error("kafka scenario catalog lists no config.kafka.* field")
+	}
+	for _, section := range []string{"kafka", "jms", "eventhubs", "grpc", "database", "network", "appium", "java_http"} {
+		if !scenarioOverridableConfigSections[section] {
+			t.Errorf("section %s is not scenario-overridable", section)
 		}
 	}
 }

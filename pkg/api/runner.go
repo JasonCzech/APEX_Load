@@ -2654,6 +2654,14 @@ type RuntimeJavaVuserOverride struct {
 	// Switching into thread mode needs the script's approval again.
 	JVMSharing   string `json:"jvm_sharing,omitempty"`
 	VUsersPerJVM int    `json:"vusers_per_jvm,omitempty"`
+	// StartupTimeoutMs and ActionTimeoutMs bound JVM startup and one Java
+	// action (0 keeps the script's value under v1 semantics; list the field
+	// in override_fields to reset it). ParamLeftBrace/ParamRightBrace are
+	// the lr.eval_string delimiters and must be set together.
+	StartupTimeoutMs int    `json:"startup_timeout_ms,omitempty"`
+	ActionTimeoutMs  int    `json:"action_timeout_ms,omitempty"`
+	ParamLeftBrace   string `json:"param_left_brace,omitempty"`
+	ParamRightBrace  string `json:"param_right_brace,omitempty"`
 }
 
 type RuntimeSettingsOverride struct {
@@ -2677,6 +2685,18 @@ type RuntimeSettingsOverride struct {
 	// (whole-section replace). It is distinct from BrowserConfig, which is the
 	// Playwright browser protocol's device/runtime section.
 	BrowserEmulation *dsl.BrowserEmulationConfig `json:"browser_emulation,omitempty"`
+	// Native protocol sections. Each is a whole-section replace without
+	// override_fields (v1) and is addressable leaf by leaf with them; see
+	// runtimeProtocolOverrideSections. Their credential leaves follow the
+	// same protect/mask/reconcile lifecycle as http and soap.
+	Kafka     *dsl.KafkaConfig     `json:"kafka,omitempty"`
+	JMS       *dsl.JMSConfig       `json:"jms,omitempty"`
+	EventHubs *dsl.EventHubsConfig `json:"eventhubs,omitempty"`
+	GRPC      *dsl.GRPCConfig      `json:"grpc,omitempty"`
+	Database  *dsl.DatabaseConfig  `json:"database,omitempty"`
+	Network   *dsl.NetworkConfig   `json:"network,omitempty"`
+	Appium    *dsl.AppiumConfig    `json:"appium,omitempty"`
+	JavaHTTP  *dsl.JavaHTTPConfig  `json:"java_http,omitempty"`
 	// LogLevel/Iterations/AutoTransactions are legacy single-field aliases for the
 	// Log/RunLogic sections above; the section wins when both are present.
 	LogLevel         string                 `json:"log_level,omitempty"`

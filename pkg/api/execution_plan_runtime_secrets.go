@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"io"
 	"net/url"
+	"reflect"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -224,6 +226,7 @@ func executionPlanTypedCredentials(overrides *RuntimeSettingsOverride) []executi
 			}
 		}
 	}
+	executionPlanProtocolCredentials(overrides, add)
 	for key, value := range overrides.Env {
 		if strings.TrimSpace(value) == "" || isExecutionPlanSchemedSecretReference(value) {
 			continue
@@ -678,4 +681,65 @@ func maskExecutionPlansForResponse(plans []*storage.ExecutionPlan) []*storage.Ex
 		out[index] = maskExecutionPlanForResponse(plan)
 	}
 	return out
+}
+
+// executionPlanRuntimeOverridesSchema is the runtime-overrides schema a plan
+// write records on each entry that has overrides. Schema 1 added the native
+// protocol sections (runtimeProtocolOverrideSections) and the java_vuser
+// startup_timeout_ms, action_timeout_ms, param_left_brace and
+// param_right_brace fields. Rows written before it (schema 0) were validated
+// and executed with those keys ignored, and keep that meaning.
+const executionPlanRuntimeOverridesSchema = 1
+
+// executionPlanSchema1JavaVuserFields are the java_vuser fields schema 1 added.
+var executionPlanSchema1JavaVuserFields = []string{"startup_timeout_ms", "action_timeout_ms", "param_left_brace", "param_right_brace"}
+
+// prepareExecutionPlanEntryRuntimeOverrides readies a decoded plan entry row
+// for materialization. A schema-0 row drops the keys it was written without:
+// its native protocol sections and the java_vuser fields schema 1 added, and
+// an override_fields path naming them fails the entry as it did then. The
+// row's native protocol sections must also still be reference-only: plan
+// writes enforce that, and a row that reached storage another way never runs
+// a typed credential.
+func prepareExecutionPlanEntryRuntimeOverrides(overrides *RuntimeSettingsOverride, schema int) error {
+	if overrides == nil {
+		return nil
+	}
+	if schema < executionPlanRuntimeOverridesSchema {
+		var unknown []string
+		for _, raw := range overrides.OverrideFields {
+			canonical, err := normalizeOneRuntimeOverrideField(raw)
+			if err != nil {
+				// Refused by the create path exactly as before.
+				continue
+			}
+			javaField, isJava := strings.CutPrefix(canonical, "java_vuser.")
+			if isRuntimeProtocolOverrideSection(overrideFieldTopSection(canonical)) ||
+				isJava && slices.Contains(executionPlanSchema1JavaVuserFields, javaField) {
+				unknown = append(unknown, canonical)
+			}
+		}
+		if len(unknown) > 0 {
+			return fmt.Errorf("entry runtime_overrides override_fields %s were not recognized when this plan entry was saved; save the plan again to use them", strings.Join(unknown, ", "))
+		}
+		for _, key := range runtimeProtocolOverrideSections {
+			field := runtimeProtocolOverrideField(overrides, key)
+			field.Set(reflect.Zero(field.Type()))
+		}
+		if jv := overrides.JavaVuser; jv != nil {
+			jv.StartupTimeoutMs, jv.ActionTimeoutMs = 0, 0
+			jv.ParamLeftBrace, jv.ParamRightBrace = "", ""
+		}
+	}
+	var paths []string
+	executionPlanProtocolCredentials(overrides, func(path, _ string, _ bool, _ ...any) {
+		if !slices.Contains(paths, path) {
+			paths = append(paths, path)
+		}
+	})
+	if len(paths) == 0 {
+		return nil
+	}
+	sort.Strings(paths)
+	return fmt.Errorf("entry runtime_overrides %s must be {{secret.NAME}} references to project credentials; typed passwords, tokens and URL credentials are not run from execution plans", strings.Join(paths, ", "))
 }

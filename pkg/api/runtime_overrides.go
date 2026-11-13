@@ -245,6 +245,35 @@ func protectRuntimeOverrideSecretsWithOptions(scope string, groupIndex int, scri
 				return nil, nil, false, err
 			}
 		}
+		// Playwright session state and the session strategy's credentials
+		// are catalog Secret leaves: seal them like the passwords above so
+		// a run registers them as platform secrets.
+		browser.StorageState, err = protect("browser.storage_state", browser.StorageState, true)
+		if err != nil {
+			return nil, nil, false, err
+		}
+		if session := browser.Session; session != nil {
+			for index := range session.Identities {
+				identity := &session.Identities[index]
+				identity.Password, err = protect(fmt.Sprintf("browser.session.identities.%d.password", index), identity.Password, true)
+				if err != nil {
+					return nil, nil, false, err
+				}
+				identity.StorageState, err = protect(fmt.Sprintf("browser.session.identities.%d.storage_state", index), identity.StorageState, true)
+				if err != nil {
+					return nil, nil, false, err
+				}
+			}
+			if session.JWT != nil {
+				session.JWT.PrivateKey, err = protect("browser.session.jwt.private_key", session.JWT.PrivateKey, true)
+				if err != nil {
+					return nil, nil, false, err
+				}
+			}
+		}
+	}
+	if err := protectRuntimeProtocolSecrets(protected, protect); err != nil {
+		return nil, nil, false, err
 	}
 	return protected, values, changed, nil
 }
@@ -362,6 +391,14 @@ func applyRuntimeOverrides(script *dsl.Script, overrides *RuntimeSettingsOverrid
 	if script == nil || overrides == nil {
 		return nil
 	}
+	if err := applyRuntimeOverridesLayer(script, overrides); err != nil {
+		return err
+	}
+	referenceRuntimeOverrideSecretNames(&script.Config, overrides)
+	return nil
+}
+
+func applyRuntimeOverridesLayer(script *dsl.Script, overrides *RuntimeSettingsOverride) error {
 	if len(overrides.OverrideFields) > 0 {
 		return applyRuntimeOverridesPartial(script, overrides)
 	}
@@ -417,6 +454,7 @@ func applyRuntimeOverrides(script *dsl.Script, overrides *RuntimeSettingsOverrid
 	if overrides.BrowserEmulation != nil {
 		script.Config.BrowserEmulation = cloneViaJSON(overrides.BrowserEmulation)
 	}
+	applyRuntimeProtocolSections(&script.Config, overrides)
 	if overrides.BrowserConfig != nil {
 		script.Config.Browser = *cloneViaJSON(overrides.BrowserConfig)
 	} else if overrides.Browser != nil {
@@ -532,6 +570,7 @@ func cloneRuntimeSettings(overrides *RuntimeSettingsOverride) *RuntimeSettingsOv
 	clone.BrowserConfig = cloneViaJSON(overrides.BrowserConfig)
 	clone.BrowserEmulation = cloneViaJSON(overrides.BrowserEmulation)
 	clone.JavaVuser = cloneViaJSON(overrides.JavaVuser)
+	cloneRuntimeProtocolSections(&clone, overrides)
 	if overrides.Browser != nil {
 		browser := *overrides.Browser
 		if overrides.Browser.Headless != nil {
@@ -693,6 +732,18 @@ func applyJavaVuserRuntimeOverride(dst *dsl.JavaVuserConfig, src *RuntimeJavaVus
 	if src.VUsersPerJVM != 0 {
 		dst.VUsersPerJVM = src.VUsersPerJVM
 	}
+	if src.StartupTimeoutMs != 0 {
+		dst.StartupTimeoutMs = src.StartupTimeoutMs
+	}
+	if src.ActionTimeoutMs != 0 {
+		dst.ActionTimeoutMs = src.ActionTimeoutMs
+	}
+	if src.ParamLeftBrace != "" {
+		dst.ParamLeftBrace = src.ParamLeftBrace
+	}
+	if src.ParamRightBrace != "" {
+		dst.ParamRightBrace = src.ParamRightBrace
+	}
 }
 
 // mergeJavaVuserRuntimeOverride combines root- and group-level Java Env
@@ -738,6 +789,18 @@ func mergeJavaVuserRuntimeOverride(base *RuntimeJavaVuserOverride, group *Runtim
 	}
 	if group.VUsersPerJVM != 0 {
 		merged.VUsersPerJVM = group.VUsersPerJVM
+	}
+	if group.StartupTimeoutMs != 0 {
+		merged.StartupTimeoutMs = group.StartupTimeoutMs
+	}
+	if group.ActionTimeoutMs != 0 {
+		merged.ActionTimeoutMs = group.ActionTimeoutMs
+	}
+	if group.ParamLeftBrace != "" {
+		merged.ParamLeftBrace = group.ParamLeftBrace
+	}
+	if group.ParamRightBrace != "" {
+		merged.ParamRightBrace = group.ParamRightBrace
 	}
 	return merged
 }
@@ -813,6 +876,7 @@ func mergeRuntimeSettings(base *RuntimeSettingsOverride, group *RuntimeSettingsO
 	if group.BrowserEmulation != nil {
 		merged.BrowserEmulation = cloneViaJSON(group.BrowserEmulation)
 	}
+	mergeRuntimeProtocolSections(merged, group)
 	if group.Browser != nil {
 		if group.BrowserConfig == nil && merged.BrowserConfig != nil {
 			merged.BrowserConfig = cloneViaJSON(merged.BrowserConfig)
@@ -914,6 +978,15 @@ var allowedScriptConfigOverrideSections = map[string]bool{
 	"soap":              true,
 	"browser":           true,
 	"browser_emulation": true,
+	// Native protocol sections (runtimeProtocolOverrideSections).
+	"kafka":     true,
+	"jms":       true,
+	"eventhubs": true,
+	"grpc":      true,
+	"database":  true,
+	"network":   true,
+	"appium":    true,
+	"java_http": true,
 }
 
 func normalizeRuntimeOverrideFields(fields []string) ([]string, error) {
@@ -1239,6 +1312,7 @@ func overrideToScriptConfig(overrides *RuntimeSettingsOverride) dsl.ScriptConfig
 	if overrides.BrowserEmulation != nil {
 		cfg.BrowserEmulation = cloneViaJSON(overrides.BrowserEmulation)
 	}
+	applyRuntimeProtocolSections(&cfg, overrides)
 	if overrides.BrowserConfig != nil {
 		cfg.Browser = *cloneViaJSON(overrides.BrowserConfig)
 	}
@@ -1315,6 +1389,14 @@ func applyJavaVuserOverrideField(dst *dsl.JavaVuserConfig, src *RuntimeJavaVuser
 		}
 	case "vusers_per_jvm":
 		dst.VUsersPerJVM = zeroSrc.VUsersPerJVM
+	case "startup_timeout_ms":
+		dst.StartupTimeoutMs = zeroSrc.StartupTimeoutMs
+	case "action_timeout_ms":
+		dst.ActionTimeoutMs = zeroSrc.ActionTimeoutMs
+	case "param_left_brace":
+		dst.ParamLeftBrace = zeroSrc.ParamLeftBrace
+	case "param_right_brace":
+		dst.ParamRightBrace = zeroSrc.ParamRightBrace
 	}
 }
 
@@ -1325,14 +1407,22 @@ func applyConfigOverrideField(dstCfg, srcCfg *dsl.ScriptConfig, canonicalPath st
 
 	for i := 0; i < len(segments); i++ {
 		seg := segments[i]
+		// dst and src share a type at every level, so their pointers align.
 		for dstVal.Kind() == reflect.Pointer {
+			srcNil := srcVal.IsNil()
 			if dstVal.IsNil() {
+				if srcNil {
+					// The parent block exists in neither layer: the listed
+					// leaf copies that absence. Allocating it would turn an
+					// absent block (no Kafka OAuth, no JMS TLS) into an
+					// explicit empty one that validation and engines read
+					// as configured.
+					return nil
+				}
 				dstVal.Set(reflect.New(dstVal.Type().Elem()))
 			}
 			dstVal = dstVal.Elem()
-		}
-		for srcVal.Kind() == reflect.Pointer {
-			if srcVal.IsNil() {
+			if srcNil {
 				srcVal = reflect.Zero(srcVal.Type().Elem())
 			} else {
 				srcVal = srcVal.Elem()
@@ -1485,6 +1575,7 @@ func effectiveLegacyOverrideFields(o *RuntimeSettingsOverride) []string {
 	if o.BrowserEmulation != nil {
 		fields = append(fields, "browser_emulation")
 	}
+	fields = append(fields, presentRuntimeProtocolSections(o)...)
 	if o.BrowserConfig != nil {
 		fields = append(fields, "browser")
 	} else if o.Browser != nil {
@@ -1529,6 +1620,18 @@ func effectiveLegacyOverrideFields(o *RuntimeSettingsOverride) []string {
 		}
 		if jv.VUsersPerJVM != 0 {
 			fields = append(fields, "java_vuser.vusers_per_jvm")
+		}
+		if jv.StartupTimeoutMs != 0 {
+			fields = append(fields, "java_vuser.startup_timeout_ms")
+		}
+		if jv.ActionTimeoutMs != 0 {
+			fields = append(fields, "java_vuser.action_timeout_ms")
+		}
+		if jv.ParamLeftBrace != "" {
+			fields = append(fields, "java_vuser.param_left_brace")
+		}
+		if jv.ParamRightBrace != "" {
+			fields = append(fields, "java_vuser.param_right_brace")
 		}
 	}
 	if len(o.Env) > 0 {
@@ -1721,6 +1824,7 @@ func mergeRuntimeSettingsPartial(base, group *RuntimeSettingsOverride) *RuntimeS
 	if touchedSections["browser_emulation"] {
 		merged.BrowserEmulation = cloneViaJSON(mergedCfg.BrowserEmulation)
 	}
+	runtimeProtocolSectionsFromMergedConfig(merged, &mergedCfg, touchedSections)
 	if touchedSections["java_vuser"] {
 		merged.JavaVuser = &RuntimeJavaVuserOverride{
 			JDKSelection:            mergedJavaCfg.JDKSelection,
@@ -1732,6 +1836,10 @@ func mergeRuntimeSettingsPartial(base, group *RuntimeSettingsOverride) *RuntimeS
 			SkipParameterEvaluation: cloneBoolPointer(mergedJavaCfg.SkipParameterEvaluation),
 			JVMSharing:              mergedJavaCfg.JVMSharing,
 			VUsersPerJVM:            mergedJavaCfg.VUsersPerJVM,
+			StartupTimeoutMs:        mergedJavaCfg.StartupTimeoutMs,
+			ActionTimeoutMs:         mergedJavaCfg.ActionTimeoutMs,
+			ParamLeftBrace:          mergedJavaCfg.ParamLeftBrace,
+			ParamRightBrace:         mergedJavaCfg.ParamRightBrace,
 		}
 	}
 

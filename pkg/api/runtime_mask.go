@@ -164,6 +164,7 @@ func maskRuntimeSettingsWithKeyRule(o *RuntimeSettingsOverride, showReferences b
 	maskSOAPSecrets(clone.SOAP)
 	maskBrowserSecrets(clone.BrowserConfig)
 	maskJavaVuserRuntimeSecrets(clone.JavaVuser)
+	maskRuntimeProtocolSecrets(clone, showReferences)
 	return clone
 }
 
@@ -326,6 +327,36 @@ func maskBrowserSecrets(browser *dsl.BrowserConfig) {
 			browser.ClientCertificates[index].Passphrase = scrub.Redacted
 		}
 	}
+	// The session leaves held only whole project-secret references before
+	// they were masked (the DSL requires that), so such a reference stays
+	// byte-identical in every form: library hashes of stored content do not
+	// change and an export keeps its binding. A controller-owned sealed
+	// reference, or anything else, is redacted.
+	maskBrowserSessionLeaf(&browser.StorageState)
+	if session := browser.Session; session != nil {
+		for index := range session.Identities {
+			identity := &session.Identities[index]
+			maskBrowserSessionLeaf(&identity.Password)
+			maskBrowserSessionLeaf(&identity.StorageState)
+		}
+		if session.JWT != nil {
+			maskBrowserSessionLeaf(&session.JWT.PrivateKey)
+		}
+	}
+}
+
+func maskBrowserSessionLeaf(value *string) {
+	if *value == "" || isProjectSecretReference(*value) {
+		return
+	}
+	*value = scrub.Redacted
+}
+
+// isProjectSecretReference reports one exact {{secret.NAME}} reference to a
+// project secret: it names a secret rather than holding one. A
+// controller-reserved APEX_RUNTIME_OVERRIDE_* reference is not one.
+func isProjectSecretReference(value string) bool {
+	return runtimeOverrideExactSecretPattern.MatchString(strings.TrimSpace(value)) && !isReservedRuntimeOverrideSecretReference(value)
 }
 
 func maskURLUserinfo(raw string) string {
@@ -757,6 +788,7 @@ func reconcileGroupRuntimeSecrets(incoming, prior *RuntimeSettingsOverride) *Run
 		}
 		reconcileJavaVuserRuntimeSecrets(result.JavaVuser, priorJava)
 	}
+	reconcileRuntimeProtocolSecrets(result, prior)
 	priorBaseURL := ""
 	if prior != nil {
 		priorBaseURL = prior.BaseURL
@@ -1102,6 +1134,69 @@ func reconcileBrowserSecrets(incoming, prior *dsl.BrowserConfig) {
 			incoming.ClientCertificates[index].Passphrase = priorCertificate.Passphrase
 		}
 	}
+	if incoming.StorageState == scrub.Redacted {
+		incoming.StorageState = ""
+		if prior != nil {
+			incoming.StorageState = prior.StorageState
+		}
+	}
+	reconcileBrowserSessionSecrets(incoming.Session, priorBrowserSession(prior))
+}
+
+func priorBrowserSession(prior *dsl.BrowserConfig) *dsl.BrowserSessionConfig {
+	if prior == nil {
+		return nil
+	}
+	return prior.Session
+}
+
+// reconcileBrowserSessionSecrets restores masked session credentials from
+// the prior row: identities by their (unique) username, so a reordered or
+// shortened list never moves a credential to another identity, and the JWT
+// private key from the prior JWT block. A sentinel with no prior leaf clears.
+func reconcileBrowserSessionSecrets(incoming, prior *dsl.BrowserSessionConfig) {
+	if incoming == nil {
+		return
+	}
+	for index := range incoming.Identities {
+		identity := &incoming.Identities[index]
+		priorIdentity := matchingPriorBrowserIdentity(prior, identity.Username)
+		if identity.Password == scrub.Redacted {
+			identity.Password = ""
+			if priorIdentity != nil {
+				identity.Password = priorIdentity.Password
+			}
+		}
+		if identity.StorageState == scrub.Redacted {
+			identity.StorageState = ""
+			if priorIdentity != nil {
+				identity.StorageState = priorIdentity.StorageState
+			}
+		}
+	}
+	if incoming.JWT != nil && incoming.JWT.PrivateKey == scrub.Redacted {
+		incoming.JWT.PrivateKey = ""
+		if prior != nil && prior.JWT != nil {
+			incoming.JWT.PrivateKey = prior.JWT.PrivateKey
+		}
+	}
+}
+
+func matchingPriorBrowserIdentity(prior *dsl.BrowserSessionConfig, username string) *dsl.BrowserIdentity {
+	if prior == nil || strings.TrimSpace(username) == "" {
+		return nil
+	}
+	var match *dsl.BrowserIdentity
+	for index := range prior.Identities {
+		if prior.Identities[index].Username != username {
+			continue
+		}
+		if match != nil {
+			return nil
+		}
+		match = &prior.Identities[index]
+	}
+	return match
 }
 
 func matchingPriorBrowserCertificate(prior *dsl.BrowserConfig, incoming dsl.BrowserClientCertificate) *dsl.BrowserClientCertificate {

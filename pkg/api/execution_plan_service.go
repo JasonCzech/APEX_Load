@@ -131,6 +131,11 @@ func (service *testRunnerExecutionPlanService) Validate(plan *storage.ExecutionP
 			if err := validateExecutionPlanRuntimeOverrideSecrets(runtimeOverrides); err != nil {
 				return http.StatusBadRequest, err.Error()
 			}
+			// The row was validated under the current schema, whatever the
+			// client sent, so its keys apply as this schema reads them.
+			entry.RuntimeOverridesSchema = executionPlanRuntimeOverridesSchema
+		} else {
+			entry.RuntimeOverridesSchema = 0
 		}
 		if len(entry.DataPools) > maxExecutionPlanDataPoolsPerEntry {
 			return http.StatusBadRequest, fmt.Sprintf("execution plan entry contains %d data pools; limit is %d", len(entry.DataPools), maxExecutionPlanDataPoolsPerEntry)

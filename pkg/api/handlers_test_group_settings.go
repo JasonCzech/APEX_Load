@@ -1478,6 +1478,9 @@ func runtimeSettingsFieldValue(settings *RuntimeSettingsOverride, field string) 
 	case "java_vuser":
 		return nilIfNilPointer(settings.JavaVuser)
 	}
+	if isRuntimeProtocolOverrideSection(field) {
+		return runtimeProtocolSectionValue(settings, field)
+	}
 	return nil
 }
 

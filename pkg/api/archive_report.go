@@ -1194,6 +1194,7 @@ func runtimeOverrideFieldNames(settings *RuntimeSettingsOverride) []string {
 	if settings.JavaVuser != nil {
 		fields = append(fields, "java_vuser")
 	}
+	fields = append(fields, presentRuntimeProtocolSections(settings)...)
 	return fields
 }
 

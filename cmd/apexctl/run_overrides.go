@@ -158,6 +158,14 @@ type cliRuntimeSettingsOverride struct {
 	BrowserConfig    *dsl.BrowserConfig           `json:"browser_config,omitempty"`
 	Browser          *cliRuntimeBrowserOverride   `json:"browser,omitempty"`
 	BrowserEmulation *dsl.BrowserEmulationConfig  `json:"browser_emulation,omitempty"`
+	Kafka            *dsl.KafkaConfig             `json:"kafka,omitempty"`
+	JMS              *dsl.JMSConfig               `json:"jms,omitempty"`
+	EventHubs        *dsl.EventHubsConfig         `json:"eventhubs,omitempty"`
+	GRPC             *dsl.GRPCConfig              `json:"grpc,omitempty"`
+	Database         *dsl.DatabaseConfig          `json:"database,omitempty"`
+	Network          *dsl.NetworkConfig           `json:"network,omitempty"`
+	Appium           *dsl.AppiumConfig            `json:"appium,omitempty"`
+	JavaHTTP         *dsl.JavaHTTPConfig          `json:"java_http,omitempty"`
 	LogLevel         string                       `json:"log_level,omitempty"`
 	AutoTransactions string                       `json:"auto_transactions,omitempty"`
 	BaseURL          string                       `json:"base_url,omitempty"`
@@ -177,6 +185,10 @@ type cliRuntimeJavaVuserOverride struct {
 	SkipParameterEvaluation *bool    `json:"skip_parameter_evaluation,omitempty"`
 	JVMSharing              string   `json:"jvm_sharing,omitempty"`
 	VUsersPerJVM            int      `json:"vusers_per_jvm,omitempty"`
+	StartupTimeoutMs        int      `json:"startup_timeout_ms,omitempty"`
+	ActionTimeoutMs         int      `json:"action_timeout_ms,omitempty"`
+	ParamLeftBrace          string   `json:"param_left_brace,omitempty"`
+	ParamRightBrace         string   `json:"param_right_brace,omitempty"`
 }
 
 // cliRuntimeBrowserOverride mirrors the controller's RuntimeBrowserOverride.
@@ -336,6 +348,7 @@ func runtimeOverrideCredentials(o *cliRuntimeSettingsOverride) ([]string, error)
 		}
 		values = append(values, value)
 		values = append(values, cliCredentialParts(trimmed)...)
+		values = append(values, cliFreeTextCredentialParts(trimmed)...)
 		return nil
 	}
 	type entry struct {
@@ -387,6 +400,94 @@ func runtimeOverrideCredentials(o *cliRuntimeSettingsOverride) ([]string, error)
 		)
 		for index, certificate := range b.ClientCertificates {
 			entries = append(entries, entry{fmt.Sprintf("browser.client_certificates.%d.passphrase", index), certificate.Passphrase, true})
+		}
+		entries = append(entries, entry{"browser.storage_state", b.StorageState, true})
+		if session := b.Session; session != nil {
+			for index, identity := range session.Identities {
+				entries = append(entries,
+					entry{fmt.Sprintf("browser.session.identities.%d.password", index), identity.Password, true},
+					entry{fmt.Sprintf("browser.session.identities.%d.storage_state", index), identity.StorageState, true},
+				)
+			}
+			if session.JWT != nil {
+				entries = append(entries, entry{"browser.session.jwt.private_key", session.JWT.PrivateKey, true})
+			}
+		}
+	}
+	// Native protocol sections, by the controller's classes
+	// (runtimeProtocolCredentialLeaves in pkg/api).
+	policy := scrub.Policy{}
+	freeText := func(prefix string, values map[string]string) {
+		for key, value := range values {
+			entries = append(entries, entry{prefix + "." + key, value, cliFreeTextSecretBearing(key, value)})
+		}
+	}
+	if k := o.Kafka; k != nil {
+		active := k.SASLMechanism != "" || k.SASLPassword != "" || k.SASLPasswordSecret != ""
+		entries = append(entries,
+			entry{"kafka.sasl_username", k.SASLUsername, active || cliSensitiveValue(k.SASLUsername)},
+			entry{"kafka.sasl_password", k.SASLPassword, true},
+			entry{"kafka.schema_registry_url", k.SchemaRegistryURL, cliSensitiveURL(k.SchemaRegistryURL)},
+		)
+		if k.OAuth != nil {
+			entries = append(entries,
+				entry{"kafka.oauth.client_secret", k.OAuth.ClientSecret, true},
+				entry{"kafka.oauth.token_url", k.OAuth.TokenURL, cliSensitiveURL(k.OAuth.TokenURL)},
+			)
+		}
+		for index, broker := range k.Brokers {
+			entries = append(entries, entry{fmt.Sprintf("kafka.brokers.%d", index), broker, cliSensitiveURL(broker)})
+		}
+		freeText("kafka.properties", k.Properties)
+	}
+	if j := o.JMS; j != nil {
+		entries = append(entries,
+			entry{"jms.username", j.Username, j.Password != "" || cliSensitiveValue(j.Username)},
+			entry{"jms.password", j.Password, true},
+			entry{"jms.broker_url", j.BrokerURL, cliSensitiveURL(j.BrokerURL)},
+		)
+		freeText("jms.properties", j.Properties)
+	}
+	if e := o.EventHubs; e != nil {
+		entries = append(entries,
+			entry{"eventhubs.connection_string", e.ConnectionString, true},
+			entry{"eventhubs.checkpoint_container_url", e.CheckpointContainerURL, cliSensitiveURL(e.CheckpointContainerURL)},
+		)
+	}
+	if g := o.GRPC; g != nil {
+		for name, value := range g.Metadata {
+			entries = append(entries, entry{"grpc.metadata." + name, value, policy.SensitiveHeader(name) || cliSensitiveValue(value)})
+		}
+	}
+	if d := o.Database; d != nil {
+		entries = append(entries, entry{"database.dsn", d.DSN, true})
+	}
+	if n := o.Network; n != nil {
+		entries = append(entries,
+			entry{"network.username", n.Username, n.Password != "" || cliSensitiveValue(n.Username)},
+			entry{"network.password", n.Password, true},
+			entry{"network.address", n.Address, cliSensitiveURL(n.Address)},
+		)
+	}
+	if a := o.Appium; a != nil {
+		entries = append(entries, entry{"appium.server_url", a.ServerURL, cliSensitiveURL(a.ServerURL)})
+		var walk func(path, key string, node any)
+		walk = func(path, key string, node any) {
+			switch typed := node.(type) {
+			case string:
+				entries = append(entries, entry{path, typed, cliFreeTextSecretBearing(key, typed) || (cliCredentialCapabilityKey(key) && !cliRuntimeOverrideExactSecretPattern.MatchString(strings.TrimSpace(typed)))})
+			case map[string]any:
+				for childKey, child := range typed {
+					walk(path+"."+childKey, childKey, child)
+				}
+			case []any:
+				for index, child := range typed {
+					walk(fmt.Sprintf("%s.%d", path, index), key, child)
+				}
+			}
+		}
+		for key, value := range a.Capabilities {
+			walk("appium.capabilities."+key, key, value)
 		}
 	}
 	for _, item := range entries {
@@ -544,6 +645,122 @@ func cliSensitiveValue(value string) bool {
 		}
 	}
 	return false
+}
+
+// cliFreeTextSecretBearing mirrors the controller's runtimeFreeTextSecretBearing
+// for a property or capability value: one exact {{secret.NAME}} reference is
+// secret only under a credential key; text combining references with other
+// text is secret only when it carries literal credential material; any other
+// value is secret by its key, its shape, or the credential material it carries
+// (a JAAS password="...", URL userinfo, a SharedAccessKey= pair).
+func cliFreeTextSecretBearing(key, value string) bool {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return false
+	}
+	if cliRuntimeOverrideExactSecretPattern.MatchString(trimmed) {
+		return cliSensitiveEnvKey(key)
+	}
+	carries := len(cliFreeTextCredentialParts(trimmed)) > 0
+	if cliRuntimeOverrideSecretReferencePattern.MatchString(value) {
+		return carries
+	}
+	return cliSensitiveEnvKey(key) || cliSensitiveValue(value) || carries
+}
+
+// cliCredentialCapabilityTails and cliCredentialCapabilityKey mirror the
+// controller's credentialCapabilityKey: an Appium capability whose final
+// dotted or colon segment (or that segment's last _/- part) names a
+// device-cloud credential, as browserstack.key or testobject_api_key.
+var cliCredentialCapabilityTails = map[string]bool{
+	"key": true, "accesskey": true, "apikey": true, "token": true, "accesstoken": true,
+	"authtoken": true, "secret": true, "password": true, "passwd": true, "pwd": true,
+}
+
+func cliCredentialCapabilityKey(key string) bool {
+	name := strings.ToLower(strings.TrimSpace(key))
+	if index := strings.LastIndexAny(name, ".:"); index >= 0 {
+		name = name[index+1:]
+	}
+	if cliCredentialCapabilityTails[name] {
+		return true
+	}
+	if index := strings.LastIndexAny(name, "_-"); index >= 0 {
+		return cliCredentialCapabilityTails[name[index+1:]]
+	}
+	return false
+}
+
+// cliFreeTextAssignment is the controller's importSettingCredentialAssignment:
+// name=value pairs inside free text (JAAS options, connection strings, DSN
+// keywords), quoted or not.
+var cliFreeTextAssignment = regexp.MustCompile(`([A-Za-z0-9_.\-]+)\s*=\s*(?:"((?:[^"\\]|\\.)*)"|'((?:[^'\\]|\\.)*)'|([^\s;,&"']+))`)
+
+// cliFreeTextURLScheme locates a URL scheme separator anywhere in a token.
+var cliFreeTextURLScheme = regexp.MustCompile(`[A-Za-z][A-Za-z0-9+.\-]*://`)
+
+// cliFreeTextCredentialParts lists the literal credential material in free
+// text, by the controller's importSettingTextCredentialFragments rule: a
+// literal userinfo password (or lone userinfo part after a scheme) in any
+// token, and the value of a credential-named or sig assignment. A
+// {{secret.NAME}} reference is never material.
+func cliFreeTextCredentialParts(text string) []string {
+	var parts []string
+	material := func(part string) bool {
+		part = strings.TrimSpace(part)
+		return part != "" && !cliRuntimeOverrideExactSecretPattern.MatchString(part)
+	}
+	for _, raw := range strings.Fields(text) {
+		token := strings.Trim(raw, `"'(),;[]{}`)
+		schemes := cliFreeTextURLScheme.FindAllStringIndex(token, -1)
+		if len(schemes) == 0 {
+			if strings.HasPrefix(strings.ToLower(token), "mailto:") {
+				continue
+			}
+			if _, password, hasPassword, ok := cliAuthorityUserinfo(token); ok && hasPassword && material(password) {
+				parts = append(parts, password)
+			}
+			continue
+		}
+		for _, loc := range schemes {
+			user, password, hasPassword, ok := cliAuthorityUserinfo(token[loc[1]:])
+			if !ok {
+				continue
+			}
+			if hasPassword && material(password) {
+				parts = append(parts, password)
+			} else if !hasPassword && material(user) {
+				parts = append(parts, user)
+			}
+		}
+	}
+	for _, match := range cliFreeTextAssignment.FindAllStringSubmatch(text, -1) {
+		name, value := match[1], strings.TrimSpace(match[2]+match[3]+match[4])
+		if !material(value) {
+			continue
+		}
+		if strings.EqualFold(name, "sig") && credential.MatchableNamedValue(name, value) ||
+			credential.SensitiveName(name) && !credential.NonCredentialName(name) && credential.MatchableNamedValue(name, value) {
+			parts = append(parts, value)
+		}
+	}
+	return parts
+}
+
+// cliAuthorityUserinfo is the controller's importSettingAuthorityUserinfo:
+// the userinfo of the authority that starts rest, which ends at the first
+// '/', '?' or '#'; userinfo is everything before its last '@'.
+func cliAuthorityUserinfo(rest string) (user, password string, hasPassword, ok bool) {
+	authority := rest
+	if i := strings.IndexAny(authority, "/?#"); i >= 0 {
+		authority = authority[:i]
+	}
+	at := strings.LastIndex(authority, "@")
+	if at <= 0 {
+		return "", "", false, false
+	}
+	user, password, hasPassword = strings.Cut(authority[:at], ":")
+	return user, password, hasPassword, true
 }
 
 // cliSensitiveURL mirrors the controller's maskURLSecrets(raw) != raw for
