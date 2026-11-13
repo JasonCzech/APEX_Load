@@ -234,14 +234,15 @@ test('[U09] script groups are one row each and stack their fields on narrow scre
   await page.goto(`/#/tests?view=builder&${scopeQuery(workspace)}`)
   const groups = page.locator('.scenario-script-group-list-spacious .scenario-script-group-card')
   for (let index = 1; index <= 5; index++) {
+    // The first group's picker is opened from its row; Add group opens the picker for the next one.
     if (index > 1) await page.locator('.scenario-add-group-card').click()
-    await page.getByRole('button', { name: `Add script to Group ${index}`, exact: true }).click()
+    else await page.getByRole('button', { name: `Add script to Group ${index}`, exact: true }).click()
     await page.getByRole('row').filter({ hasText: 'Tier_0_Checkout_Script' })
       .getByRole('button', { name: `Use for Group ${index}`, exact: true }).click()
   }
   await expect(groups).toHaveCount(5)
   const table = page.getByRole('table', { name: 'Script groups', exact: true })
-  await expect(table.getByRole('columnheader')).toHaveText(['Group', 'Script', 'VUsers', 'Initialization', 'Role', 'Actions'])
+  await expect(table.getByRole('columnheader')).toHaveText(['Group', 'Script', 'Initialization', 'Role', 'Actions'])
   // Wide: one row per group, its cells side by side, every column in view.
   const layout = () => groups.evaluateAll(elements => elements.map(element => {
     const row = element.getBoundingClientRect()

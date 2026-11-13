@@ -2634,11 +2634,11 @@ fieldset.scenario-builder { min-width: 0; border: 0; margin-inline: 0; }
    card with its own labels on narrow ones. */
 /* Too narrow for the columns (before rows stack), the table scrolls sideways rather than clip them. */
 .scenario-script-group-list.scenario-group-table { display: flex; flex-direction: column; gap: 0; border: 1px solid var(--border); border-radius: 8px; overflow-x: auto; }
-.scenario-group-table .scenario-group-row { display: grid; grid-template-columns: minmax(120px, 1.1fr) minmax(180px, 1.8fr) 56px minmax(140px, 1.1fr) minmax(110px, 0.9fr) 76px; gap: 10px; align-items: start; padding: 10px 12px; border: 0; border-top: 1px solid var(--border); border-radius: 0; background: var(--bg-primary); }
+.scenario-group-table .scenario-group-row { display: grid; grid-template-columns: minmax(120px, 1.1fr) minmax(200px, 2fr) minmax(150px, 1.2fr) minmax(120px, 1fr) 84px; box-sizing: border-box; width: 100%; gap: 10px; align-items: start; padding: 10px 12px; border: 0; border-top: 1px solid var(--border); border-radius: 0; background: var(--bg-primary); }
+.scenario-group-table .scenario-group-header > span { min-width: 0; }
 .scenario-group-table .scenario-group-header { border-top: 0; background: var(--bg-secondary); color: var(--text-secondary); font-size: 12px; font-weight: 700; }
 .scenario-group-table .scenario-group-row.selecting-script { box-shadow: inset 3px 0 0 var(--accent); }
 .scenario-group-table .scenario-group-cell { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
-.scenario-group-table .scenario-group-vusers strong { padding-top: 8px; color: var(--text-primary); font-variant-numeric: tabular-nums; }
 .scenario-group-table .scenario-group-actions { align-items: flex-end; }
 .scenario-group-table .scenario-script-readiness { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .scenario-group-table .scenario-script-readiness p { flex: 1 1 140px; margin: 0; color: var(--text-secondary); font-size: 12px; }
@@ -2646,11 +2646,11 @@ fieldset.scenario-builder { min-width: 0; border: 0; margin-inline: 0; }
 .scenario-group-table .scenario-group-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 .scenario-builder-header .scenario-builder-mode { display: block; margin-bottom: 2px; color: var(--text-secondary); font-size: 12px; font-weight: 700; }
 .scenario-group-table + .scenario-add-group-card { margin-top: 10px; }
-/* The six columns need about 760 px of the step; below that (a 960 px
+/* The five columns need about 760 px of the step; below that (a 960 px
    window) each row stacks its fields instead. */
 @media (max-width: 960px) {
   .scenario-group-table .scenario-group-header { display: none; }
-  .scenario-group-table .scenario-group-row { grid-template-columns: minmax(0, 1fr); }
+  .scenario-group-table .scenario-group-row { grid-template-columns: minmax(0, 1fr); min-width: 0; }
   .scenario-group-table .scenario-group-label { position: static; width: auto; height: auto; overflow: visible; clip: auto; color: var(--text-secondary); font-size: 12px; font-weight: 700; }
   .scenario-group-table .scenario-group-actions { align-items: flex-start; }
 }
@@ -2695,3 +2695,8 @@ fieldset.scenario-builder { min-width: 0; border: 0; margin-inline: 0; }
 .scenario-draft-badge { padding: 1px 8px; border-radius: 999px; border: 1px solid var(--border); font-size: var(--font-size-xs, 11px); color: var(--text-secondary); }
 .scenario-draft-meta { color: var(--text-secondary); font-size: var(--font-size-sm, 13px); }
 .scenario-draft-actions { display: flex; gap: 8px; }
+
+.scenario-release-add { display: flex; gap: 6px; margin-top: 6px; }
+.scenario-release-add .settings-input { flex: 1; min-width: 0; }
+/* Scenario name and release share a row, stacking when the step is narrow (or when there is no release field). */
+.scenario-core-grid.scenario-name-release-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); gap: 16px; align-items: start; }
