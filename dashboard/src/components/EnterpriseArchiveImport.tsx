@@ -5607,6 +5607,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
             parameterization={result.parameterization}
             onParameterizationApplied={handleParameterizationApplied}
             onSettingsBusyChange={setSettingsEditing}
+            settingsIdentity={`${selectedItem?.id || ''}:${activeResultScriptIndex}`}
             onSettingsApplied={updated => {
               handleParameterizationApplied(updated.script, [], [], updated.import_draft_expires_at, updated.secret_binding_requirements || [], updated.fidelity_report)
               setProtectedReview(null)

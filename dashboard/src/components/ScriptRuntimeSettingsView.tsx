@@ -9,10 +9,10 @@ import ThinkTimePercentageInputs from './ThinkTimePercentageInputs'
 import { RuntimeCountLimit } from './RuntimeCountLimit'
 import { RuntimeContextSummary, type DebugRuntimeContext } from './RuntimeContextSummary'
 import { RuntimeFieldEvidence } from './RuntimeFieldEvidence'
-import { RUNTIME_WORKSPACE_CATEGORIES, RUNTIME_SEARCH_TERMS, runtimeTimingIssues, effectiveThinkTimeLabel } from './runtimeWorkspaceModel'
+import { EXPONENTIAL_THINK_TIME_CAP_FACTOR, RUNTIME_WORKSPACE_CATEGORIES, canonicalPacingType, canonicalWorkloadModel, exponentialThinkTimeStopMs, isOpenWorkloadModel, RUNTIME_SEARCH_TERMS, runtimeTimingIssues, effectiveThinkTimeLabel } from './runtimeWorkspaceModel'
 import TabList from './ux/TabList'
 import { handleTabKey } from './tabKeyboard'
-import { useId, useState, type ReactNode } from 'react'
+import { useId, useState, type InputHTMLAttributes, type ReactNode } from 'react'
 
 import type { TransactionSLARule } from '../types/goals'
 import type { ScriptActionDefinition, ScriptDefinition, ScriptConfig } from '../types/scripts'
@@ -56,20 +56,26 @@ import {
   collectScriptTransactionNames,
   formatBrowserEmulationSummary,
   formatLineList,
+  formatRunBlockActions,
   formatRuntimeSettingStatusLabel,
   formatScriptProtocolLabel,
   getRuntimeProtocolCapabilities,
   httpTransportTabIsAvailable,
   isTransactionSLADurationMetric,
+  parseArrivalSeed,
+  parseCommaList,
   parseLineList,
   readImportedRuntimeFiles,
+  rebuildRunBlockChildren,
+  runBlockActionsWeightsSurviveParsing,
+  scriptHasLLMActions,
   readImportedRuntimeSettingDispositions,
   summarizeImportedRuntimeDispositions,
   runtimeSettingsSectionIsAvailable,
   type HTTPTransportTabId,
   type RuntimeSettingsSectionId,
 } from './scriptEditorRuntimeSettingsModel'
-import { HTTP_VERSION_OPTIONS, formatScriptHTTPVersion, scriptHTTPVersionSettings } from './httpVersionModel'
+import { HTTP_VERSION_OPTIONS, formatScriptHTTPVersion, inheritedHTTPActionVersion, scriptHTTPVersionSettings } from './httpVersionModel'
 import { HTTP3ExecutionNote } from './HTTP3ExecutionNote'
 import { HTTPQUICSettingsFields } from './HTTPQUICSettingsFields'
 import { http3PolicyIssues, patchQUICConfig, quicPanelDisabledReason } from './httpQUICModel'
@@ -102,6 +108,44 @@ function flattenRuntimeActions(actions: ScriptActionDefinition[]): ScriptActionD
     ...flattenRuntimeActions(action.control?.steps || []),
     ...flattenRuntimeActions(action.control?.else || []),
   ])
+}
+
+type DraftTextInputProps = Omit<InputHTMLAttributes<HTMLInputElement>, 'value' | 'onChange'> & {
+  /** Canonical text for the stored value. */
+  value: string
+  /**
+   * Canonical text the stored value would have after committing raw, or null
+   * when raw does not show what it stores (the stored value is shown instead).
+   */
+  normalize: (raw: string) => string | null
+  /** Store the parsed value of raw (called on every keystroke). */
+  onCommit: (raw: string) => void
+}
+
+/**
+ * A list input that commits on every keystroke but keeps showing what the
+ * author typed (a trailing "," or ":") while it still parses to the stored
+ * value. Re-rendering from the parsed value alone would drop the separator
+ * the moment it is typed.
+ */
+function DraftTextInput({ value, normalize, onCommit, onBlur, ...inputProps }: DraftTextInputProps) {
+  const [draft, setDraft] = useState<string | null>(null)
+  const normalized = draft !== null ? normalize(draft) : null
+  const shown = draft !== null && normalized !== null && normalized === value ? draft : value
+  return (
+    <input
+      {...inputProps}
+      value={shown}
+      onChange={event => {
+        setDraft(event.target.value)
+        onCommit(event.target.value)
+      }}
+      onBlur={event => {
+        setDraft(null)
+        onBlur?.(event)
+      }}
+    />
+  )
 }
 
 function usesPersistentJavaVuserLifecycle(script: ScriptDefinition): boolean {
@@ -268,6 +312,21 @@ function buildThinkTimeConfigForType(
   return base
 }
 
+/**
+ * Help for the exponential cap base. Mirrors engine computeThinkTime: the
+ * draw is capped at max_ms × 4, then the multiplier applies, then Limit (s).
+ */
+function exponentialThinkTimeCapHelp(think: { max_ms?: number; multiplier?: number } | undefined): string {
+  const tail = 'Min (s) must not exceed this value. Use Limit (s) for a hard maximum.'
+  const stopMs = exponentialThinkTimeStopMs(think)
+  if (stopMs <= 0) return `Exponential draws stop at ${EXPONENTIAL_THINK_TIME_CAP_FACTOR} × this value. ${tail}`
+  const multiplier = think?.multiplier
+  if (typeof multiplier === 'number' && Number.isFinite(multiplier) && multiplier > 0 && multiplier !== 1) {
+    return `Exponential draws stop at ${EXPONENTIAL_THINK_TIME_CAP_FACTOR} × this value, then the × ${multiplier} multiplier applies (${stopMs / 1000} s). ${tail}`
+  }
+  return `Exponential draws stop at ${EXPONENTIAL_THINK_TIME_CAP_FACTOR} × this value (${stopMs / 1000} s). ${tail}`
+}
+
 function applyFieldPathToScript(prev: ScriptDefinition, path: string, value: unknown): ScriptDefinition {
   if (path === 'version') {
     return { ...prev, version: String(value ?? '') }
@@ -326,8 +385,14 @@ export function ScriptRuntimeSettingsView({
   const [modifiedOnly, setModifiedOnly] = useState(false)
   const timingIssues = runtimeTimingIssues(script.config)
   const httpVersionSettings = scriptHTTPVersionSettings(script.protocol, script.config.http?.version)
+  // The policy the engine applies: an explicit config.http.version, else the
+  // protocol alias default (protocol "http/3" inherits exact HTTP/3).
+  const inheritedHTTPPolicy = inheritedHTTPActionVersion(script.protocol, script.config.http?.version)
+  const effectiveHTTPPolicy = inheritedHTTPPolicy === null || inheritedHTTPPolicy === 'auto' ? undefined : inheritedHTTPPolicy
+  // effectiveHTTPPolicy already resolves the protocol alias; resolving it
+  // again would turn an explicit "auto" on an "http/3" script back into HTTP/3.
   const tlsMaxVersionHttp3Warning = getTlsMaxVersionHttp3Warning(
-    httpVersionSettings.selection || script.config.http?.version,
+    effectiveHTTPPolicy,
     script.config.http?.tls?.max_version,
   )
   const ignoredSoapOnHttpNotice = hasIgnoredSoapConfigOnHttpScript(script.protocol, script.config)
@@ -406,9 +471,23 @@ export function ScriptRuntimeSettingsView({
       ...patch,
     })
   }
+  // The engine builds the quota pacer whenever config.pacing.quota is set,
+  // independent of pacing.type, and it throttles only LLM actions.
+  const scriptUsesLLMActions = scriptHasLLMActions(script)
+  // dsl.CanonicalPacingType: a stored "TPS" or " tps " is TPS pacing at runtime.
+  const pacingType = canonicalPacingType(pacingConfig?.type)
+  const showQuotaEditor = scriptUsesLLMActions || pacingConfig?.quota !== undefined || pacingType === 'quota'
+  // Arrival process, burstiness, seed and rate stages are read only by the
+  // open-workload scheduler; closed TPS pacing uses a constant token bucket.
+  const pacingIsOpenWorkload = isOpenWorkloadModel(script.config)
+  // The engine and validation trim and lowercase the arrival process: a stored
+  // "Gamma" runs gamma arrivals.
+  const arrivalProcess = (pacingConfig?.arrival_process ?? '').trim().toLowerCase()
+  const closedWorkloadHasOpenArrivalSettings = Boolean(
+    pacingConfig?.arrival_process || pacingConfig?.burstiness !== undefined || pacingConfig?.seed !== undefined || pacingConfig?.rate_stages?.length,
+  )
   const updatePacingQuota = (patch: Partial<ExtendedQuotaPacingConfig>) => {
     updatePacingConfig({
-      type: 'quota',
       quota: {
         ...(pacingConfig?.quota || {}),
         ...patch,
@@ -761,9 +840,14 @@ export function ScriptRuntimeSettingsView({
                   onChangeMs={value => updateThinkTime({ min_ms: value ?? 0 })} />
               </label>
               <label>
-                <span>Max (s)</span>
+                <span>{thinkTimeType === 'exponential' ? 'Cap base (s)' : 'Max (s)'}</span>
                 <SecondsFromMillisecondsInput valueMs={script.config.think_time?.max_ms}
                   onChangeMs={value => updateThinkTime({ max_ms: value ?? 0 })} />
+                {thinkTimeType === 'exponential' && (
+                  <small data-testid="exponential-think-cap-help">
+                    {exponentialThinkTimeCapHelp(script.config.think_time)}
+                  </small>
+                )}
               </label>
             </>
           )}
@@ -778,19 +862,24 @@ export function ScriptRuntimeSettingsView({
             <SecondsFromMillisecondsInput valueMs={script.config.think_time?.limit_ms} placeholder="0 = no limit"
               onChangeMs={value => updateThinkTime({ limit_ms: value ?? 0 })} />
           </label>
-          <label className="checkbox-label full-width">
-            <input
-              type="checkbox"
-              aria-label="Force exact think time"
-              checked={Boolean(script.config.think_time?.force)}
-              onChange={e => updateField('config.think_time', {
-                ...script.config.think_time,
-                type: thinkTimeType,
-                force: e.target.checked || undefined,
-              })}
-            />
-            <span>Force exact think time</span>
-          </label>
+          {script.config.think_time?.force && (
+            // The engine reads force only from an action's think_time; the
+            // script-level policy drops it, so it is not offered as a control.
+            <p className="full-width" role="note" data-testid="script-think-time-force-notice">
+              Force exact think time is set on the script, where runs ignore it: it applies only to an action&apos;s own think time.{' '}
+              <button
+                type="button"
+                className="btn btn-sm btn-ghost"
+                onClick={() => {
+                  const nextThinkTime = { ...script.config.think_time }
+                  delete nextThinkTime.force
+                  updateField('config.think_time', nextThinkTime)
+                }}
+              >
+                Clear script-level force
+              </button>
+            </p>
+          )}
 
         </div></fieldset>
       </div>
@@ -808,11 +897,11 @@ export function ScriptRuntimeSettingsView({
     {runtimeSectionIsActive('pacing') && (
       <div className="section-body">
         <p>TPS controls the group iteration rate: open mode schedules arrivals, and closed mode shares a limiter across virtual users. It is not the number of HTTP requests per second. Scenario distribution determines each generator&apos;s share.</p>
-        {script.config.run_logic?.workload_model === 'open' && <p>Open workloads require TPS pacing. Change the workload model in Run Logic to choose a delay or interval mode.</p>}
+        {pacingIsOpenWorkload && <p>Open workloads require TPS pacing. Change the workload model in Run Logic to choose a delay or interval mode.</p>}
         <div className="form-grid">
           <label className="full-width">
             <span>Pacing Mode</span>
-            <select disabled={script.config.run_logic?.workload_model === 'open'} value={script.config.pacing?.type || 'none'}
+            <select disabled={pacingIsOpenWorkload} value={pacingType}
               onChange={e => updateField('config.pacing', { ...script.config.pacing, type: e.target.value })}>
               <option value="none">No delay (as fast as possible)</option>
               <option value="fixed_delay">Fixed delay after iteration</option>
@@ -820,16 +909,21 @@ export function ScriptRuntimeSettingsView({
               <option value="fixed_interval">Fixed interval from iteration start</option>
               <option value="random_interval">Random interval from iteration start</option>
               <option value="tps">Target iteration rate (TPS)</option>
-              <option value="quota">Quota (TPM / RPM)</option>
+              {pacingType === 'quota' && <option value="quota">Quota only (no iteration pacing)</option>}
             </select>
           </label>
-          {script.config.pacing?.type === 'fixed_delay' && (
+          {pacingType === 'quota' && (
+            <p className="full-width" role="note" data-testid="pacing-quota-mode-notice">
+              The quota mode does not pace iterations. The LLM request quota below applies in every pacing mode, so choose the iteration pacing you want here.
+            </p>
+          )}
+          {pacingType === 'fixed_delay' && (
             <label><span>Delay (s)</span>
               <SecondsFromMillisecondsInput valueMs={script.config.pacing?.delay_ms}
                 onChangeMs={value => updateField('config.pacing', { ...script.config.pacing, delay_ms: value ?? 0 })} />
             </label>
           )}
-          {script.config.pacing?.type === 'random_delay' && (
+          {pacingType === 'random_delay' && (
             <>
               <label><span>Min Delay (s)</span>
                 <SecondsFromMillisecondsInput valueMs={script.config.pacing?.min_delay_ms}
@@ -841,13 +935,13 @@ export function ScriptRuntimeSettingsView({
               </label>
             </>
           )}
-          {script.config.pacing?.type === 'fixed_interval' && (
+          {pacingType === 'fixed_interval' && (
             <label><span>Interval (s)</span>
               <SecondsFromMillisecondsInput valueMs={script.config.pacing?.interval_ms}
                 onChangeMs={value => updateField('config.pacing', { ...script.config.pacing, interval_ms: value ?? 0 })} />
             </label>
           )}
-          {script.config.pacing?.type === 'random_interval' && (
+          {pacingType === 'random_interval' && (
             <>
               <label><span>Min Interval (s)</span>
                 <SecondsFromMillisecondsInput valueMs={script.config.pacing?.min_interval_ms}
@@ -859,18 +953,54 @@ export function ScriptRuntimeSettingsView({
               </label>
             </>
           )}
-          {script.config.pacing?.type === 'tps' && (
+          {/* Validation checks leftover arrival settings for every pacing
+              mode, so the clear action shows whatever the closed workload's
+              pacing mode is, not only for TPS. */}
+          {!pacingIsOpenWorkload && closedWorkloadHasOpenArrivalSettings && (
+            <p className="full-width" role="note" data-testid="pacing-open-only-settings-notice">
+              Arrival process, burstiness, arrival seed and rate stages apply only to open workloads. {pacingType === 'tps'
+                ? 'This closed workload paces at a constant Target TPS and ignores them.'
+                : 'This closed workload ignores them, but invalid leftover values still fail validation.'}{' '}
+              <button
+                type="button"
+                className="btn btn-sm btn-ghost"
+                onClick={() => updatePacingConfig({
+                  arrival_process: undefined,
+                  burstiness: undefined,
+                  seed: undefined,
+                  rate_stages: undefined,
+                })}
+              >
+                Clear open-workload settings
+              </button>
+            </p>
+          )}
+          {pacingType === 'tps' && (
             <>
               <label><span>Target TPS</span>
                 <input type="number" min="0" step="0.1" value={script.config.pacing?.tps ?? ''}
                   onChange={e => updateField('config.pacing', { ...script.config.pacing, tps: Number(e.target.value) })} />
               </label>
+              {!pacingIsOpenWorkload && !closedWorkloadHasOpenArrivalSettings && (
+                <p className="full-width" data-testid="pacing-open-only-settings-hint">
+                  Arrival process, arrival seed and rate stages are available when Run Logic uses the open arrival-rate workload model.
+                </p>
+              )}
+              {pacingIsOpenWorkload && <>
               <label>
                 <span>Arrival process</span>
                 <select
                   aria-label="Arrival process"
-                  value={pacingConfig?.arrival_process || ''}
-                  onChange={e => updatePacingConfig({ arrival_process: e.target.value || undefined })}
+                  value={arrivalProcess}
+                  onChange={e => {
+                    const nextProcess = e.target.value || undefined
+                    // Gamma arrivals fail validation without a burstiness above 0.
+                    const needsBurstiness = nextProcess === 'gamma' && !((pacingConfig?.burstiness ?? 0) > 0)
+                    updatePacingConfig({
+                      arrival_process: nextProcess,
+                      ...(needsBurstiness ? { burstiness: 1 } : {}),
+                    })
+                  }}
                 >
                   <option value="">Default (uniform)</option>
                   <option value="uniform">Uniform</option>
@@ -878,34 +1008,42 @@ export function ScriptRuntimeSettingsView({
                   <option value="gamma">Gamma</option>
                 </select>
               </label>
-              {pacingConfig?.arrival_process === 'gamma' && (
+              {arrivalProcess === 'gamma' && (
                 <label>
                   <span>Burstiness</span>
                   <input
                     type="number"
-                    min="0"
+                    min="0.1"
+                    max="1000"
                     step="0.1"
                     aria-label="Arrival burstiness"
                     value={pacingConfig?.burstiness ?? ''}
-                    placeholder="1.0"
-                    onChange={e => updatePacingConfig({
-                      burstiness: e.target.value === '' ? undefined : Math.max(0, Number(e.target.value) || 0),
-                    })}
+                    placeholder="Required: above 0, up to 1000"
+                    onChange={e => {
+                      const parsed = Number(e.target.value)
+                      updatePacingConfig({
+                        burstiness: e.target.value === '' || !Number.isFinite(parsed) ? undefined : parsed,
+                      })
+                    }}
                   />
+                  <small>1.0 matches Poisson; higher values make arrivals burstier.</small>
                 </label>
               )}
               <label>
                 <span>Arrival seed</span>
                 <input
                   type="number"
-                  min="0"
+                  step="1"
                   aria-label="Arrival seed"
                   value={pacingConfig?.seed ?? ''}
-                  placeholder="0 (random)"
-                  onChange={e => updatePacingConfig({
-                    seed: e.target.value === '' ? undefined : Math.max(0, Number(e.target.value) || 0),
-                  })}
+                  placeholder="Empty = random each run"
+                  onChange={e => {
+                    // Any number, 0 included, fixes the arrival sequence; only
+                    // an unset seed is random per run.
+                    updatePacingConfig({ seed: parseArrivalSeed(e.target.value) })
+                  }}
                 />
+                <small>Any value, including 0, repeats the same arrival sequence. Leave empty for random arrivals.</small>
               </label>
               <div className="settings-sub-group full-width" data-testid="pacing-rate-stages-editor">
                 <div className="sub-header">
@@ -990,10 +1128,24 @@ export function ScriptRuntimeSettingsView({
                   </div>
                 ))}
               </div>
+              </>}
             </>
           )}
-          {script.config.pacing?.type === 'quota' && (
-            <>
+          {showQuotaEditor && (
+            <div className="settings-sub-group full-width" data-testid="pacing-quota-editor">
+              <div className="sub-header">
+                <h5>LLM request quota</h5>
+                {pacingConfig?.quota !== undefined && (
+                  <button type="button" className="btn btn-sm btn-ghost" onClick={() => updatePacingConfig({ quota: undefined })}>
+                    Clear quota
+                  </button>
+                )}
+              </div>
+              <p>Applies in every pacing mode, and only to LLM actions: llm_request steps and HTTP steps marked with params.llm, llm_dialect or stream_profile.</p>
+              {!scriptUsesLLMActions && (
+                <p role="note" data-testid="pacing-quota-no-llm-notice">This script has no LLM actions, so the quota throttles nothing.</p>
+              )}
+              <div className="form-grid">
               <label>
                 <span>Tokens per minute (TPM)</span>
                 <input
@@ -1083,7 +1235,8 @@ export function ScriptRuntimeSettingsView({
                 />
                 <span>Adaptive AIMD throttling</span>
               </label>
-            </>
+              </div>
+            </div>
           )}
         </div>
       </div>
@@ -1103,20 +1256,20 @@ export function ScriptRuntimeSettingsView({
     {runtimeSectionIsActive('runlogic') && (
       <div className="section-body">
         <div className="form-grid">
-          <RuntimeCountLimit label="Iterations" value={script.config.run_logic?.iterations} onChange={value => updateField('config.run_logic', { ...script.config.run_logic, iterations: value })} help={script.config.run_logic?.workload_model === 'open' ? 'Open workloads convert this to an arrival budget multiplied by the assigned worker count.' : 'Per virtual user. Zero means no per-user iteration cap.'} />
+          <RuntimeCountLimit label="Iterations" value={script.config.run_logic?.iterations} onChange={value => updateField('config.run_logic', { ...script.config.run_logic, iterations: value })} help={pacingIsOpenWorkload ? 'Open workloads convert this to an arrival budget multiplied by the assigned worker count.' : 'Per virtual user. Zero means no per-user iteration cap.'} />
           <RuntimeCountLimit label="Global Iterations" value={script.config.run_logic?.global_iterations} onChange={value => updateField('config.run_logic', { ...script.config.run_logic, global_iterations: value })} help="Shared execution budget. Already admitted work can finish when the budget is reached." />
           <RuntimeCountLimit label="Max Transactions" value={script.config.run_logic?.max_transactions} onChange={value => updateField('config.run_logic', { ...script.config.run_logic, max_transactions: value })} help="Counts explicit business transactions and enabled auto-transactions; this is not an HTTP request count." />
           <label>
             <span>Workload Model</span>
-            <select value={script.config.run_logic?.workload_model || 'closed'}
+            <select value={canonicalWorkloadModel(script.config.run_logic?.workload_model)}
               onChange={e => updateField('config', { ...script.config, run_logic: { ...script.config.run_logic, workload_model: e.target.value }, ...(e.target.value === 'open' ? { pacing: { ...script.config.pacing, type: 'tps', tps: Number.isFinite(script.config.pacing?.tps) && (script.config.pacing?.tps ?? 0) > 0 ? script.config.pacing!.tps : 1 } } : {}) })}>
               <option value="closed">Closed VUser</option>
               <option value="open">Open arrival-rate</option>
             </select>
           </label>
-          {script.config.run_logic?.workload_model === 'open' && <>
+          {pacingIsOpenWorkload && <>
             <label>Arrival target (iterations / second)<input aria-label="Arrival target" type="number" min="0" step="any" value={script.config.pacing?.tps ?? ''} onChange={event => updateField('config.pacing', { ...script.config.pacing, type: 'tps', tps: Number(event.target.value) })} /></label>
-            <label>Maximum in-flight iterations<input aria-label="Maximum in-flight iterations" type="number" min="0" value={script.config.run_logic.max_in_flight ?? 0} onChange={event => updateField('config.run_logic', { ...script.config.run_logic, max_in_flight: Number(event.target.value) })} /><small>0 uses the engine-derived limit. Excess arrivals are shed when the limit is reached.</small></label>
+            <label>Maximum in-flight iterations<input aria-label="Maximum in-flight iterations" type="number" min="0" value={script.config.run_logic?.max_in_flight ?? 0} onChange={event => updateField('config.run_logic', { ...script.config.run_logic, max_in_flight: Number(event.target.value) })} /><small>0 uses the engine-derived limit. Excess arrivals are shed when the limit is reached.</small></label>
           </>}
           <label>
             <span>Auto-Transactions</span>
@@ -1139,22 +1292,27 @@ export function ScriptRuntimeSettingsView({
               <option value="iterations">Iterations</option>
             </select>
           </label>
-          <label>
-            <span>Block scheduling</span>
-            <select
-              aria-label="Block scheduling"
-              value={script.config.run_logic?.block_scheduling || ''}
-              onChange={e => updateField('config.run_logic', {
-                ...script.config.run_logic,
-                block_scheduling: (e.target.value || undefined) as NonNullable<ScriptConfig['run_logic']>['block_scheduling'],
-              })}
-            >
-              <option value="">Default (sequential)</option>
-              <option value="sequential">Sequential</option>
-              <option value="random">Random</option>
-              <option value="percentage">Percentage</option>
-            </select>
-          </label>
+          {script.config.run_logic?.block_scheduling && (
+            // HTTP/SOAP execution order comes from run blocks and each block's
+            // mode; the imported top-level value is preserved, not executed.
+            <p className="full-width" role="note" data-testid="run-logic-block-scheduling-notice">
+              Imported block scheduling: {script.config.run_logic.block_scheduling}. This value is preserved from the import and does not change execution order; each run block&apos;s mode below does.
+              {/* The engine's pooling gate (java_shared.go) compares the raw value exactly. */}
+              {isJavaVuserScript && script.config.run_logic.block_scheduling !== 'sequential' && (
+                <>
+                  {' On Java VUser scripts, a value other than sequential turns off shared-JVM pooling.'}{' '}
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-ghost"
+                    data-testid="run-logic-block-scheduling-reset"
+                    onClick={() => updateField('config.run_logic', { ...script.config.run_logic, block_scheduling: 'sequential' })}
+                  >
+                    Reset to sequential
+                  </button>
+                </>
+              )}
+            </p>
+          )}
           <div className="settings-sub-group full-width" data-testid="run-logic-blocks-editor">
             <div className="sub-header">
               <h5>Run blocks</h5>
@@ -1227,49 +1385,23 @@ export function ScriptRuntimeSettingsView({
                     updateField('config.run_logic', { ...script.config.run_logic, blocks: nextBlocks })
                   }}
                 />
-                <input
+                <DraftTextInput
                   aria-label={`Run block ${blockIdx + 1} actions`}
-                  value={(block.children || [])
-                    .filter(child => child.action)
-                    .map(child =>
-                      child.weight !== undefined && child.weight > 0
-                        ? `${child.action}:${child.weight}`
-                        : child.action,
-                    )
-                    .join(', ')}
+                  value={formatRunBlockActions(block.children, block.mode)}
+                  normalize={raw => runBlockActionsWeightsSurviveParsing(raw, block.mode) ? formatRunBlockActions(rebuildRunBlockChildren(block.children, raw, block.mode), block.mode) : null}
                   placeholder="Action, Checkout"
-                  onChange={e => {
+                  onCommit={raw => {
                     const nextBlocks = [...(script.config.run_logic?.blocks || [])]
-                    const nestedBlocks = (block.children || []).filter(child => child.block && !child.action)
-                    const parsedActions = e.target.value
-                      .split(',')
-                      .map(part => part.trim())
-                      .filter(Boolean)
-                      .map(token => {
-                        const colonIdx = token.indexOf(':')
-                        const actionName = (colonIdx >= 0 ? token.slice(0, colonIdx) : token).trim()
-                        const rawWeight = colonIdx >= 0 ? token.slice(colonIdx + 1).trim() : ''
-                        const existing = (block.children || []).find(child => child.action === actionName)
-                        const parsedWeight =
-                          rawWeight !== ''
-                            ? Math.max(1, Number(rawWeight) || 1)
-                            : existing?.weight !== undefined && existing.weight > 0
-                              ? existing.weight
-                              : block.mode === 'percentage'
-                                ? 100
-                                : undefined
-                        return parsedWeight !== undefined
-                          ? { action: actionName, weight: parsedWeight }
-                          : { action: actionName }
-                      })
-                      .filter(child => child.action)
                     nextBlocks[blockIdx] = {
                       ...block,
-                      children: [...parsedActions, ...nestedBlocks],
+                      children: rebuildRunBlockChildren(block.children, raw, block.mode),
                     }
                     updateField('config.run_logic', { ...script.config.run_logic, blocks: nextBlocks })
                   }}
                 />
+                {(block.children || []).some(child => child.block) && (
+                  <small>Nested blocks keep their place in this block&apos;s order.</small>
+                )}
                 <button
                   type="button"
                   className="btn btn-sm btn-ghost"
@@ -1287,7 +1419,7 @@ export function ScriptRuntimeSettingsView({
               </div>
             ))}
           </div>
-          <p className="full-width">Lifecycle: init → authored actions → teardown. Imported scheduling and order values are read-only under Imported Source Runtime Settings.</p>
+          <p className="full-width">Lifecycle: init → authored actions → teardown. When run blocks are set, they decide each iteration&apos;s action order. Imported block scheduling and action sequence values are preserved under Imported Source Runtime Settings and do not change execution order.</p>
 
         </div>
       </div>
@@ -1357,16 +1489,14 @@ export function ScriptRuntimeSettingsView({
           </label>
           <label>
             <span>Retry on conditions</span>
-            <input
+            <DraftTextInput
               type="text"
               aria-label="Retry on conditions"
               placeholder="429, 5xx, timeout, network"
               value={(script.config.error_handling?.retry_on || []).join(', ')}
-              onChange={e => {
-                const tokens = e.target.value
-                  .split(',')
-                  .map(token => token.trim())
-                  .filter(Boolean)
+              normalize={raw => parseCommaList(raw).join(', ')}
+              onCommit={raw => {
+                const tokens = parseCommaList(raw)
                 updateField('config.error_handling', {
                   ...script.config.error_handling,
                   retry_on: tokens.length > 0 ? tokens : undefined,
@@ -2028,10 +2158,10 @@ export function ScriptRuntimeSettingsView({
                 {httpVersionSettings.selection === 'existing-auto' && <option value="existing-auto" disabled>Existing automatic setting (preserved)</option>}
               </select></label>
             {!httpVersionSettings.valid && <p role="alert">This script HTTP version is unsupported. Its original value is preserved until you choose a supported setting or edit the source JSON.</p>}
-            {http3PolicyIssues(httpVersionSettings.selection, { http: script.config.http, web: script.config.web_runtime, target: script.config.base_url }).map(issue => <p key={issue} className="full-width http3-policy-issue" role="alert">{issue}</p>)}
+            {http3PolicyIssues(effectiveHTTPPolicy, { http: script.config.http, web: script.config.web_runtime, target: script.config.base_url }).map(issue => <p key={issue} className="full-width http3-policy-issue" role="alert">{issue}</p>)}
             <div className="form-hint full-width">
               Effective script policy: {httpVersionSettings.effectiveLabel}. Explicit versions are exact; required HTTP/2 never falls back to HTTP/1.1. Each request can inherit this policy or select its own policy, including Auto.
-              <HTTP3ExecutionNote policy={httpVersionSettings.selection} />
+              <HTTP3ExecutionNote policy={effectiveHTTPPolicy} />
             </div>
             <HTTPQUICSettingsFields value={script.config.http?.quic}
               disabledReason={quicPanelDisabledReason(script.config.http, script.config.web_runtime)}
@@ -2662,7 +2792,7 @@ export function ScriptRuntimeSettingsView({
             </select>
           </label>
           <label><span>Error history buffer (bytes)</span><input type="number" min={0} max={1048576} value={script.config.log?.error_buffer_bytes ?? ''} placeholder="102400 by default" onChange={e => updateField('config.log', { ...script.config.log, error_buffer_bytes: e.target.value === '' ? undefined : Number(e.target.value) })} /></label>
-          <label><span>Max response bytes</span><input type="number" min={0} max={1048576} aria-label="Max response bytes" value={script.config.log?.max_response_bytes ?? ''} placeholder="Unlimited" onChange={e => updateField('config.log', { ...script.config.log, max_response_bytes: e.target.value === '' ? undefined : Math.min(1048576, Math.max(0, Number(e.target.value) || 0)) })} /></label>
+          <label><span>Max response bytes</span><input type="number" min={0} max={1048576} aria-label="Max response bytes" value={script.config.log?.max_response_bytes ?? ''} placeholder="Engine bound (4 MiB)" onChange={e => updateField('config.log', { ...script.config.log, max_response_bytes: e.target.value === '' ? undefined : Math.min(1048576, Math.max(0, Number(e.target.value) || 0)) })} /><small>Empty or 0 keeps the engine&apos;s 4 MiB response-evidence bound; a value up to 1 MiB lowers it.</small></label>
           <div className="logging-checkbox-group runtime-checkbox-list">
             <label className="checkbox-label">
               <input type="checkbox" checked={script.config.log?.on_error_only || false}

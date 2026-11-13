@@ -151,6 +151,8 @@ interface Props {
   readinessMessage?: string
   tabbed?: boolean
   onSettingsApplied?: (result: SettingsResult) => void
+  /** Names the script under review so a switch between same-named scripts starts a new settings baseline. */
+  settingsIdentity?: string
   settingsDisabled?: boolean
   onSettingsBusyChange?: (busy: boolean) => void
   runtimeContent?: ReactNode
@@ -269,6 +271,7 @@ export default function ScriptImportReview({
   tabbed = false,
   runtimeContent,
   onSettingsApplied,
+  settingsIdentity,
   settingsDisabled = false,
   onSettingsBusyChange,
   dataContent,
@@ -965,5 +968,5 @@ export default function ScriptImportReview({
     ? <ImportExistingScripts choices={existingScripts.choices} labels={existingScripts.labels} disabled={saving || reviewBusy || sharedValuesApplying || credentialAction !== null} />
     : null
   const reviewContent = tabbed ? <>{reimportControl}{batchControls}<ImportReviewTabs active={activeReviewTab} onChange={setActiveReviewTab} visibleTabs={credentialsTabHidden ? REVIEW_TABS_WITHOUT_CREDENTIALS : undefined} counts={{ review: groupedReviewIssueCount, ...(credentialsTabHidden ? {} : { credentials: secretBindingRequirements.length }) }}>{content}</ImportReviewTabs></> : <>{reimportControl}{content}</>
-  return <ImportSourceIssueFocusContext.Provider value={sourceIssueFocus}><ImportSettingsProvider script={script} disabled={credentialEditing || settingsDisabled || saving || reviewBusy || importDraftExpired || parameterizationApplying || sharedValuesApplying || transportApplying || credentialAction !== null} onApplied={onSettingsApplied} onBusyChange={handleSettingsBusyChange}>{reviewContent}</ImportSettingsProvider></ImportSourceIssueFocusContext.Provider>
+  return <ImportSourceIssueFocusContext.Provider value={sourceIssueFocus}><ImportSettingsProvider script={script} identity={settingsIdentity} disabled={credentialEditing || settingsDisabled || saving || reviewBusy || importDraftExpired || parameterizationApplying || sharedValuesApplying || transportApplying || credentialAction !== null} onApplied={onSettingsApplied} onBusyChange={handleSettingsBusyChange}>{reviewContent}</ImportSettingsProvider></ImportSourceIssueFocusContext.Provider>
 }

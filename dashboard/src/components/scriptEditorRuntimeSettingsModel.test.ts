@@ -9,19 +9,25 @@ import {
   formatDFEChain,
   formatKeyValueLines,
   formatLineList,
+  formatRunBlockActions,
   formatRuntimeSettingStatusLabel,
   formatScriptProtocolLabel,
   getImportedRuntimeSectionId,
   getImportedRuntimeSettingsDestination,
   getRuntimeProtocolCapabilities,
   httpTransportTabIsAvailable,
+  parseArrivalSeed,
+  parseCommaList,
   parseContentChecks,
   parseDFEChain,
   parseExactLineList,
   parseKeyValueLines,
+  rebuildRunBlockChildren,
   resetScriptRuntimeConfig,
   runtimeOverrideFromScriptConfig,
+  runBlockActionsWeightsSurviveParsing,
   runtimeSettingsSectionIsAvailable,
+  scriptHasLLMActions,
   scriptRuntimeConfigIsDirty,
   summarizeRuntimeSettingsReview,
   syncSOAPEnvelopeNamespace,
@@ -432,5 +438,124 @@ describe('scriptEditorRuntimeSettingsModel', () => {
     expect(getImportedRuntimeSectionId('unknown')).toBeNull()
     expect(formatRuntimeSettingStatusLabel('compatibility_only')).toBe('Compatibility-only')
     expect(formatScriptProtocolLabel('java_vuser')).toBe('Java Vuser')
+  })
+})
+
+describe('run block and list helpers', () => {
+  const nested = { name: 'Loop', mode: 'sequential' as const, children: [{ action: 'Browse' }] }
+
+  it('parses comma lists without empty tokens', () => {
+    expect(parseCommaList('429, , 5xx ,')).toEqual(['429', '5xx'])
+  })
+
+  it('formats only plain action children', () => {
+    expect(formatRunBlockActions([{ action: 'A', weight: 60 }, { block: nested }, { action: 'B' }])).toBe('A:60, B')
+  })
+
+  it('keeps nested blocks between the actions they sat between', () => {
+    const children = [{ action: 'Login' }, { block: nested }, { action: 'Logout' }]
+    // No-op edit and typo fixes keep the order.
+    expect(rebuildRunBlockChildren(children, 'Login, Logout', 'sequential')).toEqual(children)
+    expect(rebuildRunBlockChildren(children, 'Login, Log out', 'sequential')).toEqual([{ action: 'Login' }, { block: nested }, { action: 'Log out' }])
+    expect(rebuildRunBlockChildren(children, 'Logn, Logout', 'sequential')).toEqual([{ action: 'Logn' }, { block: nested }, { action: 'Logout' }])
+    // Deleting the action before the nested block keeps it before the next one.
+    expect(rebuildRunBlockChildren(children, 'Logout', 'sequential')).toEqual([{ block: nested }, { action: 'Logout' }])
+    // Appending an action puts it after the existing order.
+    expect(rebuildRunBlockChildren(children, 'Login, Logout, Exit', 'sequential')).toEqual([...children, { action: 'Exit' }])
+  })
+
+  it('stores run block weights as positive integers, as the Go int field requires', () => {
+    expect(rebuildRunBlockChildren([{ action: 'Login' }], 'Login:1.5', 'random')).toEqual([{ action: 'Login', weight: 1 }])
+    expect(rebuildRunBlockChildren([{ action: 'Login' }], 'Login:2.5', 'random')).toEqual([{ action: 'Login', weight: 2 }])
+    expect(rebuildRunBlockChildren([{ action: 'Login' }], 'Login:1e999', 'random')).toEqual([{ action: 'Login', weight: 1 }])
+    expect(JSON.stringify(rebuildRunBlockChildren([{ action: 'Login' }], 'Login:1e999', 'random'))).not.toContain('null')
+    expect(rebuildRunBlockChildren([{ action: 'Login' }], 'Login:40', 'random')).toEqual([{ action: 'Login', weight: 40 }])
+    // The input shows the stored integer weight, not the typed fraction.
+    expect(runBlockActionsWeightsSurviveParsing('Login:1.5')).toBe(false)
+    expect(runBlockActionsWeightsSurviveParsing('Login:1e999')).toBe(false)
+    expect(runBlockActionsWeightsSurviveParsing('Login:40, Logout:')).toBe(true)
+  })
+
+  it('keeps leading and trailing nested blocks at the ends', () => {
+    const children = [{ block: nested }, { action: 'A' }, { block: { ...nested, name: 'Tail' } }]
+    expect(rebuildRunBlockChildren(children, 'A, B', 'sequential')).toEqual([{ block: nested }, { action: 'A' }, { block: { ...nested, name: 'Tail' } }, { action: 'B' }])
+  })
+
+  it('treats a child carrying both block and action as a nested block, as the engine does', () => {
+    const both = { action: 'Ignored', block: nested }
+    expect(formatRunBlockActions([both, { action: 'A' }])).toBe('A')
+    expect(rebuildRunBlockChildren([both, { action: 'A' }], 'A', 'random')).toEqual([both, { action: 'A' }])
+  })
+
+  it('keeps or defaults weights', () => {
+    expect(rebuildRunBlockChildren([{ action: 'A', weight: 70 }], 'A:70, B', 'percentage')).toEqual([{ action: 'A', weight: 70 }, { action: 'B', weight: 100 }])
+    expect(rebuildRunBlockChildren([{ action: 'A', weight: 70 }], 'A:, B', 'percentage')).toEqual([{ action: 'A', weight: 70 }, { action: 'B', weight: 100 }])
+    expect(rebuildRunBlockChildren([{ action: 'A' }], 'A:', 'sequential')).toEqual([{ action: 'A' }])
+    expect(rebuildRunBlockChildren([{ action: 'A' }], 'A:25', 'random')).toEqual([{ action: 'A', weight: 25 }])
+  })
+
+  it('drops a weight the author deleted instead of keeping it hidden', () => {
+    // "Login:3" -> "Login:" keeps the weight while it is being edited.
+    expect(rebuildRunBlockChildren([{ action: 'Login', weight: 3 }], 'Login:', 'random')).toEqual([{ action: 'Login', weight: 3 }])
+    // "Login:" -> "Login" removes it, so the stored block matches the text.
+    for (const mode of ['sequential', 'random'] as const) {
+      const rebuilt = rebuildRunBlockChildren([{ action: 'Login', weight: 3 }], 'Login', mode)
+      expect(rebuilt).toEqual([{ action: 'Login' }])
+      expect(formatRunBlockActions(rebuilt)).toBe('Login')
+    }
+    // Percentage weights are required, so a deleted weight falls back to the default.
+    expect(rebuildRunBlockChildren([{ action: 'Login', weight: 70 }], 'Login', 'percentage')).toEqual([{ action: 'Login', weight: 100 }])
+  })
+
+  it('stores the arrival seed as a safe integer', () => {
+    expect(parseArrivalSeed('')).toBeUndefined()
+    expect(parseArrivalSeed('abc')).toBeUndefined()
+    expect(parseArrivalSeed('1e999')).toBeUndefined()
+    expect(parseArrivalSeed('0')).toBe(0)
+    expect(parseArrivalSeed('-5.9')).toBe(-5)
+    expect(parseArrivalSeed('1e20')).toBe(Number.MAX_SAFE_INTEGER)
+    expect(parseArrivalSeed('-1e20')).toBe(-Number.MAX_SAFE_INTEGER)
+  })
+
+  it('keeps an imported 0% child at 0 when another weight in the percentage block is edited', () => {
+    const imported = [{ action: 'A', weight: 0 }, { action: 'B', weight: 50 }]
+    // The 0% is shown, so editing B's weight re-parses "A:0", not a bare "A".
+    expect(formatRunBlockActions(imported, 'percentage')).toBe('A:0, B:50')
+    expect(rebuildRunBlockChildren(imported, 'A:0, B:60', 'percentage')).toEqual([{ action: 'A', weight: 0 }, { action: 'B', weight: 60 }])
+    // A bare name over a stored 0% keeps it rather than defaulting to 100.
+    expect(rebuildRunBlockChildren(imported, 'A, B:60', 'percentage')).toEqual([{ action: 'A', weight: 0 }, { action: 'B', weight: 60 }])
+    // The author can type the 0% back, and the input keeps showing it.
+    expect(rebuildRunBlockChildren([{ action: 'A', weight: 30 }, { action: 'B', weight: 50 }], 'A:0, B:50', 'percentage')).toEqual(imported)
+    expect(runBlockActionsWeightsSurviveParsing('A:0, B:50', 'percentage')).toBe(true)
+    // Outside percentage blocks the weight floor stays 1.
+    expect(runBlockActionsWeightsSurviveParsing('A:0', 'random')).toBe(false)
+    expect(formatRunBlockActions(imported, 'random')).toBe('A, B:50')
+  })
+
+  it('treats a server-shaped 0% child (weight omitted) as 0% in a percentage block', () => {
+    // The server writes RunLogicChild.Weight with omitempty, so a saved or
+    // imported 0% child comes back with no weight key.
+    const fromServer = [{ action: 'A' }, { action: 'B', weight: 50 }]
+    expect(formatRunBlockActions(fromServer, 'percentage')).toBe('A:0, B:50')
+    expect(rebuildRunBlockChildren(fromServer, 'A:0, B:60', 'percentage')).toEqual([{ action: 'A', weight: 0 }, { action: 'B', weight: 60 }])
+    // A bare name or a trailing ":" over the weightless child keeps it at 0%.
+    expect(rebuildRunBlockChildren(fromServer, 'A, B:60', 'percentage')).toEqual([{ action: 'A', weight: 0 }, { action: 'B', weight: 60 }])
+    expect(rebuildRunBlockChildren(fromServer, 'A:, B:60', 'percentage')).toEqual([{ action: 'A', weight: 0 }, { action: 'B', weight: 60 }])
+    // A name new to the block still defaults to 100.
+    expect(rebuildRunBlockChildren(fromServer, 'A, B:50, C', 'percentage')).toEqual([{ action: 'A', weight: 0 }, { action: 'B', weight: 50 }, { action: 'C', weight: 100 }])
+    // Other modes are unchanged: a weightless child stays bare.
+    expect(formatRunBlockActions(fromServer, 'random')).toBe('A, B:50')
+    expect(rebuildRunBlockChildren(fromServer, 'A, B:60', 'random')).toEqual([{ action: 'A' }, { action: 'B', weight: 60 }])
+  })
+
+  it('detects LLM actions the way protocol.IsLLMAction does', () => {
+    expect(scriptHasLLMActions({ actions: [{ name: 'a', type: 'http_request', target: '/' }] })).toBe(false)
+    expect(scriptHasLLMActions({ actions: [{ name: 'a', type: 'llm_request', target: '/' }] })).toBe(true)
+    expect(scriptHasLLMActions({ actions: [{ name: 'a', type: 'http_request', target: '/', params: { llm: 'yes' } }] })).toBe(true)
+    expect(scriptHasLLMActions({ actions: [{ name: 'a', type: 'http_request', target: '/', params: { llm: false } }] })).toBe(false)
+    expect(scriptHasLLMActions({ actions: [{ name: 'a', type: 'http_request', target: '/', params: { stream_profile: {} } }] })).toBe(true)
+    expect(scriptHasLLMActions({
+      actions: [{ name: 'loop', type: 'control_loop', target: '', control: { steps: [{ name: 'c', type: 'http_request', target: '/', params: { llm_dialect: 'openai' } }] } }],
+    } as Parameters<typeof scriptHasLLMActions>[0])).toBe(true)
   })
 })

@@ -3,10 +3,12 @@ import {
   CANONICAL_RUNTIME_GROUPS,
   CANONICAL_RUNTIME_GROUP_IDS,
   getCanonicalGroupDestination,
+  getCanonicalGroupDestinationForPaths,
   getCanonicalGroupForPath,
   getCanonicalGroupForSection,
   getCanonicalRuntimeGroup,
   getCanonicalRuntimeGroupsForProtocol,
+  getRuntimeFieldLocation,
   getTlsMaxVersionHttp3Warning,
   hasIgnoredSoapConfigOnHttpScript,
   hasReadOnlyScheduleCompatibility,
@@ -39,7 +41,7 @@ describe('canonicalRuntimeTaxonomy', () => {
   it('includes all required config paths across the 7 canonical groups', () => {
     const targetIdentity = getCanonicalRuntimeGroup('target_identity')
     expect(targetIdentity.configPaths).toEqual(
-      expect.arrayContaining(['base_url', 'native_services', 'jmeter', 'sampler_schedules']),
+      expect.arrayContaining(['base_url', 'http.user_agent', 'http.accept_language', 'browser_emulation.custom_user_agent']),
     )
 
     const runLogicPacing = getCanonicalRuntimeGroup('run_logic_pacing')
@@ -50,6 +52,7 @@ describe('canonicalRuntimeTaxonomy', () => {
         'pacing.quota',
         'pacing.arrival_process',
         'pacing.rate_stages',
+        'sampler_schedules',
       ]),
     )
 
@@ -69,11 +72,9 @@ describe('canonicalRuntimeTaxonomy', () => {
         'http.tls_timeout_ms',
         'http.idle_timeout_ms',
         'http.page_timeout_ms',
-        'http.challenge_delay_ms',
         'http.max_conns_per_host',
         'http.max_idle_conns',
         'http.keep_alive',
-        'http.max_redirects',
         'http.dns_cache',
         'http.receive_buffer_bytes',
       ]),
@@ -88,6 +89,7 @@ describe('canonicalRuntimeTaxonomy', () => {
         'http.auth.type',
         'http.auth.domain',
         'http.auth.hosts',
+        'http.challenge_delay_ms',
         'soap.ws_security',
       ]),
     )
@@ -96,12 +98,13 @@ describe('canonicalRuntimeTaxonomy', () => {
     expect(protocolBehavior.configPaths).toEqual(
       expect.arrayContaining([
         'http.default_headers',
-        'http.cookies',
+        'http.cookies_enabled',
         'soap.version',
         'soap.namespaces',
         'soap.fault_handling',
-        'browser',
-        'web_runtime',
+        'http.max_redirects',
+        'native_services',
+        'jmeter',
       ]),
     )
 
@@ -169,9 +172,13 @@ describe('canonicalRuntimeTaxonomy', () => {
     expect(getCanonicalGroupDestination('transport_connections', 'database')).toEqual({
       section: 'database',
     })
-    expect(getCanonicalGroupDestination('security_proxy_auth', 'soap')).toEqual({
+    expect(getCanonicalGroupDestination('security_proxy_auth', 'http')).toEqual({
       section: 'http',
       httpTransportTab: 'tls',
+    })
+    // WS-Security lives only in the SOAP section.
+    expect(getCanonicalGroupDestination('security_proxy_auth', 'soap')).toEqual({
+      section: 'soap',
     })
 
     expect(getCanonicalGroupForPath('config.base_url')).toBe('target_identity')
@@ -243,5 +250,51 @@ describe('canonicalRuntimeTaxonomy', () => {
         base_url: 'https://api.example.com',
       }),
     ).toBe(false)
+  })
+
+  it('locates fields whose panel is outside their group default panel', () => {
+    expect(getRuntimeFieldLocation('config.http.max_redirects', 'http')).toEqual({ section: 'http', httpTransportTab: 'connection' })
+    expect(getRuntimeFieldLocation('config.http.challenge_delay_ms', 'http')).toEqual({ section: 'http', httpTransportTab: 'timeouts' })
+    expect(getRuntimeFieldLocation('config.http.user_agent', 'http')).toEqual({ section: 'http', httpTransportTab: 'request_defaults' })
+    expect(getRuntimeFieldLocation('config.http.http_errors_as_warnings', 'http')).toEqual({ section: 'http', httpTransportTab: 'session_cache' })
+    expect(getRuntimeFieldLocation('config.browser_emulation.custom_user_agent', 'http')).toEqual({ section: 'browser_emulation' })
+    expect(getRuntimeFieldLocation('config.web_runtime.network_simulation.mode', 'http')).toEqual({ section: 'web_runtime' })
+    // Whole dot segments: http.tls never captures http.tls_timeout_ms.
+    expect(getRuntimeFieldLocation('config.http.tls_timeout_ms', 'http')).toEqual({ section: 'http', httpTransportTab: 'timeouts' })
+    expect(getRuntimeFieldLocation('config.http.tls.max_version', 'http')).toEqual({ section: 'http', httpTransportTab: 'tls' })
+    // config.browser stays on the browser tab, apart from config.http.
+    expect(getRuntimeFieldLocation('config.browser.headless', 'browser')).toEqual({ section: 'http', httpTransportTab: 'browser' })
+    expect(getRuntimeFieldLocation('config.browser.headless', 'http')).toBeNull()
+    // Hidden sections and panel-less paths have no location.
+    expect(getRuntimeFieldLocation('config.browser_emulation.mode', 'browser')).toBeNull()
+    expect(getRuntimeFieldLocation('config.soap.version', 'http')).toBeNull()
+    expect(getRuntimeFieldLocation('config.observability.trace_carrier', 'http')).toBeNull()
+  })
+
+  it('gives every offline HTTP/SOAP config path a panel except the panel-less result and observability settings', () => {
+    const panelLess = new Set([
+      'results.csv_exports',
+      'results.protocol_mix',
+      'results.protocol_mix.max_fallback_ratio',
+      'results.protocol_mix.max_quic_failure_ratio',
+      'results.protocol_mix.min_samples',
+      'observability.external_metrics',
+      'observability.trace_carrier',
+    ])
+    const missing = CANONICAL_RUNTIME_GROUPS.flatMap(group => group.configPaths)
+      .filter(path => !panelLess.has(path) && getRuntimeFieldLocation(path, 'soap') === null)
+    expect(missing).toEqual([])
+  })
+
+  it('routes a pill to the panel of its focused fields only when the default panel holds none of them', () => {
+    expect(getCanonicalGroupDestinationForPaths('protocol_behavior_session', 'http', [])).toEqual({ section: 'http', httpTransportTab: 'request_defaults' })
+    expect(getCanonicalGroupDestinationForPaths('protocol_behavior_session', 'http', ['config.http.max_redirects'])).toEqual({ section: 'http', httpTransportTab: 'connection' })
+    expect(
+      getCanonicalGroupDestinationForPaths('protocol_behavior_session', 'http', ['config.http.max_redirects', 'config.http.accept_encoding']),
+    ).toEqual({ section: 'http', httpTransportTab: 'request_defaults' })
+    expect(getCanonicalGroupDestinationForPaths('target_identity', 'http', ['config.browser_emulation.mode'])).toEqual({ section: 'browser_emulation' })
+    // No panel for the protocol: fall back to the group default.
+    expect(getCanonicalGroupDestinationForPaths('target_identity', 'browser', ['config.browser_emulation.mode'])).toEqual({ section: 'script_config' })
+    expect(getCanonicalGroupDestinationForPaths('errors_logging_diagnostics', 'http', ['config.observability.trace_carrier'])).toEqual({ section: 'errors' })
   })
 })

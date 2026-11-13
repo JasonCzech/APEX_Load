@@ -2228,6 +2228,7 @@ describe('ScriptRuntimeSettingsView canonical HTTP & SOAP gaps', () => {
             protocol: 'http',
             config: {
               base_url: 'https://example.test',
+              run_logic: { workload_model: 'open' },
               pacing: { type: 'tps', tps: 25 },
             },
             actions: [],
@@ -2311,9 +2312,8 @@ describe('ScriptRuntimeSettingsView canonical HTTP & SOAP gaps', () => {
     const termOptions = Array.from(termSelect.options).map(o => o.value)
     expect(termOptions).toEqual(['', 'duration', 'iterations'])
 
-    const blockSchedSelect = container.querySelector<HTMLSelectElement>('select[aria-label="Block scheduling"]')!
-    const blockSchedOptions = Array.from(blockSchedSelect.options).map(o => o.value)
-    expect(blockSchedOptions).toEqual(['', 'sequential', 'random', 'percentage'])
+    // block_scheduling does not drive HTTP/SOAP execution, so it is not an editable control.
+    expect(container.querySelector('select[aria-label="Block scheduling"]')).toBeNull()
 
     const blockActionsInput = container.querySelector<HTMLInputElement>('input[aria-label="Run block 1 actions"]')!
     expect(blockActionsInput.value).toBe('Browse:70, Buy:30')
@@ -2394,7 +2394,7 @@ describe('ScriptRuntimeSettingsView canonical HTTP & SOAP gaps', () => {
       )
     })
     const minLabel = Array.from(container.querySelectorAll('label')).find(l => l.textContent?.includes('Min (s)'))
-    const maxLabel = Array.from(container.querySelectorAll('label')).find(l => l.textContent?.includes('Max (s)'))
+    const maxLabel = Array.from(container.querySelectorAll('label')).find(l => l.textContent?.includes('Cap base (s)'))
     expect(minLabel).toBeTruthy()
     expect(maxLabel).toBeTruthy()
 
@@ -2408,11 +2408,7 @@ describe('ScriptRuntimeSettingsView canonical HTTP & SOAP gaps', () => {
     expect(lastThinkCall?.[1]).toMatchObject({ type: 'fixed', mean_ms: 2000 })
     expect((lastThinkCall?.[1] as { distribution?: string }).distribution).toBeUndefined()
 
-    const forceCheckbox = container.querySelector<HTMLInputElement>('input[aria-label="Force exact think time"]')!
-    act(() => forceCheckbox.click())
-    expect(onUpdateField).toHaveBeenCalledWith(
-      'config.think_time',
-      expect.objectContaining({ force: true }),
-    )
+    // Script-level force is ignored at runtime, so no control authors it.
+    expect(container.querySelector('input[aria-label="Force exact think time"]')).toBeNull()
   })
 })

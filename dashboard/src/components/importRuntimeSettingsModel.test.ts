@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { ScriptDefinition } from '../types/scripts'
+import { getCanonicalGroupForPath } from './runtime-settings/canonicalRuntimeTaxonomy'
+import { runtimeSettingEffects } from './importRuntimeSettingNotes'
 import {
  CANONICAL_RUNTIME_GROUPS,
  CANONICAL_RUNTIME_GROUP_IDS,
@@ -23,6 +25,35 @@ const makeScript = (protocol = 'http', config: ScriptDefinition['config'] = { ba
 })
 
 describe('importRuntimeSettingsModel', () => {
+ it('resolves a path through the shared Author taxonomy and keeps category mapping for rows without a path', () => {
+  const paths = [
+   'config.http.user_agent',
+   'config.http.accept_language',
+   'config.browser_emulation.platform',
+   'config.http.max_redirects',
+   'config.http.challenge_delay_ms',
+   'config.http.traceparent',
+   'config.http.content_check_error_limit',
+   'config.web_runtime.network_simulation.preset',
+   'config.web_runtime.source_ips',
+   'config.soap.fault_handling.fail_on_fault',
+   'config.soap.ws_security.timestamp.ttl_seconds',
+   'config.pacing.quota.tpm',
+   'config.think_time.force',
+  ]
+  for (const path of paths) {
+   const id = getCanonicalGroupForPath(path)
+   expect(id, path).not.toBeNull()
+   // A path wins over a legacy row category, whatever the category says.
+   expect(CANONICAL_RUNTIME_GROUP_IDS[resolveCanonicalRuntimeGroup('Run logic', path)], path).toBe(id)
+  }
+  // A group the backend served still wins over the path.
+  expect(resolveCanonicalRuntimeGroup('security_proxy_auth', 'config.http.max_redirects')).toBe('Security, proxy & auth')
+  // Paths the offline taxonomy does not know fall back to the category.
+  expect(resolveCanonicalRuntimeGroup('Run logic', 'config.unknown_section.value')).toBe('Run logic & pacing')
+  expect(resolveCanonicalRuntimeGroup('Logging')).toBe('Errors, logging & diagnostics')
+ })
+
  afterEach(() => {
   resetRegisteredImportRuntimeFields()
  })
@@ -70,8 +101,10 @@ describe('importRuntimeSettingsModel', () => {
   }
  })
 
- it('includes 100% of HTTP and SOAP runtime settings across all 7 canonical groups', () => {
-  const expectedByGroup: Record<string, string[]> = {
+ // Each path's group is checked against pkg/dsl/config_catalog.go in
+ // importRuntimeSettingsCatalogParity.test.ts; this list pins the Phase 2 paths.
+ it('keeps every Phase 2 HTTP and SOAP runtime setting', () => {
+  const expectedByArea: Record<string, string[]> = {
    'Target & identity': ['config.base_url'],
    'Run logic & pacing': [
     'config.run_logic.iterations',
@@ -216,17 +249,14 @@ describe('importRuntimeSettingsModel', () => {
    ],
   }
 
-  for (const [group, paths] of Object.entries(expectedByGroup)) {
-   for (const path of paths) {
-    const field = importRuntimeFields.find(candidate => candidate.path === path)
-    expect(field, `expected ${path} in catalog`).toBeDefined()
-    expect(field?.group).toBe(group)
-    expect(field?.subgroup).toBe(resolveRuntimeSubgroup(path, field?.category))
-   }
+  for (const path of Object.values(expectedByArea).flat()) {
+   const field = importRuntimeFields.find(candidate => candidate.path === path)
+   expect(field, `expected ${path} in catalog`).toBeDefined()
+   expect(field?.subgroup).toBe(resolveRuntimeSubgroup(path, field?.category))
   }
 
   const httpVersion = importRuntimeFields.find(field => field.path === 'config.http.version')
-  expect(httpVersion?.options).toEqual(['', '1.1', '2', 'auto+h3', '3'])
+  expect(httpVersion?.options).toEqual(['1.1', '2', 'auto+h3', '3'])
 
   const thinkTimeType = importRuntimeFields.find(field => field.path === 'config.think_time.type')
   expect(thinkTimeType?.options).toEqual([
@@ -350,6 +380,51 @@ describe('importRuntimeSettingsModel', () => {
   const loaded = await fetchImportRuntimeFields(fetcher)
   expect(fetcher).toHaveBeenCalledWith('/scripts/import/settings/fields')
   expect(loaded.some(field => field.path === 'config.http.dynamic_header_limit')).toBe(true)
+ })
+})
+
+describe('browser emulation precedence', () => {
+ it('says when browser emulation replaces an HTTP cache, User-Agent or Accept-Language row at replay', () => {
+  const rows = (config: ScriptDefinition['config']) => runtimeSettingRows(makeScript('http', config))['Additional APEX settings']
+  const note = (config: ScriptDefinition['config'], path: string) => rows(config).find(row => row.path === path)?.note || ''
+  const base = { base_url: 'https://api.example.test', http: { cache_enabled: true, user_agent: 'probe/1', accept_language: 'en-US' } }
+  expect(note(base, 'config.http.cache_enabled')).not.toContain('Replay uses')
+  expect(note({ ...base, browser_emulation: { cache: { simulate_cache: false } } }, 'config.http.cache_enabled')).toContain('"Simulate browser cache" value (Disabled) instead of this setting')
+  expect(note({ ...base, browser_emulation: { mode: 'specific', browser_type: 'chrome' } }, 'config.http.user_agent')).toContain('User-Agent of the emulated browser')
+  expect(note({ ...base, browser_emulation: { mode: 'custom', custom_user_agent: '' } }, 'config.http.user_agent')).not.toContain('Replay sends')
+  expect(note({ ...base, browser_emulation: { language: 'fr-FR' } }, 'config.http.accept_language')).toContain('browser emulation language (fr-FR)')
+ })
+})
+
+describe('pacing relevance', () => {
+ it('shows quota and arrival settings only for the pacing modes that use them', () => {
+  const script = (pacing: Record<string, unknown>) => makeScript('http', { base_url: 'https://api.example.test', pacing: pacing as unknown as NonNullable<ScriptDefinition['config']['pacing']> })
+  expect(settingIsRelevant(script({ type: 'none' }), 'config.pacing.quota.tpm')).toBe(false)
+  expect(settingIsRelevant(script({ type: 'quota' }), 'config.pacing.quota.tpm')).toBe(true)
+  expect(settingIsRelevant(script({ type: 'tps' }), 'config.pacing.arrival_process')).toBe(true)
+  expect(settingIsRelevant(script({ type: 'tps', arrival_process: 'poisson' }), 'config.pacing.burstiness')).toBe(false)
+  expect(settingIsRelevant(script({ type: 'tps', arrival_process: 'gamma' }), 'config.pacing.burstiness')).toBe(true)
+ })
+
+ it('reads pacing and think-time modes in their runtime spelling', () => {
+  const script = (config: Record<string, unknown>) => makeScript('http', { base_url: 'https://api.example.test', ...config } as ScriptDefinition['config'])
+  expect(settingIsRelevant(script({ pacing: { type: ' TPS ' } }), 'config.pacing.arrival_process')).toBe(true)
+  expect(settingIsRelevant(script({ pacing: { type: 'Quota' } }), 'config.pacing.quota.tpm')).toBe(true)
+  expect(settingIsRelevant(script({ pacing: { type: 'Fixed_Delay' } }), 'config.pacing.delay_ms')).toBe(true)
+  expect(settingIsRelevant(script({ think_time: { type: 'Gaussian', mean_ms: 1000 } }), 'config.think_time.std_ms')).toBe(true)
+  // The engine and Author read the arrival process trimmed and case-folded.
+  expect(settingIsRelevant(script({ pacing: { type: 'tps', tps: 5, arrival_process: ' Gamma ' } }), 'config.pacing.burstiness')).toBe(true)
+  expect(settingIsRelevant(script({ pacing: { type: 'tps', tps: 5, arrival_process: 'GAMMA' } }), 'config.pacing.burstiness')).toBe(true)
+  expect(settingIsRelevant(script({ pacing: { type: 'tps', tps: 5, arrival_process: ' Poisson ' } }), 'config.pacing.burstiness')).toBe(false)
+ })
+})
+
+describe('script-level think time force', () => {
+ it('does not claim the script-level force applies, matching Author and the catalog', () => {
+  const field = importRuntimeFields.find(item => item.path === 'config.think_time.force')!
+  expect(field.label).toContain('no effect')
+  expect(runtimeSettingEffects['config.think_time.force']).toMatch(/^Has no effect at script level/)
+  expect(runtimeSettingEffects['config.think_time.force']).not.toMatch(/^Applies/)
  })
 })
 

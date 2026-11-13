@@ -158,7 +158,7 @@ export function SoapRuntimeSection({ script, sectionIsActive, onSelectSection, o
               </label>
               <label>
                 <span>Password</span>
-                <input type="password" value={script.config.soap?.ws_security?.username_token?.password || ''} onChange={e => updateField('config.soap.ws_security.username_token.password', e.target.value)} placeholder="secret" />
+                <input aria-label="WS-Security password" type="text" autoComplete="off" spellCheck={false} value={script.config.soap?.ws_security?.username_token?.password || ''} onChange={e => updateField('config.soap.ws_security.username_token.password', e.target.value)} placeholder="{{secret.SOAP_WSSE_PASSWORD}}" />
               </label>
               <label>
                 <span>Password type</span>

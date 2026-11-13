@@ -10,6 +10,8 @@ import type {
   BrowserEmulationConfig,
   ContentCheckConfig,
   DFETransform,
+  RunLogicBlock,
+  RunLogicChild,
   ScriptActionDefinition,
   ScriptConfig,
   ScriptDefinition,
@@ -916,4 +918,219 @@ export function collectScriptTransactionNames(
   visit(script.actions)
   visit(script.teardown)
   return [...seen]
+}
+
+/** Split a comma-separated list into trimmed, non-empty tokens. */
+export function parseCommaList(raw: string): string[] {
+  return raw.split(',').map(token => token.trim()).filter(Boolean)
+}
+
+function runBlockChildIsEditableAction(child: RunLogicChild): boolean {
+  // The engine runs child.block before child.action, so only plain action
+  // children belong to the editable text list.
+  return !child.block && Boolean(child.action)
+}
+
+/**
+ * Text shown in a run block's actions input: "Action" or "Action:weight". A
+ * percentage block shows a child with no positive weight as "Action:0": the
+ * engine counts a missing or non-positive weight as 0% (the server omits a
+ * zero RunLogicChild.Weight, so a saved or imported 0% child arrives with no
+ * weight), the child is never picked, and hiding the 0 would make a later
+ * edit of the text store it as 100%.
+ */
+export function formatRunBlockActions(children: RunLogicChild[] | undefined, mode?: RunLogicBlock['mode']): string {
+  return (children || [])
+    .filter(runBlockChildIsEditableAction)
+    .map(child =>
+      child.weight !== undefined && child.weight > 0
+        ? `${child.action}:${child.weight}`
+        : mode === 'percentage'
+          ? `${child.action}:0`
+          : child.action,
+    )
+    .join(', ')
+}
+
+/**
+ * The weight stored for a typed run block weight. RunLogicChild.Weight is a
+ * Go int, so the weight is a safe integer: a fraction is truncated
+ * ("Login:1.5" stores 1), and a non-number or a non-finite value
+ * ("Login:1e999") stores 1. A percentage block accepts 0% (the DSL only needs
+ * the block total above zero), so there a negative stores 0; in other modes
+ * zero or a negative stores 1.
+ */
+export function parseRunBlockWeight(rawWeight: string, mode?: RunLogicBlock['mode']): number {
+  const n = Math.trunc(Number(rawWeight))
+  const min = mode === 'percentage' ? 0 : 1
+  return Number.isFinite(n) ? Math.min(Number.MAX_SAFE_INTEGER, Math.max(min, n)) : 1
+}
+
+/**
+ * The pacing arrival seed stored for typed text. PacingConfig.Seed is a Go
+ * *int64 and the value travels as a JSON number, so the seed is a safe
+ * integer: a fraction is truncated, and a value beyond
+ * Number.MAX_SAFE_INTEGER either way (1e20 would not unmarshal into an int64;
+ * 9007199254740993 would silently round to another seed) is clamped to it.
+ * Empty or non-numeric text leaves the seed unset (random each run).
+ */
+export function parseArrivalSeed(raw: string): number | undefined {
+  if (raw.trim() === '') return undefined
+  const n = Math.trunc(Number(raw))
+  if (!Number.isFinite(n)) return undefined
+  return Math.min(Number.MAX_SAFE_INTEGER, Math.max(-Number.MAX_SAFE_INTEGER, n))
+}
+
+/**
+ * True when every weight typed in a run block's actions text is the weight
+ * rebuildRunBlockChildren stores for it: "Login:0", "Login:-3", "Login:1.5"
+ * or "Login:abc" store a different integer weight, so the input must show
+ * the stored weight rather than the typed one. An empty weight (a trailing
+ * ":") is still being typed.
+ */
+export function runBlockActionsWeightsSurviveParsing(raw: string, mode?: RunLogicBlock['mode']): boolean {
+  return parseCommaList(raw).every(token => {
+    const colonIdx = token.indexOf(':')
+    if (colonIdx < 0) return true
+    const rawWeight = token.slice(colonIdx + 1).trim()
+    return rawWeight === '' || String(parseRunBlockWeight(rawWeight, mode)) === rawWeight
+  })
+}
+
+/**
+ * Rebuild a run block's children from the edited actions text. Nested block
+ * children (and any other non-action child) are not part of the text, so each
+ * keeps its place next to the action it followed (or preceded) in the stored
+ * order: sequential blocks run children in array order, and moving a nested
+ * block would change the iteration order.
+ */
+export function rebuildRunBlockChildren(
+  children: RunLogicChild[] | undefined,
+  raw: string,
+  mode: RunLogicBlock['mode'],
+): RunLogicChild[] {
+  const prior = children || []
+  const priorActions = prior.filter(runBlockChildIsEditableAction)
+  const parsed: RunLogicChild[] = parseCommaList(raw)
+    .map(token => {
+      const colonIdx = token.indexOf(':')
+      const action = (colonIdx >= 0 ? token.slice(0, colonIdx) : token).trim()
+      const rawWeight = colonIdx >= 0 ? token.slice(colonIdx + 1).trim() : ''
+      const existing = priorActions.find(child => child.action === action)
+      // A trailing ":" is a weight being edited, so the stored weight stays
+      // until digits follow. A bare name means the author removed the weight:
+      // keeping it would leave a stored weight the input no longer shows. A
+      // stored 0% in a percentage block is kept either way: defaulting it to
+      // 100 would start running a child the import never picked. The engine
+      // counts a missing or non-positive weight as 0%, and the server omits a
+      // zero weight, so an existing child with no positive weight is 0%; only
+      // a name new to the block defaults to 100.
+      const keptZeroPercent =
+        mode === 'percentage' && existing !== undefined && !(existing.weight !== undefined && existing.weight > 0)
+      const keepExisting = !keptZeroPercent && colonIdx >= 0 && existing?.weight !== undefined && existing.weight > 0
+      const weight =
+        rawWeight !== ''
+          ? parseRunBlockWeight(rawWeight, mode)
+          : keptZeroPercent
+            ? 0
+            : keepExisting
+            ? existing!.weight
+            : mode === 'percentage'
+              ? 100
+              : undefined
+      return weight !== undefined ? { action, weight } : { action }
+    })
+    .filter(child => child.action)
+
+  // Locate the n-th occurrence of an action name in the parsed list.
+  const findOccurrence = (name: string, occurrence: number): number => {
+    let seen = 0
+    for (let i = 0; i < parsed.length; i++) {
+      if (parsed[i].action === name) {
+        if (seen === occurrence) return i
+        seen++
+      }
+    }
+    return -1
+  }
+  const occurrenceOf = (index: number): { name: string; occurrence: number } => {
+    const name = prior[index].action as string
+    let occurrence = 0
+    for (let i = 0; i < index; i++) {
+      if (runBlockChildIsEditableAction(prior[i]) && prior[i].action === name) occurrence++
+    }
+    return { name, occurrence }
+  }
+
+  // insertAt[k] holds the fixed children that go before parsed[k] (k ===
+  // parsed.length means after the last action).
+  const insertAt = new Map<number, RunLogicChild[]>()
+  let minPosition = 0
+  let actionsBefore = 0
+  prior.forEach((child, index) => {
+    if (runBlockChildIsEditableAction(child)) {
+      actionsBefore++
+      return
+    }
+    let prevIndex = -1
+    for (let i = index - 1; i >= 0; i--) {
+      if (runBlockChildIsEditableAction(prior[i])) { prevIndex = i; break }
+    }
+    let nextIndex = -1
+    for (let i = index + 1; i < prior.length; i++) {
+      if (runBlockChildIsEditableAction(prior[i])) { nextIndex = i; break }
+    }
+    let position = -1
+    if (prevIndex < 0) {
+      position = 0
+    } else {
+      const prev = occurrenceOf(prevIndex)
+      const found = findOccurrence(prev.name, prev.occurrence)
+      if (found >= 0) position = found + 1
+    }
+    if (position < 0 && nextIndex >= 0) {
+      const next = occurrenceOf(nextIndex)
+      const found = findOccurrence(next.name, next.occurrence)
+      if (found >= 0) position = found
+    }
+    if (position < 0) position = Math.min(actionsBefore, parsed.length)
+    position = Math.max(position, minPosition)
+    minPosition = position
+    insertAt.set(position, [...(insertAt.get(position) || []), child])
+  })
+
+  const result: RunLogicChild[] = []
+  for (let k = 0; k <= parsed.length; k++) {
+    result.push(...(insertAt.get(k) || []))
+    if (k < parsed.length) result.push(parsed[k])
+  }
+  return result
+}
+
+function actionIsLLM(action: ScriptActionDefinition): boolean {
+  if ((action.type || '').trim().toLowerCase() === 'llm_request') return true
+  const params = action.params as Record<string, unknown> | undefined
+  if (!params) return false
+  const llm = params.llm
+  if (llm === true) return true
+  if (typeof llm === 'string' && ['true', '1', 'yes'].includes(llm.trim().toLowerCase())) return true
+  return 'llm_dialect' in params || 'stream_profile' in params
+}
+
+/**
+ * Mirrors protocol.IsLLMAction: config.pacing.quota throttles only these
+ * actions (llm_request steps and HTTP steps that opt in with params.llm,
+ * params.llm_dialect or params.stream_profile), whatever pacing.type is.
+ */
+export function scriptHasLLMActions(
+  script: Pick<ScriptDefinition, 'init' | 'actions' | 'teardown'>,
+): boolean {
+  const visit = (actions?: ScriptActionDefinition[]): boolean =>
+    (actions || []).some(action => {
+      if (actionIsLLM(action)) return true
+      const kind = debugContainerKind(action)
+      if (kind) return visit(containerChildSteps(action, kind).map(step => step.action))
+      return visit(action.control?.steps) || visit(action.control?.else)
+    })
+  return visit(script.init) || visit(script.actions) || visit(script.teardown)
 }

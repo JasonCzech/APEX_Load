@@ -12,6 +12,9 @@ vi.mock('../hooks/apiClient', async importOriginal => ({
   request: mocks.request,
 }))
 
+// The table also loads the served field list (GET); these tests count the apply POSTs.
+const postCalls = () => mocks.request.mock.calls.filter(call => call[0] === '/scripts/import/settings')
+
 describe('ImportSettingsContext out-of-catalog (imported) select handling', () => {
   it('keeps an out-of-catalog (imported) option selectable and drops it from staged changes when re-selected', async () => {
     const draft: ScriptDefinition = {
@@ -88,8 +91,8 @@ describe('ImportSettingsContext out-of-catalog (imported) select handling', () =
         .find(button => button.textContent === 'Apply HTTP')!
       await act(async () => applyHttpButton.click())
 
-      expect(mocks.request).toHaveBeenCalledTimes(1)
-      const requestBody = JSON.parse(mocks.request.mock.calls[0][1].body as string) as {
+      expect(postCalls()).toHaveLength(1)
+      const requestBody = JSON.parse(postCalls()[0][1].body as string) as {
         changes: Array<{ path: string, value: unknown }>
       }
       expect(requestBody.changes).toEqual([
@@ -155,8 +158,8 @@ describe('ImportSettingsContext out-of-catalog (imported) select handling', () =
         .find(button => button.textContent === 'Apply Target & identity')!
       await act(async () => applyButton.click())
 
-      expect(mocks.request).toHaveBeenCalledTimes(1)
-      const requestBody = JSON.parse(mocks.request.mock.calls[0][1].body as string) as {
+      expect(postCalls()).toHaveLength(1)
+      const requestBody = JSON.parse(postCalls()[0][1].body as string) as {
         category: string
         changes: Array<{ path: string; value: unknown }>
       }

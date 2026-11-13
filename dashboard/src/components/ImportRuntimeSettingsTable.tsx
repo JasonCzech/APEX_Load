@@ -1,7 +1,7 @@
 import ImportReviewSectionHeader from './ImportReviewSectionHeader'
 import { useId, useMemo, useState } from 'react'
 import type { ScriptDefinition } from '../types/scripts'
-import { CategoryActions, SettingValue, formatSettingValue, useImportSettings } from './ImportSettingsContext'
+import { CategoryActions, SettingValue, formatSettingValue, isSettingModified, useImportSettings } from './ImportSettingsContext'
 import {
  CANONICAL_RUNTIME_GROUPS,
  PROVENANCE_FILTERS,
@@ -9,6 +9,7 @@ import {
  resolveCanonicalRuntimeGroup,
  resolveRuntimeSubgroup,
  runtimeSettingRows,
+ useImportRuntimeFields,
  type CanonicalRuntimeGroup,
  type ProvenanceFilterOption,
  type RemoteImportRuntimeField,
@@ -25,7 +26,10 @@ export default function ImportRuntimeSettingsTable({
  remoteFields?: RemoteImportRuntimeField[]
 }) {
  const context = useImportSettings()
- return <RuntimeSettingsWorkspace key={context?.viewGeneration} script={script} onReviewTLSMigration={onReviewTLSMigration} remoteFields={remoteFields} />
+ // The server's field list for this protocol (catalog-widened, with the
+ // options it validates). The offline catalog renders until it arrives.
+ const servedFields = useImportRuntimeFields(remoteFields ? undefined : script.protocol)
+ return <RuntimeSettingsWorkspace key={context?.viewGeneration} script={script} onReviewTLSMigration={onReviewTLSMigration} remoteFields={remoteFields ?? servedFields} />
 }
 
 function RuntimeSettingsWorkspace({
@@ -75,8 +79,17 @@ function RuntimeSettingsWorkspace({
  const orderedGroups = ['Requires decision', 'Mapped for replay', 'Additional APEX settings', 'Preserved only', 'Not applicable'].filter(name => groups[name]?.length).map(name => [name, groups[name]] as const)
  const unconfiguredCount = (groups['Additional APEX settings'] || []).filter(row => row.path && readSetting(script, row.path) === undefined).length
  const mappedCount = (groups['Mapped for replay'] || []).length
- const requiresDecisionCount = (groups['Requires decision'] || []).length
- const totalSettingsCount = orderedGroups.reduce((sum, [, rows]) => sum + rows.length, 0)
+ const allRows = orderedGroups.flatMap(([, rows]) => rows)
+ const isModified = (row: RuntimeSettingRow) => Boolean(row.path && isSettingModified(context, row.path))
+ const usesDefault = (row: RuntimeSettingRow) => Boolean(row.path && row.field && readSetting(script, row.path) === undefined && !isModified(row))
+ // Each count is what its filter shows: the filter reveals every mapping
+ // status it needs and the unconfigured inventory.
+ const provenanceCounts: Record<ProvenanceFilterOption, number> = {
+  'All settings': allRows.length,
+  Modified: allRows.filter(isModified).length,
+  Imported: orderedGroups.filter(([name]) => name !== 'Additional APEX settings').reduce((sum, [, rows]) => sum + rows.length, 0),
+  Default: allRows.filter(usesDefault).length,
+ }
  const isVisibleByDefault = (name: string, row: RuntimeSettingRow) => name !== 'Additional APEX settings' || !row.path || readSetting(script, row.path) !== undefined || Boolean(context?.editors[row.category] || context?.editors[row.group])
  const categories = [...new Set(orderedGroups.flatMap(([name, rows]) => rows.filter(row => showUnconfigured || isVisibleByDefault(name, row)).map(row => row.category)))].sort()
  const enabledGroups = orderedGroups.filter(([name]) => !hiddenStatuses.includes(name))
@@ -90,9 +103,9 @@ function RuntimeSettingsWorkspace({
  const query = search.trim().toLowerCase()
  const matches = (row: RuntimeSettingRow) => !query || `${row.category} ${row.group} ${row.subgroup || ''} ${row.label} ${row.imported} ${row.note}`.toLowerCase().includes(query)
  const matchesProvenanceRow = (name: string, row: RuntimeSettingRow) => {
-  if (provenanceFilter === 'Unconfigured') {
-   return name === 'Additional APEX settings' && Boolean(row.path && readSetting(script, row.path) === undefined)
-  }
+  if (provenanceFilter === 'Modified') return isModified(row)
+  if (provenanceFilter === 'Imported') return name !== 'Additional APEX settings'
+  if (provenanceFilter === 'Default') return usesDefault(row)
   return true
  }
  const visible = (name: string, rows: RuntimeSettingRow[]) =>
@@ -113,25 +126,15 @@ function RuntimeSettingsWorkspace({
   setSearch('')
   setSelected('All categories')
   setSelectedCanonicalGroup('All groups')
-  if (option === 'All settings') {
-   setHiddenStatuses(['Not applicable'])
-   setShowUnconfigured(true)
-  } else if (option === 'Requires decision') {
-   setHiddenStatuses(['Mapped for replay', 'Additional APEX settings', 'Preserved only', 'Not applicable'])
-   setShowUnconfigured(false)
-  } else if (option === 'Mapped') {
-   setHiddenStatuses(['Requires decision', 'Additional APEX settings', 'Preserved only', 'Not applicable'])
-   setShowUnconfigured(false)
-  } else if (option === 'Unconfigured') {
-   setHiddenStatuses(['Requires decision', 'Mapped for replay', 'Preserved only', 'Not applicable'])
-   setShowUnconfigured(true)
-  }
+  setHiddenStatuses(option === 'Imported' ? ['Additional APEX settings'] : [])
+  setShowUnconfigured(true)
  }
 
  function handleSelectCanonicalGroup(group: 'All groups' | CanonicalRuntimeGroup) {
   setSelectedCanonicalGroup(group)
   setSearch('')
-  if (group !== 'All groups') {
+  if (group === 'All groups') setSelected('All categories')
+  else {
    setProvenanceFilter('custom')
    setSelected('All categories')
    setHiddenStatuses(previous => previous.filter(status => !['Requires decision', 'Mapped for replay', 'Additional APEX settings'].includes(status)))
@@ -139,19 +142,21 @@ function RuntimeSettingsWorkspace({
   }
  }
 
- const allCanonicalRows = orderedGroups.flatMap(([, rows]) => rows)
+ // A group shows every row of the statuses it reveals (see handleSelectCanonicalGroup).
+ const hiddenForGroup = hiddenStatuses.filter(status => !['Requires decision', 'Mapped for replay', 'Additional APEX settings'].includes(status))
+ const canonicalGroupRows = orderedGroups.filter(([name]) => !hiddenForGroup.includes(name)).flatMap(([, rows]) => rows)
 
  function table(rows: RuntimeSettingRow[], group: string) {
   return <div className="lr-table-wrap"><table className="import-settings-table import-runtime-table" data-table-pagination="off"><thead><tr><th>Setting</th><th>Imported value</th><th>Current draft value</th><th>Details</th></tr></thead>{[...new Set(rows.map(row => row.category))].map(category => <tbody key={category}>
    <tr className="import-category"><th colSpan={4} scope="rowgroup"><strong>{category}</strong><small>{group === 'Additional APEX settings' ? 'Draft settings without a reported source mapping.' : `${group}. Original source evidence remains unchanged when you edit the draft.`}</small></th></tr>
-   {rows.filter(row => row.category === category).map(row => <tr key={row.id} data-canonical-group={row.group} data-canonical-subgroup={row.subgroup}><th scope="row"><span className="import-runtime-setting-name">{row.label}</span>{row.path && <code className="import-runtime-setting-path" aria-hidden="true">{row.path.replace(/^config\./, '')}</code>}</th><td className="import-setting-value">{row.importedSummary || row.imported}</td><td>{row.path ? row.field ? <SettingValue category={category} path={row.path} label={`${category}: ${row.label}`} value={readSetting(script, row.path)} readOnly={!!onReviewTLSMigration && ['config.http.tls.min_version', 'config.http.tls.max_version'].includes(row.path)} type={row.field.type} options={row.field.options} /> : formatSettingValue(readSetting(script, row.path)) : group === 'Not applicable' ? 'Not applicable' : group === 'Mapped for replay' ? 'Used by importer' : group === 'Preserved only' ? 'Preserved only' : 'No exact mapping'}</td><td><div className="import-runtime-inline-details"><p>{row.note || '—'}</p>{row.importedSummary && row.importedSummary !== row.imported && <p className="import-setting-value">Source detail: {row.imported}</p>}</div></td></tr>)}
+   {rows.filter(row => row.category === category).map(row => <tr key={row.id} data-canonical-group={row.group} data-canonical-subgroup={row.subgroup}><th scope="row"><span className="import-runtime-setting-name">{row.label}</span>{row.path && <code className="import-runtime-setting-path" aria-hidden="true">{row.path.replace(/^config\./, '')}</code>}</th><td className="import-setting-value">{row.importedSummary || row.imported}</td><td>{row.path ? row.field ? <SettingValue category={category} path={row.path} label={`${category}: ${row.label}`} value={readSetting(script, row.path)} readOnly={!!onReviewTLSMigration && ['config.http.tls.min_version', 'config.http.tls.max_version'].includes(row.path)} type={row.field.type} options={row.field.options} credentialReference={row.field.credentialReference} /> : formatSettingValue(readSetting(script, row.path)) : group === 'Not applicable' ? 'Not applicable' : group === 'Mapped for replay' ? 'Used by importer' : group === 'Preserved only' ? 'Preserved only' : 'No exact mapping'}</td><td><div className="import-runtime-inline-details"><p>{row.note || '—'}</p>{row.importedSummary && row.importedSummary !== row.imported && <p className="import-setting-value">Source detail: {row.imported}</p>}</div></td></tr>)}
   </tbody>)}</table></div>
  }
  return <div className="import-runtime-workspace"><ImportReviewSectionHeader title="Runtime settings" description="Compare source and draft values. Applying changes refreshes checks; replay still needs verification." />
   {onReviewTLSMigration && <div className="import-runtime-repair-notice"><p>Legacy TLS requires an intentional migration. Use the guided repair to preview, acknowledge, and apply the replacement.</p><button type="button" className="btn btn-secondary" onClick={onReviewTLSMigration}>Review TLS migration</button></div>}
   <div className="import-provenance-filter-bar" role="group" aria-label="Import provenance filter">
    {PROVENANCE_FILTERS.map(option => {
-    const count = option === 'All settings' ? totalSettingsCount : option === 'Requires decision' ? requiresDecisionCount : option === 'Mapped' ? mappedCount : unconfiguredCount
+    const count = provenanceCounts[option]
     return (
      <button
       type="button"
@@ -186,10 +191,10 @@ function RuntimeSettingsWorkspace({
     aria-pressed={selectedCanonicalGroup === 'All groups' && !query}
     onClick={() => handleSelectCanonicalGroup('All groups')}
    >
-    All groups<small>{allCanonicalRows.length}</small>
+    All groups<small>{enabledRows.length}</small>
    </button>
    {CANONICAL_RUNTIME_GROUPS.map(group => {
-    const groupCount = allCanonicalRows.filter(row => row.group === group).length
+    const groupCount = canonicalGroupRows.filter(row => row.group === group).length
     return (
      <button
       type="button"

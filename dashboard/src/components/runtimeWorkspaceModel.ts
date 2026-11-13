@@ -2,6 +2,58 @@ import type { ScriptConfig } from '../types/scripts'
 import type { RuntimeSettingsSectionId } from './scriptEditorRuntimeSettingsModel'
 import type { CanonicalRuntimeGroupId } from './runtime-settings/canonicalRuntimeTaxonomy'
 
+/** The engine caps an exponential think-time draw at this multiple of max_ms. */
+export const EXPONENTIAL_THINK_TIME_CAP_FACTOR = 4
+
+/**
+ * Longest exponential think time before Limit (s), in ms, mirroring
+ * engine computeThinkTime: the draw is capped at max_ms × 4, then the
+ * multiplier (<= 0 means 1) is applied, then limit_ms. Returns 0 when
+ * max_ms is unset (no cap).
+ */
+export function exponentialThinkTimeStopMs(think: { max_ms?: number; multiplier?: number } | undefined): number {
+  const maxMs = think?.max_ms ?? 0
+  if (!(maxMs > 0)) return 0
+  const multiplier = typeof think?.multiplier === 'number' && Number.isFinite(think.multiplier) && think.multiplier > 0 ? think.multiplier : 1
+  return maxMs * EXPONENTIAL_THINK_TIME_CAP_FACTOR * multiplier
+}
+
+/**
+ * Runtime spelling of run_logic.workload_model, mirroring
+ * dsl.CanonicalWorkloadModel: trimmed, lowercased, empty = "closed". The
+ * engine treats "Open" or " open " as the open arrival-rate model.
+ */
+export function canonicalWorkloadModel(value: string | undefined | null): string {
+  const normalized = (value ?? '').trim().toLowerCase()
+  return normalized === '' ? 'closed' : normalized
+}
+
+export function isOpenWorkloadModel(config: Pick<ScriptConfig, 'run_logic'>): boolean {
+  return canonicalWorkloadModel(config.run_logic?.workload_model) === 'open'
+}
+
+/**
+ * Runtime spelling of pacing.type, mirroring dsl.CanonicalPacingType:
+ * trimmed, lowercased, empty = "none". Stored "TPS" or " tps " is TPS pacing.
+ */
+export function canonicalPacingType(value: string | undefined | null): string {
+  const normalized = (value ?? '').trim().toLowerCase()
+  return normalized === '' ? 'none' : normalized
+}
+
+/**
+ * Mirrors dsl.ValidateWorkloadSettingsIssues for open workloads: pacing must
+ * canonicalize to tps, and either pacing.tps is finite and positive or at
+ * least one rate stage has a positive target_tps or end_tps.
+ */
+export function openWorkloadPacingIsValid(pacing: ScriptConfig['pacing'] | undefined): boolean {
+  if (canonicalPacingType(pacing?.type) !== 'tps') return false
+  const tps = pacing?.tps
+  if (typeof tps === 'number' && Number.isFinite(tps) && tps > 0) return true
+  const stages = (pacing as { rate_stages?: { target_tps?: number; end_tps?: number | null }[] } | undefined)?.rate_stages
+  return Array.isArray(stages) && stages.some(stage => (stage?.target_tps ?? 0) > 0 || (typeof stage?.end_tps === 'number' && stage.end_tps > 0))
+}
+
 export const RUNTIME_WORKSPACE_CATEGORIES: {
   canonicalGroupId: CanonicalRuntimeGroupId
   group: string
@@ -34,7 +86,7 @@ export const RUNTIME_WORKSPACE_CATEGORIES: {
 export function runtimeStopConditions(config: ScriptConfig): string[] {
   const logic = config.run_logic
   return [
-    logic?.iterations ? config.run_logic?.workload_model === 'open' ? `${logic.iterations} × assigned workers total arrivals` : `${logic.iterations} iterations per virtual user` : '',
+    logic?.iterations ? isOpenWorkloadModel(config) ? `${logic.iterations} × assigned workers total arrivals` : `${logic.iterations} iterations per virtual user` : '',
     logic?.global_iterations ? `${logic.global_iterations} shared iterations` : '',
     logic?.max_transactions ? `${logic.max_transactions} transactions` : '',
     'Duration set by the scenario or run',
@@ -43,24 +95,30 @@ export function runtimeStopConditions(config: ScriptConfig): string[] {
 
 export function runtimeTimingIssues(config: ScriptConfig): string[] {
   const issues: string[] = []
-  if (config.run_logic?.workload_model === 'open' && (config.pacing?.type !== 'tps' || !Number.isFinite(config.pacing.tps) || (config.pacing.tps ?? 0) <= 0)) issues.push('Open arrival-rate requires TPS pacing and a target greater than zero.')
+  if (isOpenWorkloadModel(config) && !openWorkloadPacingIsValid(config.pacing)) issues.push('Open arrival-rate requires TPS pacing and a target greater than zero.')
   if (
     config.run_logic?.termination_mode === 'iterations' &&
     ((config.run_logic?.iterations ?? 0) <= 0 ||
-      (config.run_logic?.workload_model !== undefined &&
-        config.run_logic.workload_model !== '' &&
-        config.run_logic.workload_model !== 'closed') ||
+      canonicalWorkloadModel(config.run_logic?.workload_model) !== 'closed' ||
       (config.run_logic?.global_iterations ?? 0) > 0 ||
       (config.run_logic?.max_transactions ?? 0) > 0)
   ) {
     issues.push('Iteration termination requires positive per-user iterations, closed workload, and no shared execution limits.')
   }
   const pacing = config.pacing
-  if (pacing?.type === 'random_delay' && (pacing.max_delay_ms ?? 0) < (pacing.min_delay_ms ?? 0)) issues.push('Maximum pacing delay must be at least the minimum delay.')
-  if (pacing?.type === 'random_interval' && (pacing.max_interval_ms ?? 0) < (pacing.min_interval_ms ?? 0)) issues.push('Maximum pacing interval must be at least the minimum interval.')
+  const pacingType = canonicalPacingType(pacing?.type)
+  if (pacingType === 'random_delay' && (pacing?.max_delay_ms ?? 0) < (pacing?.min_delay_ms ?? 0)) issues.push('Maximum pacing delay must be at least the minimum delay.')
+  if (pacingType === 'random_interval' && (pacing?.max_interval_ms ?? 0) < (pacing?.min_interval_ms ?? 0)) issues.push('Maximum pacing interval must be at least the minimum interval.')
+  const arrivalProcess = (pacing as { arrival_process?: string } | undefined)?.arrival_process?.trim().toLowerCase()
+  const burstiness = (pacing as { burstiness?: number } | undefined)?.burstiness
+  if (arrivalProcess === 'gamma' && !(typeof burstiness === 'number' && Number.isFinite(burstiness) && burstiness > 0 && burstiness <= 1000)) issues.push('Gamma arrivals need a burstiness above 0 and at most 1000.')
   const think = config.think_time
   const thinkDist = (think as { distribution?: string } | undefined)?.distribution
-  if (!think?.ignore && (['uniform', 'gaussian', 'normal', 'exponential'].includes(think?.type || '') || thinkDist === 'exponential') && (think?.max_ms ?? 0) > 0 && (think?.max_ms ?? 0) < (think?.min_ms ?? 0)) issues.push('Maximum think time must be at least the minimum think time.')
+  const thinkIsExponential = think?.type === 'exponential' || thinkDist === 'exponential'
+  // DSL validation (validate.go validateThinkTime) rejects min_ms > max_ms for
+  // every type whenever max_ms > 0, exponential included. The engine's 4 ×
+  // max_ms exponential cap is explained as help text only.
+  if (!think?.ignore && (['uniform', 'gaussian', 'normal'].includes(think?.type || '') || thinkIsExponential) && (think?.max_ms ?? 0) > 0 && (think?.max_ms ?? 0) < (think?.min_ms ?? 0)) issues.push(thinkIsExponential ? 'Cap base must be at least the minimum think time.' : 'Maximum think time must be at least the minimum think time.')
   if (think?.type === 'random_percentage' && ((think.min_percent ?? 0) < 0 || (think.max_percent ?? 0) > 10000 || (think.max_percent ?? 0) < (think.min_percent ?? 0))) issues.push('Think-time percentages must satisfy 0 ≤ minimum ≤ maximum ≤ 10000.')
   return issues
 }

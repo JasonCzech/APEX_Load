@@ -18,6 +18,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/credential"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/scriptdisclosure"
+	"github.com/jasonczech/apexload/pkg/scrub"
 )
 
 //go:embed import_settings_fields.json
@@ -231,9 +232,6 @@ func applyImportSettings(source *dsl.Script, category string, changes []ImportSe
 	safeRaw, _ := json.Marshal(repairDisclosure(source))
 	var safe map[string]any
 	_ = decodeImportSettingJSON(safeRaw, &safe)
-	maskedSourceRaw, _ := json.Marshal(maskScriptSecrets(&dsl.Script{Config: source.Config}))
-	var maskedSource map[string]any
-	_ = decodeImportSettingJSON(maskedSourceRaw, &maskedSource)
 	seen := map[string]bool{}
 	for _, change := range changes {
 		key := change.Path
@@ -307,15 +305,14 @@ func applyImportSettings(source *dsl.Script, category string, changes []ImportSe
 				continue
 			}
 		}
-		// Compare the masking projections only at the leaves this change adds
-		// or changes. An unchanged imported leaf is script-sourced, never a
-		// secret, so re-sending it (alone or beside new entries) always passes,
-		// even when a name-based projection masks it.
-		projections := []map[string]any{safe}
-		if change.Parameter == "" {
-			projections = append(projections, maskedSource)
-		}
-		if importSettingOverwritesProtectedValue(value, importSettingValue(wire, path), path, wire, projections...) {
+		// Only a value the disclosure projection withholds (a protected import
+		// credential) is locked here. Every other imported leaf is
+		// script-sourced, never a secret, so it stays editable: it may be
+		// replaced with a {{secret.*}} reference, cleared, or re-sent
+		// unchanged. A new typed credential literal is refused by the checks
+		// below and after the change, against the masking projections of the
+		// new tree.
+		if importSettingOverwritesProtectedValue(value, importSettingValue(wire, path), path, wire, safe) {
 			errors[key] = "Protected values must be managed in Credentials"
 			continue
 		}
@@ -369,15 +366,13 @@ func applyImportSettings(source *dsl.Script, category string, changes []ImportSe
 			}
 		}
 	}
-	projected, _ := json.Marshal(repairDisclosure(&draft))
-	var afterSafe map[string]any
-	_ = decodeImportSettingJSON(projected, &afterSafe)
+	projectSafe := func(script *dsl.Script) any { return repairDisclosure(script) }
+	projectMasked := func(script *dsl.Script) any { return maskScriptSecrets(&dsl.Script{Config: script.Config}) }
+	afterSafe := importSettingProjectTree(&draft, projectSafe)
 	afterRaw, _ := json.Marshal(&draft)
 	var after map[string]any
 	_ = decodeImportSettingJSON(afterRaw, &after)
-	maskedAfterRaw, _ := json.Marshal(maskScriptSecrets(&dsl.Script{Config: draft.Config}))
-	var maskedAfter map[string]any
-	_ = decodeImportSettingJSON(maskedAfterRaw, &maskedAfter)
+	maskedAfter := importSettingProjectTree(&draft, projectMasked)
 	for _, change := range changes {
 		path := strings.Split(change.Path, ".")
 		key := change.Path
@@ -390,9 +385,9 @@ func applyImportSettings(source *dsl.Script, category string, changes []ImportSe
 				}
 			}
 		}
-		projections := []map[string]any{afterSafe}
+		projections := []importSettingProjection{{tree: afterSafe, project: projectSafe}}
 		if change.Parameter == "" {
-			projections = append(projections, maskedAfter)
+			projections = append(projections, importSettingProjection{tree: maskedAfter, project: projectMasked})
 		}
 		if importSettingChangedLeafDiffers(importSettingValue(after, path), importSettingValue(original, path), path, after, projections...) {
 			errors[key] = "Use Credentials for sensitive values"
@@ -548,6 +543,21 @@ func validImportSettingValue(f importSettingField, v any) bool {
 // its other, imported fields unchanged. Removed entries are not listed.
 func importSettingChangedLeaves(next, prior any) [][]string {
 	var out [][]string
+	for _, leaf := range importSettingChangedLeavesWithPools(next, prior) {
+		out = append(out, leaf.at)
+	}
+	return out
+}
+
+// importSettingChangedLeaf is a changed leaf with the pool of imported values
+// it was compared against.
+type importSettingChangedLeaf struct {
+	at   []string
+	pool *importSettingPriorPool
+}
+
+func importSettingChangedLeavesWithPools(next, prior any) []importSettingChangedLeaf {
+	var out []importSettingChangedLeaf
 	var walk func(next any, pool *importSettingPriorPool, at []string)
 	walk = func(next any, pool *importSettingPriorPool, at []string) {
 		if pool.contains(next) {
@@ -566,24 +576,344 @@ func importSettingChangedLeaves(next, prior any) [][]string {
 			}
 			return
 		}
-		out = append(out, slices.Clone(at))
+		out = append(out, importSettingChangedLeaf{at: slices.Clone(at), pool: pool})
 	}
 	walk(next, &importSettingPriorPool{values: []any{prior}}, nil)
 	return out
 }
 
+// importSettingProjection is a masking projection of the new tree, with the
+// function that produced it so a probe tree can be projected the same way.
+type importSettingProjection struct {
+	tree    map[string]any
+	project func(*dsl.Script) any
+}
+
+func importSettingProjectTree(script *dsl.Script, project func(*dsl.Script) any) map[string]any {
+	raw, _ := json.Marshal(project(script))
+	var tree map[string]any
+	_ = decodeImportSettingJSON(raw, &tree)
+	return tree
+}
+
 // importSettingChangedLeafDiffers reports whether, at any leaf next adds or
 // changes against prior, the tree differs from one of its masking
 // projections. path locates the setting in tree and the projections.
-func importSettingChangedLeafDiffers(next, prior any, path []string, tree map[string]any, projections ...map[string]any) bool {
-	for _, leaf := range importSettingChangedLeaves(next, prior) {
-		full := append(slices.Clip(path), leaf...)
+//
+// A changed string leaf whose credential material all came from the imported
+// values at its place (an imported proxy URL whose port changed but whose
+// userinfo stayed) is script-sourced and passes, as long as the leaf with
+// that inherited material taken out is left alone by every projection; any
+// other material a projection hides stays refused.
+func importSettingChangedLeafDiffers(next, prior any, path []string, tree map[string]any, projections ...importSettingProjection) bool {
+	for _, leaf := range importSettingChangedLeavesWithPools(next, prior) {
+		full := append(slices.Clip(path), leaf.at...)
 		want := importSettingValue(tree, full)
+		differs := false
 		for _, projection := range projections {
-			if !reflect.DeepEqual(want, importSettingValue(projection, full)) {
-				return true
+			if !reflect.DeepEqual(want, importSettingValue(projection.tree, full)) {
+				differs = true
+				break
 			}
 		}
+		if differs && !importSettingLeafKeepsImportedMaterial(want, leaf.pool, full, tree, projections) {
+			return true
+		}
+	}
+	return false
+}
+
+// importSettingLeafKeepsImportedMaterial reports whether a changed string
+// leaf carries only credential material already in its imported values. The
+// material is either what the credential detector finds (the projections must
+// then leave the leaf alone once that material is stripped), or what the
+// masking projections hide: a part the detector does not count (a short
+// token=ab, a percent-encoded name, a quoted value, svc:@ userinfo) is still
+// script-sourced when every part the projections hide in the leaf is a part
+// they hide in an imported value at the same place.
+func importSettingLeafKeepsImportedMaterial(value any, pool *importSettingPriorPool, full []string, tree map[string]any, projections []importSettingProjection) bool {
+	text, ok := value.(string)
+	if !ok {
+		return false
+	}
+	if importSettingLeafKeepsDetectedMaterial(text, pool, full, tree, projections) ||
+		importSettingLeafKeepsMaskedMaterial(text, nil, pool, full, tree, projections) {
+		return true
+	}
+	// URL userinfo whose password (or lone part) is an exact portable
+	// credential reference is not material, but the URL masker hides the
+	// whole userinfo, or the whole value when the braces stop url.Parse. Judge
+	// the leaf with that userinfo taken out, so https://svc:{{secret.P}}@host
+	// passes on a masked URL setting as it does on one the masker leaves
+	// alone, while any other part the projections hide is still checked.
+	stripped, ok := importSettingStripReferenceUserinfo(text)
+	if !ok {
+		return false
+	}
+	projected, ok := importSettingProjectLeaf(stripped, full, tree, projections)
+	if !ok {
+		return false
+	}
+	untouched := true
+	for _, value := range projected {
+		if !reflect.DeepEqual(any(stripped), value) {
+			untouched = false
+			break
+		}
+	}
+	return untouched ||
+		importSettingLeafKeepsDetectedMaterial(stripped, pool, full, tree, projections) ||
+		importSettingLeafKeepsMaskedMaterial(stripped, projected, pool, full, tree, projections)
+}
+
+// importSettingStripReferenceUserinfo takes the URL userinfo out of text when
+// every userinfo in it is reference-only: a password that is an exact
+// portable credential reference (raw or percent-encoded) beside any user
+// name, or a lone part that is itself such a reference. It reports false when
+// text has no userinfo, or any userinfo holds a literal password, an empty
+// one (svc:@), or a lone literal part (https://TOKEN@host).
+func importSettingStripReferenceUserinfo(text string) (string, bool) {
+	found := false
+	for _, token := range strings.Fields(text) {
+		token = importSettingTrimToken(token)
+		schemes := importSettingURLScheme.FindAllStringIndex(token, -1)
+		if len(schemes) == 0 {
+			if strings.HasPrefix(strings.ToLower(token), "mailto:") {
+				continue
+			}
+			if _, password, hasPassword, ok := importSettingAuthorityUserinfo(token); ok && hasPassword {
+				if !importSettingIsExactReference(password) {
+					return text, false
+				}
+				found = true
+			}
+			continue
+		}
+		for _, loc := range schemes {
+			user, password, hasPassword, ok := importSettingAuthorityUserinfo(token[loc[1]:])
+			if !ok {
+				continue
+			}
+			if hasPassword && !importSettingIsExactReference(password) || !hasPassword && !importSettingIsExactReference(user) {
+				return text, false
+			}
+			found = true
+		}
+	}
+	if !found {
+		return text, false
+	}
+	stripped := importSettingSchemeUserinfo.ReplaceAllString(text, "$1")
+	return importSettingSchemelessCreds.ReplaceAllString(stripped, "$1"), true
+}
+
+// importSettingProjectLeaf projects tree with text at full through each
+// projection and returns the leaf each one produces, in order.
+func importSettingProjectLeaf(text string, full []string, tree map[string]any, projections []importSettingProjection) ([]any, bool) {
+	raw, err := json.Marshal(tree)
+	if err != nil {
+		return nil, false
+	}
+	var probe map[string]any
+	if decodeImportSettingJSON(raw, &probe) != nil || !importSettingReplaceLeaf(probe, full, text) {
+		return nil, false
+	}
+	probeRaw, _ := json.Marshal(probe)
+	var script dsl.Script
+	if json.Unmarshal(probeRaw, &script) != nil {
+		return nil, false
+	}
+	out := make([]any, 0, len(projections))
+	for _, projection := range projections {
+		out = append(out, importSettingValue(importSettingProjectTree(&script, projection.project), full))
+	}
+	return out, true
+}
+
+// importSettingLeafKeepsMaskedMaterial reports whether every part the masking
+// projections hide in text (the substrings each projection replaces with the
+// mask) is also a part they hide in one of the imported string values at the
+// same place, projected in the same tree. A projection that changes the leaf
+// in any other way, or a leaf that already carries the mask, does not pass.
+// projected, when set, holds each projection's leaf for text (a probe text
+// that is not the tree's own leaf); otherwise the projection trees are read.
+func importSettingLeafKeepsMaskedMaterial(text string, projected []any, pool *importSettingPriorPool, full []string, tree map[string]any, projections []importSettingProjection) bool {
+	var hidden []string
+	for i, projection := range projections {
+		leaf := importSettingValue(projection.tree, full)
+		if projected != nil {
+			leaf = projected[i]
+		}
+		leafText, ok := leaf.(string)
+		if !ok {
+			return false
+		}
+		spans, ok := importSettingMaskedSpans(text, leafText)
+		if !ok {
+			return false
+		}
+		hidden = append(hidden, spans...)
+	}
+	if len(hidden) == 0 {
+		return false
+	}
+	raw, err := json.Marshal(tree)
+	if err != nil {
+		return false
+	}
+	imported := map[string]struct{}{}
+	seen := map[string]struct{}{}
+	for _, prior := range pool.values {
+		priorText, ok := prior.(string)
+		if !ok {
+			continue
+		}
+		if _, dup := seen[priorText]; dup {
+			continue
+		}
+		seen[priorText] = struct{}{}
+		var probe map[string]any
+		if decodeImportSettingJSON(raw, &probe) != nil || !importSettingReplaceLeaf(probe, full, priorText) {
+			continue
+		}
+		probeRaw, _ := json.Marshal(probe)
+		var script dsl.Script
+		if json.Unmarshal(probeRaw, &script) != nil {
+			continue
+		}
+		for _, projection := range projections {
+			projected, ok := importSettingValue(importSettingProjectTree(&script, projection.project), full).(string)
+			if !ok {
+				continue
+			}
+			if spans, ok := importSettingMaskedSpans(priorText, projected); ok {
+				for _, span := range spans {
+					imported[span] = struct{}{}
+				}
+			}
+		}
+	}
+	for _, span := range hidden {
+		if _, ok := imported[span]; !ok {
+			return false
+		}
+	}
+	return true
+}
+
+// importSettingMaskedSpans lists the substrings of text that projected
+// replaces with the mask, in order. It reports false when projected is not
+// text with some substrings swapped for the mask, or when text itself holds
+// the mask (its spans would be ambiguous).
+func importSettingMaskedSpans(text, projected string) ([]string, bool) {
+	if strings.Contains(text, scrub.Redacted) {
+		return nil, false
+	}
+	pieces := strings.Split(projected, scrub.Redacted)
+	if len(pieces) == 1 {
+		return nil, projected == text
+	}
+	last := len(pieces) - 1
+	if !strings.HasPrefix(text, pieces[0]) || !strings.HasSuffix(text, pieces[last]) || len(text)-len(pieces[last]) < len(pieces[0]) {
+		return nil, false
+	}
+	pos, end := len(pieces[0]), len(text)-len(pieces[last])
+	spans := make([]string, 0, last)
+	for _, piece := range pieces[1:last] {
+		if piece == "" {
+			return nil, false
+		}
+		idx := strings.Index(text[pos:end], piece)
+		if idx < 0 {
+			return nil, false
+		}
+		spans = append(spans, text[pos:pos+idx])
+		pos += idx + len(piece)
+	}
+	return append(spans, text[pos:end]), true
+}
+
+// importSettingLeafKeepsDetectedMaterial reports whether text carries
+// credential material the detector finds, all of it already in its imported
+// values, and whether the projections leave it alone once that material is
+// stripped.
+func importSettingLeafKeepsDetectedMaterial(text string, pool *importSettingPriorPool, full []string, tree map[string]any, projections []importSettingProjection) bool {
+	fragments := importSettingTextCredentialFragments(text)
+	if len(fragments) == 0 || !pool.fragments().covers(fragments) {
+		return false
+	}
+	stripped := importSettingStripFragments(text, fragments)
+	projected, ok := importSettingProjectLeaf(stripped, full, tree, projections)
+	if !ok {
+		return false
+	}
+	for _, value := range projected {
+		if !reflect.DeepEqual(any(stripped), value) {
+			return false
+		}
+	}
+	return true
+}
+
+var (
+	importSettingSchemeUserinfo  = regexp.MustCompile(`([A-Za-z][A-Za-z0-9+.\-]*://)[^/?#\s]*@`)
+	importSettingSchemelessCreds = regexp.MustCompile(`(^|\s)[^\s/?#@:]*:[^\s/?#]*@`)
+)
+
+// importSettingKeptMaterialProbe stands in for an inherited credential pair
+// value in the probe leaf. It is an exact {{secret.*}} reference, which the
+// masking projections leave alone; an emptied value would not do, because the
+// masker still projects a credential-named pair with no value
+// (access_token=) as access_token=[REDACTED].
+const importSettingKeptMaterialProbe = "{{secret.import_kept_material}}"
+
+// importSettingStripFragments takes the given credential material out of
+// text: all URL userinfo when a userinfo fragment is present, and the value
+// of each credential pair, which is swapped for a neutral secret reference.
+func importSettingStripFragments(text string, fragments importSettingFragments) string {
+	stripUserinfo := false
+	for _, fragment := range fragments {
+		if fragment.userinfo {
+			stripUserinfo = true
+			continue
+		}
+		for _, quote := range []string{"", `"`, `'`} {
+			text = strings.ReplaceAll(text, fragment.name+"="+quote+fragment.value+quote, fragment.name+"="+quote+importSettingKeptMaterialProbe+quote)
+		}
+	}
+	if stripUserinfo {
+		text = importSettingSchemeUserinfo.ReplaceAllString(text, "$1")
+		text = importSettingSchemelessCreds.ReplaceAllString(text, "$1")
+	}
+	return text
+}
+
+// importSettingReplaceLeaf sets the leaf at path in tree, through maps and
+// list indexes, and reports whether the path exists.
+func importSettingReplaceLeaf(tree any, path []string, value any) bool {
+	if len(path) == 0 {
+		return false
+	}
+	switch typed := tree.(type) {
+	case map[string]any:
+		if len(path) == 1 {
+			if _, ok := typed[path[0]]; !ok {
+				return false
+			}
+			typed[path[0]] = value
+			return true
+		}
+		return importSettingReplaceLeaf(typed[path[0]], path[1:], value)
+	case []any:
+		var i int
+		if _, err := fmt.Sscan(path[0], &i); err != nil || i < 0 || i >= len(typed) {
+			return false
+		}
+		if len(path) == 1 {
+			typed[i] = value
+			return true
+		}
+		return importSettingReplaceLeaf(typed[i], path[1:], value)
 	}
 	return false
 }
@@ -618,8 +948,14 @@ func importSettingOverwritesProtectedValue(next, prior any, path []string, tree 
 		case []any:
 			if priorList, ok := prior.([]any); ok || prior == nil {
 				pool := &importSettingPriorPool{values: priorList}
+				full := append(slices.Clip(path), at...)
+				withheld := importSettingProjectionsWithhold(tree, full, projections)
+				imported := importSettingMaskPlaceholderCount(prior)
 				for _, item := range typed {
-					if !pool.contains(item) && importSettingCarriesMaskPlaceholder(item) {
+					if pool.contains(item) {
+						continue
+					}
+					if count := importSettingMaskPlaceholderCount(item); count > 0 && (withheld || count > imported) {
 						return true
 					}
 				}
@@ -627,37 +963,53 @@ func importSettingOverwritesProtectedValue(next, prior any, path []string, tree 
 			}
 		}
 		full := append(slices.Clip(path), at...)
-		want := importSettingValue(tree, full)
-		for _, projection := range projections {
-			if !reflect.DeepEqual(want, importSettingValue(projection, full)) {
-				return true
-			}
+		// A changed value that is withheld by a projection overwrites a
+		// protected value.
+		if importSettingProjectionsWithhold(tree, full, projections) {
+			return true
 		}
-		return false
+		// The masking placeholder would write the mask over the value it hid
+		// when it adds a placeholder the imported value did not carry. An
+		// imported value that itself carries a literal placeholder (a
+		// pre-sanitized HAR or LR export) is script-sourced and stays editable
+		// as long as the edit adds none.
+		return importSettingMaskPlaceholderCount(next) > importSettingMaskPlaceholderCount(prior)
 	}
 	return walk(next, prior, nil)
 }
 
-// importSettingCarriesMaskPlaceholder reports whether any string leaf of v
-// carries the masking placeholder a protected value is displayed as.
-func importSettingCarriesMaskPlaceholder(v any) bool {
-	switch typed := v.(type) {
-	case string:
-		return strings.Contains(typed, credential.Redacted)
-	case []any:
-		for _, item := range typed {
-			if importSettingCarriesMaskPlaceholder(item) {
-				return true
-			}
-		}
-	case map[string]any:
-		for _, item := range typed {
-			if importSettingCarriesMaskPlaceholder(item) {
-				return true
-			}
+// importSettingProjectionsWithhold reports whether any projection differs
+// from tree at full, that is, withholds the value there.
+func importSettingProjectionsWithhold(tree map[string]any, full []string, projections []map[string]any) bool {
+	want := importSettingValue(tree, full)
+	for _, projection := range projections {
+		if !reflect.DeepEqual(want, importSettingValue(projection, full)) {
+			return true
 		}
 	}
 	return false
+}
+
+// importSettingMaskPlaceholderCount counts the masking placeholders, the form a
+// protected value is displayed as, across the string leaves of v.
+func importSettingMaskPlaceholderCount(v any) int {
+	switch typed := v.(type) {
+	case string:
+		return strings.Count(typed, credential.Redacted)
+	case []any:
+		total := 0
+		for _, item := range typed {
+			total += importSettingMaskPlaceholderCount(item)
+		}
+		return total
+	case map[string]any:
+		total := 0
+		for _, item := range typed {
+			total += importSettingMaskPlaceholderCount(item)
+		}
+		return total
+	}
+	return 0
 }
 
 func isPortableCredentialReference(s string) bool {
@@ -693,11 +1045,11 @@ var importSettingURLScheme = regexp.MustCompile(`[A-Za-z][A-Za-z0-9+.\-]*://`)
 // built once per level, and each distinct string is scanned at most once, so
 // the work stays linear in the request and imported sizes.
 func importSettingValueCarriesCredential(value, current any) bool {
-	return importSettingCredentialCheck{scanned: map[string]bool{}}.carries(value, &importSettingPriorPool{values: []any{current}})
+	return importSettingCredentialCheck{scanned: map[string]importSettingFragments{}}.carries(value, &importSettingPriorPool{values: []any{current}})
 }
 
 type importSettingCredentialCheck struct {
-	scanned map[string]bool
+	scanned map[string]importSettingFragments
 }
 
 func (c importSettingCredentialCheck) carries(value any, pool *importSettingPriorPool) bool {
@@ -708,10 +1060,14 @@ func (c importSettingCredentialCheck) carries(value any, pool *importSettingPrio
 	case string:
 		found, ok := c.scanned[typed]
 		if !ok {
-			found = importSettingTextCarriesCredential(typed)
+			found = importSettingTextCredentialFragments(typed)
 			c.scanned[typed] = found
 		}
-		return found
+		// Credential material already in an imported value at this place is
+		// script-sourced: editing the host or port of an imported proxy URL
+		// that keeps its userinfo, or of a base URL that keeps its sig=
+		// parameter, adds nothing. Only added or changed material counts.
+		return !pool.fragments().covers(found)
 	case []any:
 		elements := pool.elements()
 		for _, item := range typed {
@@ -732,10 +1088,28 @@ func (c importSettingCredentialCheck) carries(value any, pool *importSettingPrio
 // importSettingPriorPool holds the imported values a new value at one place
 // may equal. Its index and child pools are built lazily, once.
 type importSettingPriorPool struct {
-	values   []any
-	index    map[string]struct{}
-	children *importSettingPriorPool
-	fields   map[string]*importSettingPriorPool
+	values    []any
+	index     map[string]struct{}
+	children  *importSettingPriorPool
+	fields    map[string]*importSettingPriorPool
+	material  importSettingFragments
+	collected bool
+}
+
+// fragments collects the credential material of every imported string in p.
+func (p *importSettingPriorPool) fragments() importSettingFragments {
+	if !p.collected {
+		p.collected = true
+		p.material = importSettingFragments{}
+		for _, prior := range p.values {
+			if text, ok := prior.(string); ok {
+				for key, fragment := range importSettingTextCredentialFragments(text) {
+					p.material[key] = fragment
+				}
+			}
+		}
+	}
+	return p.material
 }
 
 func importSettingCanonical(v any) (string, bool) {
@@ -800,30 +1174,71 @@ func (p *importSettingPriorPool) field(key string) *importSettingPriorPool {
 // URL parser, so malformed URLs and scheme-less authorities
 // (user:pass@host, DSNs) are still checked.
 func importSettingTextCarriesCredential(text string) bool {
+	return len(importSettingTextCredentialFragments(text)) > 0
+}
+
+// importSettingFragment is one piece of credential material found in text: a
+// literal userinfo password or lone userinfo part, or the value of a
+// credential-named or sig assignment or query parameter.
+type importSettingFragment struct {
+	userinfo bool
+	name     string
+	value    string
+}
+
+// importSettingFragments keys each fragment by its kind, case-folded name and
+// exact value, so the same material in an edited string matches.
+type importSettingFragments map[string]importSettingFragment
+
+func (f importSettingFragments) add(fragment importSettingFragment) {
+	kind := "pair"
+	if fragment.userinfo {
+		kind = "userinfo"
+	}
+	f[kind+"\x00"+strings.ToLower(fragment.name)+"\x00"+fragment.value] = fragment
+}
+
+// covers reports whether every fragment of next is also in f.
+func (f importSettingFragments) covers(next importSettingFragments) bool {
+	for key := range next {
+		if _, ok := f[key]; !ok {
+			return false
+		}
+	}
+	return true
+}
+
+// importSettingTextCredentialFragments lists the credential material in free
+// text; text that carries none returns an empty set.
+func importSettingTextCredentialFragments(text string) importSettingFragments {
+	out := importSettingFragments{}
 	for _, token := range strings.Fields(text) {
-		if importSettingTokenCarriesUserinfo(importSettingTrimToken(token)) {
-			return true
+		if part, ok := importSettingTokenUserinfoMaterial(importSettingTrimToken(token)); ok {
+			for _, p := range part {
+				out.add(importSettingFragment{userinfo: true, value: p})
+			}
 		}
 	}
 	for _, match := range importSettingCredentialAssignment.FindAllStringSubmatch(text, -1) {
-		if importSettingAssignmentIsCredential(match[1], match[2]+match[3]+match[4]) {
-			return true
+		if value := match[2] + match[3] + match[4]; importSettingAssignmentIsCredential(match[1], value) {
+			out.add(importSettingFragment{name: match[1], value: value})
 		}
 	}
-	return importSettingNestedPairsCarryCredential(text)
+	importSettingNestedCredentialPairs(text, out)
+	return out
 }
 
 func importSettingAssignmentIsCredential(name, value string) bool {
 	return strings.EqualFold(name, "sig") && importSettingCredentialMaterial(name, value) || importSettingCredentialPair(name, value)
 }
 
-// importSettingNestedPairsCarryCredential finds the name=value pairs an
+// importSettingNestedCredentialPairs adds to out the name=value pairs an
 // unquoted assignment value would otherwise swallow (a=b?sig=...,
 // next=https://h/c?sig=..., url=...?api_key=...). The text is split into
 // segments at whitespace, quotes and the query, fragment and parameter
 // delimiters, and every '=' in a segment starts a pair whose name is the run
 // of name characters before it and whose value is the rest of the segment.
-func importSettingNestedPairsCarryCredential(text string) bool {
+func importSettingNestedCredentialPairs(text string, out importSettingFragments) {
 	segments := strings.FieldsFunc(text, func(r rune) bool {
 		switch r {
 		case '?', '#', '&', ';', ',', '"', '\'', ' ', '\t', '\n', '\r', '\v', '\f':
@@ -844,12 +1259,11 @@ func importSettingNestedPairsCarryCredential(text string) bool {
 			if name == "" || !strings.EqualFold(name, "sig") && !credential.SensitiveName(name) {
 				continue
 			}
-			if importSettingAssignmentIsCredential(name, importSettingTrimToken(segment[i+1:])) {
-				return true
+			if value := importSettingTrimToken(segment[i+1:]); importSettingAssignmentIsCredential(name, value) {
+				out.add(importSettingFragment{name: name, value: value})
 			}
 		}
 	}
-	return false
 }
 
 func importSettingNameByte(b byte) bool {
@@ -861,14 +1275,26 @@ func importSettingNameByte(b byte) bool {
 // without one only a user:password@ form counts, so a bare email address or image digest does
 // not.
 func importSettingTokenCarriesUserinfo(token string) bool {
+	_, found := importSettingTokenUserinfoMaterial(token)
+	return found
+}
+
+// importSettingTokenUserinfoMaterial returns the literal userinfo material in
+// a token (see importSettingTokenCarriesUserinfo): each literal password, or
+// lone userinfo part, it carries.
+func importSettingTokenUserinfoMaterial(token string) ([]string, bool) {
 	schemes := importSettingURLScheme.FindAllStringIndex(token, -1)
 	if len(schemes) == 0 {
 		if strings.HasPrefix(strings.ToLower(token), "mailto:") {
-			return false
+			return nil, false
 		}
 		_, password, hasPassword, ok := importSettingAuthorityUserinfo(token)
-		return ok && hasPassword && importSettingUserinfoPartIsMaterial(password)
+		if ok && hasPassword && importSettingUserinfoPartIsMaterial(password) {
+			return []string{password}, true
+		}
+		return nil, false
 	}
+	var material []string
 	for _, loc := range schemes {
 		user, password, hasPassword, ok := importSettingAuthorityUserinfo(token[loc[1]:])
 		if !ok {
@@ -876,11 +1302,13 @@ func importSettingTokenCarriesUserinfo(token string) bool {
 		}
 		// A user name beside a password is not secret; a lone userinfo part
 		// (https://TOKEN@host) is the credential itself.
-		if hasPassword && importSettingUserinfoPartIsMaterial(password) || !hasPassword && importSettingUserinfoPartIsMaterial(user) {
-			return true
+		if hasPassword && importSettingUserinfoPartIsMaterial(password) {
+			material = append(material, password)
+		} else if !hasPassword && importSettingUserinfoPartIsMaterial(user) {
+			material = append(material, user)
 		}
 	}
-	return false
+	return material, len(material) > 0
 }
 
 // importSettingAuthorityUserinfo splits the userinfo of the authority that
