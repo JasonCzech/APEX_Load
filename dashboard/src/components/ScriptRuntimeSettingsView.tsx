@@ -1487,9 +1487,10 @@ export function ScriptRuntimeSettingsView({
             <input type="number" value={script.config.error_handling?.max_retries || 0}
               onChange={e => updateField('config.error_handling', { ...script.config.error_handling, max_retries: Number(e.target.value) })} />
           </label>
-          <label>
+          <label htmlFor="runtime-retry-on-conditions">
             <span>Retry on conditions</span>
             <DraftTextInput
+              id="runtime-retry-on-conditions"
               type="text"
               aria-label="Retry on conditions"
               placeholder="429, 5xx, timeout, network"
