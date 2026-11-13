@@ -9,6 +9,12 @@ import { formatTimeCompact } from '../utils/timeUtils'
 import { formatScriptHTTPVersion } from './httpVersionModel'
 import { formatPacingTiming } from './runtimeTiming'
 import { formatDateTime } from '../utils/dateTime'
+import type { ScriptConfig } from '../types/scripts'
+import { EffectiveRuntimeSettingsView } from './runtime-settings/EffectiveRuntimeSettingsView'
+import { formatEffectiveRuntimeValue } from './runtime-settings/effectiveRuntimeSummaryModel'
+import { effectiveRuntimeGroupSources } from './runtime-settings/effectiveRuntimeSources'
+import type { EffectiveRuntimeGroupSource } from './runtime-settings/effectiveRuntimeSummaryModel'
+import { effectiveRuntimeEntry, formatEffectiveRuntimeEntryInline } from './runtime-settings/effectiveRuntimeEntryText'
 
 interface Props {
   test: TestSummary
@@ -211,16 +217,18 @@ function formatRunRuntimeValue(test: TestSummary, path: string): string {
   return resolved ? String(resolved.value) : 'Script-level value not exposed'
 }
 
+// The group source the shared runtime view resolves; the Iterations card reads the same one.
+function previewRuntimeGroupSource(group: TestSummary['groups'][number], scriptDetail: ScenarioScriptDetail | undefined, test: TestSummary): EffectiveRuntimeGroupSource {
+  const [source] = effectiveRuntimeGroupSources([group])
+  return { ...source, protocol: scriptDetail?.protocol || group.protocol, scriptConfig: scriptDetail?.script?.config as ScriptConfig | undefined, scheduleTerminationMode: test.termination_mode }
+}
+
 function formatEffectiveIterations(group: TestSummary['groups'][number], scriptDetail: ScenarioScriptDetail | undefined, test: TestSummary): string {
-  const groupOverride = previewRuntimeSetting('run_logic.iterations', group, undefined)
-  if (groupOverride) return `${groupOverride.value} (group override)`
-  if (group.iterations !== undefined) return `${group.iterations} (group override)`
-  const override = previewRuntimeSetting('run_logic.iterations', undefined, test)
-  if (override) return `${override.value} (scenario override)`
-  const iterations = scriptDetail?.script?.config?.run_logic?.iterations
-  if (!scriptDetail) return 'Not exposed by run snapshot'
-  if (!iterations) return 'Duration driven'
-  return `${iterations}`
+  const entry = effectiveRuntimeEntry(previewRuntimeGroupSource(group, scriptDetail, test), test.runtime_settings, 'run_logic.iterations')
+  // A script cap of 0 (from the script itself, not a kept effective count) means no cap.
+  const uncappedScript = entry?.provenance === 'script' && group.iterations === undefined && !scriptDetail?.script?.config?.run_logic?.iterations
+  if (entry && !uncappedScript) return formatEffectiveRuntimeEntryInline(entry)
+  return scriptDetail ? 'Duration driven' : 'Not exposed by run snapshot'
 }
 
 function formatEffectiveAutoTransactions(group: TestSummary['groups'][number], scriptDetail: ScenarioScriptDetail | undefined, test: TestSummary): string {
@@ -255,6 +263,14 @@ function formatEffectiveHTTPRuntime(group: TestSummary['groups'][number], script
   const maxConns = (maxConnsLayer?.value as number | undefined)
     ?? scriptDetail?.script?.config?.http?.max_conns_per_host
   return `${formatScriptHTTPVersion(protocol, version)} · ${maxConns || 100} conns/host`
+}
+
+// A group or scenario base_url override wins over the script's own (the API masks any credentials in it).
+function formatEffectiveBaseURL(group: TestSummary['groups'][number], scriptDetail: ScenarioScriptDetail | undefined, test: TestSummary): string {
+  const resolved = previewRuntimeSetting('base_url', group, test)
+  if (resolved) return `${formatEffectiveRuntimeValue('base_url', resolved.value)}${resolved.origin}`
+  if (!scriptDetail) return 'Not exposed by run snapshot'
+  return scriptDetail.script?.config?.base_url || 'Not configured'
 }
 
 function formatGoalNumber(value: number, suffix = ''): string {
@@ -658,7 +674,7 @@ export default function TestExecutionScenarioPreview({
                         <div className="scenario-script-detail-grid">
                           <div className="scenario-script-detail-card">
                             <span className="scenario-script-detail-label">Base URL</span>
-                            <span className="scenario-script-detail-value">{detail ? detail.script?.config?.base_url || 'Not configured' : 'Not exposed by run snapshot'}</span>
+                            <span className="scenario-script-detail-value">{formatEffectiveBaseURL(group, detail, test)}</span>
                           </div>
                           <div className="scenario-script-detail-card">
                             <span className="scenario-script-detail-label">Think time</span>
@@ -689,6 +705,12 @@ export default function TestExecutionScenarioPreview({
                             <span className="scenario-script-detail-value">{formatEffectiveHTTPRuntime(group, detail, test)}</span>
                           </div>
                         </div>
+
+                        <EffectiveRuntimeSettingsView
+                          groups={[previewRuntimeGroupSource(group, detail, test)]}
+                          scenarioRow={test.runtime_settings}
+                          showGroupNames={false}
+                        />
 
                         <div className="scenario-script-asset-grid">
                           <div className="scenario-script-asset-card">

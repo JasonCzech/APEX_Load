@@ -13,6 +13,8 @@ import {
 import { copyTextToClipboard } from '../utils/clipboardUtils'
 import { downloadBlob } from '../utils/fileUtils'
 import { formatDateTime } from '../utils/dateTime'
+import { EffectiveRuntimeSettingsView } from './runtime-settings/EffectiveRuntimeSettingsView'
+import { effectiveRuntimeSourcesFromManifest } from './runtime-settings/effectiveRuntimeSources'
 
 interface Props {
   /** Keeps high-value diffs visible; raw source remains available on demand. */
@@ -103,6 +105,16 @@ function configurationEntries(config: TestRunManifestConfiguration): DefinitionE
     ['Resource baseline', formatBoolean(config.resource_baseline)],
     ['Baseline Pinned', formatBoolean(config.baseline_pinned)],
   ]
+}
+
+function renderEffectiveRuntime(manifest: TestRunManifest) {
+  const sources = effectiveRuntimeSourcesFromManifest(manifest)
+  return (
+    <div className="manifest-section" aria-label="Effective runtime settings">
+      <p className="empty-hint">{sources.immutable ? 'Resolved from the immutable initial configuration the run started with.' : 'Resolved from the current configuration; the initial configuration is not verified as immutable.'}</p>
+      <EffectiveRuntimeSettingsView groups={sources.groups} scenarioRow={sources.scenarioRow} />
+    </div>
+  )
 }
 
 function scriptRamp(script: TestRunManifestScript): string {
@@ -324,6 +336,7 @@ export default function TestExecutionManifestCard({ manifest, error, loading, on
             <div className="manifest-section"><h4>Run identity</h4>{renderDefinitions([['Application', manifest.identity.application_id], ['Release', manifest.identity.release_id], ['Scenario', manifest.identity.scenario_id], ['Created', formatDate(manifest.identity.created_at)]])}</div>
             <div className="manifest-section"><h4>Scripts & groups</h4>{renderDefinitions((manifest.scripts || []).map(script => [script.group_name, `${script.script_name || script.script_id || 'Unnamed script'} · ${script.protocol || 'Not recorded'} · ${script.vusers ?? 0} VUsers`]))}</div>
           </div>
+          {renderEffectiveRuntime(manifest)}
           <pre className="manifest-raw">{jsonText}</pre>
         </details>
       </> : <>
@@ -397,6 +410,8 @@ export default function TestExecutionManifestCard({ manifest, error, loading, on
           </table>
         </div>
       </div>
+
+      {renderEffectiveRuntime(manifest)}
 
       <div className="manifest-section">
         <h4>Load Generators</h4>

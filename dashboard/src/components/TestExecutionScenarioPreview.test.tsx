@@ -213,7 +213,10 @@ describe('TestExecutionScenarioPreview', () => {
     })
 
     expect(onExpandedScenarioScriptChange).toHaveBeenCalledWith('Checkout')
-    expect(container.textContent).toContain('3 (group override)')
+    // A legacy group row reports the effective count without the layer that set it.
+    const iterationsCard = Array.from(container.querySelectorAll('.scenario-script-detail-card'))
+      .find(card => card.querySelector('.scenario-script-detail-label')?.textContent === 'Iterations')
+    expect(iterationsCard?.querySelector('.scenario-script-detail-value')?.textContent).toBe('3')
     expect(container.textContent).toContain('HTTP/2 required (no fallback) · 100 conns/host')
 
     await act(async () => {
@@ -813,5 +816,146 @@ describe('TestExecutionScenarioPreview', () => {
     })
 
     expect(cardValue('.scenario-script-detail-card', 'HTTP Runtime')).toBe('HTTP/3 required (no fallback) · 32 conns/host')
+  })
+
+  it('shows group base_url, SOAP and TLS overrides in the shared effective runtime view, credentials masked', async () => {
+    const groupRuntime = {
+      base_url: 'https://group.example.test',
+      soap: { version: '1.2', fault_handling: { fail_on_fault: false }, ws_security: { username_token: { username: '[REDACTED]', password: '[REDACTED]' } } },
+      http: { tls: { max_version: '1.2' } },
+      override_fields: ['base_url', 'soap.version', 'soap.fault_handling.fail_on_fault', 'soap.ws_security.username_token', 'http.tls.max_version'],
+    }
+    const group = { name: 'Orders', script_id: 'script-soap', script_name: 'Orders Script', protocol: 'soap', vusers: 2, runtime_settings: groupRuntime }
+    await act(async () => {
+      root.render(
+        <TestExecutionScenarioPreview
+          test={{ id: 'test-soap', name: 'Soap', status: 'QUEUED', total_vusers: 2, duration: '5m', created_at: '2026-05-12T20:00:00Z', runtime_settings: { log_level: 'debug' }, groups: [group] } as never}
+          startCapacityConflict={null}
+          startShakeoutConflict={null}
+          startFeedback=""
+          onDismissStartConflict={vi.fn()}
+          onConfirmStartAnyway={vi.fn()}
+          onContinueAfterShakeoutFailure={vi.fn()}
+          onCancelShakeoutRun={vi.fn()}
+          queuedScenarioPreview={{ points: [{ second: 0, group0: 2, total: 2 }], totalVUsers: 2, showVUsers: true, peakVUsers: 2, totalSeconds: 300, steadySeconds: 300, startDelaySeconds: 0, preBaselineSeconds: 0, postBaselineSeconds: 0 }}
+          queuedScenarioRows={[{
+            group,
+            detail: { id: 'script-soap', name: 'Orders Script', protocol: 'soap', script: { config: { base_url: 'https://script.example.test', soap: { version: '1.1' } }, actions: [] } },
+            actionCount: 0, initCount: 0, teardownCount: 0, dataSourceCount: 0,
+          }] as never}
+          snapshotSource="immutable_manifest"
+          snapshotLoading={false}
+          snapshotError=""
+          expandedScenarioScript="Orders"
+          onExpandedScenarioScriptChange={vi.fn()}
+          onEditScript={vi.fn()}
+          groupColors={['#0a84ff']}
+        />,
+      )
+    })
+    const baseURLCard = Array.from(container.querySelectorAll('.scenario-script-detail-card'))
+      .find(card => card.querySelector('.scenario-script-detail-label')?.textContent === 'Base URL')
+    expect(baseURLCard?.querySelector('.scenario-script-detail-value')?.textContent).toBe('https://group.example.test (group override)')
+    const view = container.querySelector('[data-testid="effective-runtime-settings"]')
+    expect(view).toBeTruthy()
+    if (!view) return
+    const provenance = (path: string) => view.querySelector(`[data-runtime-path="${path}"]`)?.getAttribute('data-provenance')
+    expect(provenance('soap.version')).toBe('group_override')
+    expect(view.querySelector('[data-runtime-path="soap.version"]')?.textContent).toContain('1.2')
+    expect(provenance('soap.fault_handling.fail_on_fault')).toBe('group_override')
+    expect(provenance('http.tls.max_version')).toBe('group_override')
+    expect(provenance('base_url')).toBe('group_override')
+    expect(provenance('log.level')).toBe('scenario_default')
+    expect(view.querySelector('[data-runtime-path="soap.ws_security.username_token.password"]')?.textContent).toContain('Stored secret (hidden)')
+    expect(view.textContent).not.toContain('[REDACTED]')
+  })
+
+  it('shows a duration schedule overriding the script iteration cap, and the API continue-on-error resolution', async () => {
+    const group = {
+      name: 'Imported', script_id: 'script-lr', script_name: 'Imported Script', protocol: 'http', vusers: 2,
+      iteration_override_known: true,
+      runtime_settings: { error_handling: { max_retries: 2 } },
+      continue_on_error: { effective: true, source: 'scenario_default', scenario_value: true, scenario_explicit: false },
+    }
+    await act(async () => {
+      root.render(
+        <TestExecutionScenarioPreview
+          test={{ id: 'test-lr', name: 'Imported', status: 'QUEUED', termination_mode: 'duration', total_vusers: 2, duration: '5m', created_at: '2026-05-12T20:00:00Z', groups: [group] } as never}
+          startCapacityConflict={null}
+          startShakeoutConflict={null}
+          startFeedback=""
+          onDismissStartConflict={vi.fn()}
+          onConfirmStartAnyway={vi.fn()}
+          onContinueAfterShakeoutFailure={vi.fn()}
+          onCancelShakeoutRun={vi.fn()}
+          queuedScenarioPreview={{ points: [{ second: 0, group0: 2, total: 2 }], totalVUsers: 2, showVUsers: true, peakVUsers: 2, totalSeconds: 300, steadySeconds: 300, startDelaySeconds: 0, preBaselineSeconds: 0, postBaselineSeconds: 0 }}
+          queuedScenarioRows={[{
+            group,
+            detail: { id: 'script-lr', name: 'Imported Script', protocol: 'http', script: { config: { run_logic: { iterations: 1 } }, actions: [] } },
+            actionCount: 0, initCount: 0, teardownCount: 0, dataSourceCount: 0,
+          }] as never}
+          snapshotSource="immutable_manifest"
+          snapshotLoading={false}
+          snapshotError=""
+          expandedScenarioScript="Imported"
+          onExpandedScenarioScriptChange={vi.fn()}
+          onEditScript={vi.fn()}
+          groupColors={['#0a84ff']}
+        />,
+      )
+    })
+    const view = container.querySelector('[data-testid="effective-runtime-settings"]')
+    expect(view).toBeTruthy()
+    if (!view) return
+    const iterations = view.querySelector('[data-runtime-path="run_logic.iterations"]')
+    expect(iterations?.textContent).toContain('Script cap 1 (overridden by the schedule)')
+    // The Iterations card above the view gives the same answer.
+    const iterationsCard = Array.from(container.querySelectorAll('.scenario-script-detail-card'))
+      .find(card => card.querySelector('.scenario-script-detail-label')?.textContent === 'Iterations')
+    expect(iterationsCard?.querySelector('.scenario-script-detail-value')?.textContent).toBe('Script cap 1 (overridden by the schedule)')
+    const continueOnError = view.querySelector('[data-runtime-path="error_handling.continue_on_error"]')
+    expect(continueOnError?.textContent).toContain('Enabled')
+    expect(continueOnError?.getAttribute('data-provenance')).toBe('scenario_default')
+  })
+
+  it('labels a scenario-row iteration count the way the shared runtime view does', async () => {
+    const group = {
+      name: 'Checkout', script_id: 'script-1', script_name: 'Checkout Script', protocol: 'http', vusers: 2,
+      iterations: 5, iteration_override_known: true,
+    }
+    await act(async () => {
+      root.render(
+        <TestExecutionScenarioPreview
+          test={{ id: 'test-iter', name: 'Iterations', status: 'QUEUED', termination_mode: 'iterations', total_vusers: 2, created_at: '2026-05-12T20:00:00Z', runtime_settings: { run_logic: { iterations: 5 }, override_fields: ['run_logic.iterations'] }, groups: [group] } as never}
+          startCapacityConflict={null}
+          startShakeoutConflict={null}
+          startFeedback=""
+          onDismissStartConflict={vi.fn()}
+          onConfirmStartAnyway={vi.fn()}
+          onContinueAfterShakeoutFailure={vi.fn()}
+          onCancelShakeoutRun={vi.fn()}
+          queuedScenarioPreview={{ points: [{ second: 0, group0: 2, total: 2 }], totalVUsers: 2, showVUsers: true, peakVUsers: 2, totalSeconds: 300, steadySeconds: 300, startDelaySeconds: 0, preBaselineSeconds: 0, postBaselineSeconds: 0 }}
+          queuedScenarioRows={[{
+            group,
+            detail: { id: 'script-1', name: 'Checkout Script', protocol: 'http', script: { config: { run_logic: { iterations: 1 } }, actions: [] } },
+            actionCount: 0, initCount: 0, teardownCount: 0, dataSourceCount: 0,
+          }] as never}
+          snapshotSource="immutable_manifest"
+          snapshotLoading={false}
+          snapshotError=""
+          expandedScenarioScript="Checkout"
+          onExpandedScenarioScriptChange={vi.fn()}
+          onEditScript={vi.fn()}
+          groupColors={['#0a84ff']}
+        />,
+      )
+    })
+    const iterationsCard = Array.from(container.querySelectorAll('.scenario-script-detail-card'))
+      .find(card => card.querySelector('.scenario-script-detail-label')?.textContent === 'Iterations')
+    expect(iterationsCard?.querySelector('.scenario-script-detail-value')?.textContent).toBe('5 (scenario default)')
+    const entry = container.querySelector('[data-testid="effective-runtime-settings"] [data-runtime-path="run_logic.iterations"]')
+    expect(entry?.getAttribute('data-provenance')).toBe('scenario_default')
+    expect(entry?.textContent).toContain('5')
+    expect(entry?.textContent).toContain('Scenario default')
   })
 })

@@ -188,6 +188,40 @@ describe('TestExecutionManifestCard', () => {
     expect(container.querySelector('[aria-label="Java VMs"]')).toBeNull()
   })
 
+  it.each([false, true])('shows the effective runtime settings the run started with from the immutable initial configuration (compact: %s)', async compact => {
+    const manifest = makeManifest()
+    manifest.initial_configuration_provenance = { source: 'archive_provenance', immutable: true }
+    manifest.initial_configuration.groups = [{
+      name: 'buyers', script_id: 'script-1', script_name: 'Checkout Flow', protocol: 'soap', vusers: 10,
+      runtime_settings: { soap: { version: '1.2', ws_security: { username_token: { password: '[REDACTED]' } } }, override_fields: ['soap.version', 'soap.ws_security.username_token.password'] } as never,
+    }]
+    manifest.initial_configuration.runtime_settings = { base_url: 'https://initial.example.test', http: { tls: { max_version: '1.2' } }, override_fields: ['base_url', 'http.tls.max_version'] } as never
+    manifest.current_configuration.runtime_settings = { base_url: 'https://later.example.test' }
+    await renderCard(manifest, { compact })
+
+    const view = container.querySelector('[data-testid="effective-runtime-settings"]')
+    expect(view).toBeTruthy()
+    if (!view) return
+    const row = (path: string) => view.querySelector(`[data-runtime-path="${path}"]`)
+    expect(row('soap.version')?.getAttribute('data-provenance')).toBe('group_override')
+    expect(row('base_url')?.textContent).toContain('https://initial.example.test')
+    expect(row('base_url')?.getAttribute('data-provenance')).toBe('scenario_default')
+    expect(row('http.tls.max_version')?.textContent).toContain('1.2')
+    expect(row('soap.ws_security.username_token.password')?.textContent).toContain('Stored secret (hidden)')
+    expect(view.textContent).not.toContain('later.example.test')
+    expect(view.textContent).not.toContain('[REDACTED]')
+    expect(container.textContent).toContain('Resolved from the immutable initial configuration the run started with.')
+  })
+
+  it('resolves a mutable manifest from its current configuration', async () => {
+    const manifest = makeManifest()
+    manifest.current_configuration.runtime_settings = { log_level: 'debug' }
+    await renderCard(manifest)
+    const level = container.querySelector('[data-testid="effective-runtime-settings"] [data-runtime-path="log.level"]')
+    expect(level?.textContent).toContain('debug')
+    expect(container.textContent).toContain('Resolved from the current configuration; the initial configuration is not verified as immutable.')
+  })
+
   async function renderCard(manifest: TestRunManifest | null, options: { error?: string; loading?: boolean; compact?: boolean } = {}) {
     await act(async () => {
       root.render(

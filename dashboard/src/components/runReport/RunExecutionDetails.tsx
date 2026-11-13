@@ -8,6 +8,8 @@ import type { MetricsHistoryPoint, RunArchiveReport, TestRunManifest, TestSummar
 import type { useExecutionTestManifest } from '../useExecutionTestManifest'
 import { executionDate, executionFacts, executionLoadPlan, executionLoadPoints, executionObservedLoad, executionPauses, recordedNumber } from './executionPresentation'
 import { formatTimeLong } from '../../utils/timeUtils'
+import { EffectiveRuntimeSettingsView } from '../runtime-settings/EffectiveRuntimeSettingsView'
+import { effectiveRuntimeGroupSources } from '../runtime-settings/effectiveRuntimeSources'
 
 export function RunExecutionFacts({ test, report, manifest }: { test: TestSummary; report: RunArchiveReport | null; manifest?: TestRunManifest | null }) {
   const facts = executionFacts(test, report, manifest)
@@ -74,6 +76,9 @@ export default function RunExecutionDetails({ test, report, history = [], histor
     ...observed.map(sample => ({ second: sample.second, timestampMs: sample.timestampMs, vusers: sample.vusers })),
   ].sort((left, right) => left.second - right.second)
   const events = manifest?.runtime_changes || []
+  // Group rows and the run-level row from the same record the group table reads.
+  const runtimeGroups = effectiveRuntimeGroupSources(facts.groups)
+  const runtimeScenarioRow = facts.immutable ? manifest?.initial_configuration?.runtime_settings : test.runtime_settings
   // The run made each pause up; the plan moves on by the pauses its events place.
   const pausedSeconds = Math.max(0, Number(test.cumulative_pause_ns) || 0) / 1e9
   const placedPauseSeconds = test.termination_mode === 'iterations' ? 0 : executionPauses(test, manifest).reduce((total, pause) => total + pause.seconds, 0)
@@ -117,7 +122,9 @@ export default function RunExecutionDetails({ test, report, history = [], histor
               <div className="manifest-definition"><dt>Protocol</dt><dd>{manifest?.scripts?.find(script => script.group_name === group.name)?.protocol || 'Not recorded'}</dd></div>
               <div className="manifest-definition"><dt>Ramp up</dt><dd>{group.ramp_up || 'Not recorded'}</dd></div>
               <div className="manifest-definition"><dt>Initialization</dt><dd>{group.initialization || 'Not recorded'}</dd></div>
-            </dl></details></td>
+            </dl>
+            <EffectiveRuntimeSettingsView groups={[{ ...runtimeGroups[index], protocol: manifest?.scripts?.find(script => script.group_name === group.name)?.protocol || group.protocol }]} scenarioRow={runtimeScenarioRow} showGroupNames={false} />
+            </details></td>
           </tr>)}</tbody>
         </table></div> : <p>No group configuration was retained.</p>}
       </section>
