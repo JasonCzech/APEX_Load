@@ -8,12 +8,21 @@ import { useSystemApi } from '../hooks/api/useSystemApi'
 import { useModalDialog } from '../hooks/useModalDialog'
 import { getErrorMessage } from '../utils/errorUtils'
 import type { TestGroupRuntimeSettingsUpdateResult, TestGroupRuntimeSettingsView } from '../types'
-import type { RuntimeSettingsOverride, ScenarioRuntimeSettingsDraft } from '../types/runtimeSettings'
+import type { PartialRuntimeSettingsOverride, RuntimeSettingsOverride, ScenarioRuntimeSettingsDraft } from '../types/runtimeSettings'
 import type { ScriptConfig } from '../types/scripts'
 import RuntimeSettingsGroupEditor from './RuntimeSettingsGroupEditor'
 import { buildRuntimeSettingsDraft } from './scenarioDraftUtils'
 import { buildRuntimeSettingsPayload } from './scenarioPayloadUtils'
-import { isFieldOverridden, runtimeRowCoversPath } from './runtimeSettingsModel'
+import {
+  isFieldOverridden,
+  isPartialRuntimeDraft,
+  legacyRuntimeOverrideFields,
+  RUNTIME_FIELD_SOURCE_LABEL,
+  runtimeOverrideFieldPaths,
+  runtimeRowCoversPath,
+  sameRuntimeValue,
+  type RuntimeFieldSource,
+} from './runtimeSettingsModel'
 import {
   changedRuntimeFieldKeys,
   EDITABLE_RUNTIME_FIELD_KEYS,
@@ -217,18 +226,72 @@ function scriptSettingsClaimField(settings: RuntimeSettingsOverride | undefined,
   return (SCRIPT_SETTINGS_KEYS[key] ?? [key]).some(name => record[name] !== undefined)
 }
 
-function runtimeValueSourceLabel(view: TestGroupRuntimeSettingsView, key: string): string {
-  const layers: Array<[RuntimeSettingsOverride | undefined, string]> = [
-    [view.runtime_settings, 'Group override'],
-    [view.test_runtime_settings, 'Scenario default'],
+/**
+ * Which layer supplies a summary key, with the editor's provenance labels
+ * (RUNTIME_FIELD_SOURCE_LABEL), so the read-only table and the editable
+ * Summary tab name the same layer the same way.
+ */
+function runtimeValueSource(view: TestGroupRuntimeSettingsView, key: string): { source: RuntimeFieldSource; label: string } {
+  const layers: Array<[RuntimeSettingsOverride | undefined, RuntimeFieldSource]> = [
+    [view.runtime_settings, 'group'],
+    [view.test_runtime_settings, 'scenario'],
   ]
-  for (const [settings, label] of layers) {
+  for (const [settings, source] of layers) {
     const claim = runtimeLayerClaimsField(settings, key)
-    if (claim === 'whole') return label
+    if (claim === 'whole') return { source, label: RUNTIME_FIELD_SOURCE_LABEL[source] }
     // Some fields come from this layer, the rest from the layers below it.
-    if (claim === 'part') return `${label} (some fields)`
+    if (claim === 'part') return { source: 'mixed', label: `${RUNTIME_FIELD_SOURCE_LABEL[source]} (some fields)` }
   }
-  return scriptSettingsClaimField(view.script_settings, key) ? 'Script' : 'Engine default'
+  return scriptSettingsClaimField(view.script_settings, key)
+    ? { source: 'script', label: RUNTIME_FIELD_SOURCE_LABEL.script }
+    : { source: 'engine', label: RUNTIME_FIELD_SOURCE_LABEL.engine }
+}
+
+/** The field keys the PATCH may name: the shared editable set plus the SOAP section,
+ * which the backend accepts (runtimeOverrideFieldKeys) but the shared set omits. */
+const PATCH_FIELD_KEYS: readonly string[] = [...EDITABLE_RUNTIME_FIELD_KEYS, 'soap']
+
+const COMPACT_BROWSER_PATHS = new Set(['browser.headless', 'browser.device_profile', 'browser.touch_mode', 'browser.orientation'])
+
+/** Mirrors overridePathBelongsToRuntimeField (pkg/api/runtime_overrides.go): the
+ * override paths a PATCH field key takes from the request. */
+function overridePathBelongsToField(path: string, field: string): boolean {
+  const top = path.split('.')[0]
+  if (top === 'browser') return field === 'browser_config' || (field === 'browser' && COMPACT_BROWSER_PATHS.has(path))
+  if (field === top) return true
+  if (field === 'iterations') return path === 'run_logic.iterations'
+  if (field === 'log_level') return path === 'log.level'
+  if (field === 'auto_transactions') return path === 'run_logic.auto_transactions'
+  return false
+}
+
+function rowOverridePaths(row?: PartialRuntimeSettingsOverride): string[] {
+  if (!row) return []
+  return isPartialRuntimeDraft(row) ? runtimeOverrideFieldPaths(row) : legacyRuntimeOverrideFields(row)
+}
+
+/**
+ * The PATCH field keys a save changes. A value change is not enough: the backend
+ * takes a field's override paths from the request too (reconcileReplacedOverrideFields),
+ * so resetting a field whose listed value equals what it inherits changes only
+ * override_fields, and that reset must still name its field or the backend keeps
+ * the stored path. The SOAP section is compared the same way.
+ */
+function changedGroupRuntimePatchFields(
+  baseline: PartialRuntimeSettingsOverride | undefined,
+  payload: PartialRuntimeSettingsOverride | undefined,
+): string[] {
+  const changed = new Set(changedRuntimeFieldKeys(baseline, payload))
+  if (!sameRuntimeValue(baseline?.soap, payload?.soap)) changed.add('soap')
+  if (isPartialRuntimeDraft(baseline) || isPartialRuntimeDraft(payload)) {
+    const before = rowOverridePaths(baseline)
+    const after = rowOverridePaths(payload)
+    for (const field of PATCH_FIELD_KEYS) {
+      const owned = (paths: string[]) => paths.filter(path => overridePathBelongsToField(path, field)).sort().join('\u0000')
+      if (owned(before) !== owned(after)) changed.add(field)
+    }
+  }
+  return PATCH_FIELD_KEYS.filter(field => changed.has(field))
 }
 
 interface ImportedRuntimeSource {
@@ -360,7 +423,7 @@ export default function GroupRuntimeSettingsDialog({ testId, groupName, onClose,
     // error-handling section splaying absent flags to explicit false) cancel
     // out instead of flagging phantom changes.
     const baseline = buildRuntimeSettingsPayload(buildRuntimeSettingsDraft(view.runtime_settings)) || {}
-    const fields = changedRuntimeFieldKeys(baseline as RuntimeSettingsOverride, payload as RuntimeSettingsOverride)
+    const fields = changedGroupRuntimePatchFields(baseline as PartialRuntimeSettingsOverride, payload as PartialRuntimeSettingsOverride)
     if (fields.length === 0) {
       setStatus('No changes to save.')
       return
@@ -460,11 +523,12 @@ export default function GroupRuntimeSettingsDialog({ testId, groupName, onClose,
                 <tbody>
                   {EDITABLE_RUNTIME_FIELD_KEYS.map(key => {
                     const effective = effectiveRuntimeFieldValue(view.effective_settings, key)
+                    const source = runtimeValueSource(view, key)
                     return (
                       <tr key={key} className="group-run-settings-summary-row">
                         <td>{FIELD_SUMMARY_LABELS[key]}</td>
                         <td className="group-run-settings-value">{describeRuntimeValue(effective)}</td>
-                        <td className="group-run-settings-source">{runtimeValueSourceLabel(view, key)}</td>
+                        <td><span className={`runtime-source-badge source-${source.source} group-run-settings-source`}>{source.label}</span></td>
                       </tr>
                     )
                   })}
