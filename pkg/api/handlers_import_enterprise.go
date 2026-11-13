@@ -561,11 +561,8 @@ func isVuGenNonSourceEntryInDirs(cleaned string, isDir bool, scriptDirs map[stri
 }
 
 func stripVuGenNonSourceZipEntries(data []byte) ([]byte, error) {
-	if err := archiveingest.ValidateZIPDirectory(data, enterprisearchive.MaxArchiveEntries*8); err != nil {
-		return data, nil
-	}
-	reader, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
-	if err != nil || len(reader.File) > enterprisearchive.MaxArchiveEntries*8 {
+	reader, ok := openStrippableVuGenZip(data)
+	if !ok {
 		return data, nil
 	}
 	type parsedEntry struct {
@@ -602,6 +599,23 @@ func stripVuGenNonSourceZipEntries(data []byte) ([]byte, error) {
 		return data, nil
 	}
 	return mergeEnterpriseArchiveZipWithPreparedFiles(data, nil)
+}
+
+// openStrippableVuGenZip opens data for VuGen non-source stripping. Stripping
+// is best-effort: an upload that is not a ZIP, or whose directory fails the
+// (deliberately generous) entry-count check, reports false so the caller hands
+// the bytes on untouched and the import's own archive validation then
+// accepts or rejects them with its precise error.
+func openStrippableVuGenZip(data []byte) (*zip.Reader, bool) {
+	maxEntries := enterprisearchive.MaxArchiveEntries * 8
+	if archiveingest.ValidateZIPDirectory(data, maxEntries) != nil {
+		return nil, false
+	}
+	reader, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+	if err != nil || len(reader.File) > maxEntries {
+		return nil, false
+	}
+	return reader, true
 }
 
 func isInVuGenResultDir(cleaned string) bool {

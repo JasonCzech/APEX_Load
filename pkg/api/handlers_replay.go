@@ -188,7 +188,7 @@ func (s *Server) applyReplayOrDebugRuntimeOverrides(
 			return nil, nil, nil, false
 		}
 	}
-	if script != nil && scriptRequiresJavaVuserAuthoringApproval(script) {
+	if scriptRequiresJavaVuserAuthoringApproval(script) {
 		if conflict := s.runner.javaVuserApprovalConflict(script); conflict != "" {
 			writeError(w, http.StatusConflict, conflict)
 			return nil, nil, nil, false
@@ -239,7 +239,7 @@ func (s *Server) applyReplayOrDebugRuntimeOverrides(
 			return nil, nil, nil, false
 		}
 	}
-	if script != nil && (scriptRequiresJavaVuserAuthoringApproval(script) || scriptRequiresJavaVuserAuthoringApproval(scriptClone)) {
+	if scriptRequiresJavaVuserAuthoringApproval(script) || scriptRequiresJavaVuserAuthoringApproval(scriptClone) {
 		if javaVuserOverrideChangedExecutableSurface(script, scriptClone) {
 			writeError(w, http.StatusBadRequest, "runtime overrides changed the approved Java Vuser classpath, JDK, VM parameters, or actions, or moved it into LoadRunner thread mode; apply these changes in the script and re-approve it through authoring review")
 			return nil, nil, nil, false
