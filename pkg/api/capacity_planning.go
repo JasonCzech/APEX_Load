@@ -584,6 +584,13 @@ func countActionComplexity(actions []dsl.Action) float64 {
 }
 
 func runtimeOverheadScore(config dsl.ScriptConfig, runtimeSettings *RuntimeSettingsOverride) float64 {
+	if runtimeSettings != nil && len(runtimeSettings.OverrideFields) > 0 {
+		// A partial override carries zero values for every unlisted sibling,
+		// so apply it the way execution does rather than reading its sections
+		// as whole-section replacements.
+		config = capacityPartialOverrideScript(&dsl.Script{Config: config}, runtimeSettings).Config
+		runtimeSettings = nil
+	}
 	snapshotOnError := config.ErrorHandling.SnapshotOnError
 	logLevel := config.Log.Level
 	autoTransactions := config.RunLogic.AutoTransactions
@@ -699,6 +706,9 @@ func capacityClassForGroup(group TestGroup, runtimeSettings *RuntimeSettingsOver
 	}
 	effective := *group.script
 	switch {
+	case (group.RuntimeSettings != nil && len(group.RuntimeSettings.OverrideFields) > 0) ||
+		(runtimeSettings != nil && len(runtimeSettings.OverrideFields) > 0):
+		effective = *capacityPartialOverrideScript(group.script, mergeRuntimeSettings(runtimeSettings, group.RuntimeSettings))
 	case group.RuntimeSettings != nil && group.RuntimeSettings.HTTP != nil:
 		effective.Config.HTTP = *group.RuntimeSettings.HTTP
 	case runtimeSettings != nil && runtimeSettings.HTTP != nil:
@@ -708,6 +718,18 @@ func capacityClassForGroup(group TestGroup, runtimeSettings *RuntimeSettingsOver
 		return capacityClassHTTP3
 	}
 	return protocol
+}
+
+// capacityPartialOverrideScript returns a copy of script with a partial
+// (override_fields) runtime override applied through the execution path, so
+// unlisted siblings keep the script's values. The input is never mutated; an
+// override that does not apply leaves the estimate on the script's own config.
+func capacityPartialOverrideScript(script *dsl.Script, overrides *RuntimeSettingsOverride) *dsl.Script {
+	probe := *script
+	if err := applyRuntimeOverrides(&probe, overrides); err != nil {
+		return script
+	}
+	return &probe
 }
 
 func canonicalCapacityProtocol(group TestGroup) string {

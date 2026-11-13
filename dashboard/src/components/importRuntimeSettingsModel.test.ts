@@ -352,3 +352,12 @@ describe('importRuntimeSettingsModel', () => {
   expect(loaded.some(field => field.path === 'config.http.dynamic_header_limit')).toBe(true)
  })
 })
+
+describe('import runtime settings contract', () => {
+  // SettingValue renders its own "Default" (unset) entry first, so a listed ""
+  // option would render a second, unlabeled blank row.
+  it('lists no empty select option', () => {
+    const blank = importRuntimeFields.filter(field => field.options?.some(option => option.trim() === '')).map(field => field.path)
+    expect(blank).toEqual([])
+  })
+})

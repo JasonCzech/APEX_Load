@@ -3,9 +3,11 @@ package soap
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
@@ -1100,71 +1102,70 @@ func TestSOAPDelegatedCapabilities(t *testing.T) {
 	}
 }
 
-func TestSOAPWSSecurityPasswordsRedactedEvenInUnredactedDebugSnapshots(t *testing.T) {
-	for _, passwordType := range []string{"text", "digest"} {
-		t.Run(passwordType, func(t *testing.T) {
-			var wireRequestBody string
-			ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				b, _ := io.ReadAll(r.Body)
-				wireRequestBody = string(b)
-				w.Header().Set("Content-Type", "text/xml; charset=utf-8")
-				w.WriteHeader(http.StatusInternalServerError)
-				_, _ = w.Write([]byte(`<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"><soap:Body><soap:Fault><faultcode>soap:Server</faultcode><faultstring>Backend failure</faultstring></soap:Fault></soap:Body></soap:Envelope>`))
-			}))
-			defer ts.Close()
+// Nothing sourced from an imported script is a secret: the SOAP adapter keeps
+// a script-sourced WS-Security password in snapshots and protocol evidence, in
+// both redacted runs and unredacted debug. Run-evidence redaction of imported
+// credentials belongs to the engine's gated imported-credential matcher, and
+// secret-store values to its runtime secret matcher.
+func TestSOAPWSSecurityScriptPasswordPreservedInSnapshotsAndEvidence(t *testing.T) {
+	for _, unredacted := range []bool{false, true} {
+		for _, passwordType := range []string{"text", "digest"} {
+			t.Run(fmt.Sprintf("%s/unredacted=%v", passwordType, unredacted), func(t *testing.T) {
+				var wireRequestBody string
+				ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					b, _ := io.ReadAll(r.Body)
+					wireRequestBody = string(b)
+					w.Header().Set("Content-Type", "text/xml; charset=utf-8")
+					w.WriteHeader(http.StatusInternalServerError)
+					_, _ = w.Write([]byte(`<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"><soap:Body><soap:Fault><faultcode>soap:Server</faultcode><faultstring>Backend failure</faultstring></soap:Fault></soap:Body></soap:Envelope>`))
+				}))
+				defer ts.Close()
 
-			s := &SOAP{}
-			secretPass := "wsse-super-secret-" + passwordType
-			if err := s.Init(context.Background(), map[string]any{
-				"base_url":                        ts.URL,
-				"soap_fail_on_fault":              true,
-				"soap_ws_security_username":       "svc-account",
-				"soap_ws_security_password":       secretPass,
-				"soap_ws_security_password_type":  passwordType,
-				"soap_ws_security_nonce":          true,
-				"soap_ws_security_created":        true,
-				"unredacted_debug_snapshots":      true,
-			}); err != nil {
-				t.Fatalf("Init: %v", err)
-			}
-			defer func() { _ = s.Teardown(context.Background()) }()
+				s := &SOAP{}
+				scriptPass := "script-sourced-wsse-" + passwordType
+				config := map[string]any{
+					"base_url":                       ts.URL,
+					"soap_fault_fail_on_fault":       true,
+					"soap_ws_security_username":      "svc-account",
+					"soap_ws_security_password":      scriptPass,
+					"soap_ws_security_password_type": passwordType,
+					"soap_ws_security_nonce":         true,
+					"soap_ws_security_created":       true,
+				}
+				if unredacted {
+					config[protocol.ReplayUnredactedDebugConfigKey] = true
+				}
+				if err := s.Init(context.Background(), config); err != nil {
+					t.Fatalf("Init: %v", err)
+				}
+				defer func() { _ = s.Teardown(context.Background()) }()
 
-			res, err := s.Execute(context.Background(), &protocol.Action{
-				Name:   "FaultingWithWSSE",
-				Target: "/ws",
-				Body:   []byte(`<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"><soap:Body><GetOrder xmlns="urn:orders"><id>42</id></GetOrder></soap:Body></soap:Envelope>`),
+				res, err := s.Execute(context.Background(), &protocol.Action{
+					Name:   "FaultingWithWSSE",
+					Target: "/ws",
+					Body:   []byte(`<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"><soap:Body><GetOrder xmlns="urn:orders"><id>42</id></GetOrder></soap:Body></soap:Envelope>`),
+				})
+				if err != nil {
+					t.Fatalf("Execute: %v", err)
+				}
+				if res == nil || res.Snapshot == nil || res.Success {
+					t.Fatalf("expected a failed sample with an error snapshot, got %#v", res)
+				}
+				wireToken := regexp.MustCompile(`<wsse:Password[^>]*>([^<]*)</wsse:Password>`).FindStringSubmatch(wireRequestBody)
+				if len(wireToken) != 2 || wireToken[1] == "" {
+					t.Fatalf("wire request must send the WS-Security password token, got %s", wireRequestBody)
+				}
+				if passwordType == "text" && wireToken[1] != scriptPass {
+					t.Fatalf("wire PasswordText token = %q, want %q", wireToken[1], scriptPass)
+				}
+				if !strings.Contains(res.Snapshot.RequestBody, ">"+wireToken[1]+"</wsse:Password>") {
+					t.Fatalf("snapshot must preserve the script-sourced password token: %s", res.Snapshot.RequestBody)
+				}
+				rawEvidence, _ := json.Marshal(res.ProtocolEvidence)
+				if strings.Contains(string(rawEvidence), "[REDACTED]") {
+					t.Fatalf("protocol evidence redacted a script-sourced value: %s", rawEvidence)
+				}
 			})
-			if err != nil {
-				t.Fatalf("Execute: %v", err)
-			}
-			if res == nil || res.Snapshot == nil {
-				t.Fatalf("expected error snapshot, got res=%#v", res)
-			}
-			// Wire request must contain actual non-redacted wsse:Password token.
-			if strings.Contains(wireRequestBody, "<wsse:Password") && strings.Contains(wireRequestBody, "[REDACTED]</wsse:Password>") {
-				t.Fatalf("wire request must send actual WS-Security password token, got %s", wireRequestBody)
-			}
-			// Snapshot RequestBody must scrub <wsse:Password>...</wsse:Password> even when unredacted_debug_snapshots is true.
-			if strings.Contains(res.Snapshot.RequestBody, secretPass) {
-				t.Fatalf("snapshot leaked raw WS-Security password: %s", res.Snapshot.RequestBody)
-			}
-			if !strings.Contains(res.Snapshot.RequestBody, ">[REDACTED]</wsse:Password>") {
-				t.Fatalf("snapshot did not redact <wsse:Password> element: %s", res.Snapshot.RequestBody)
-			}
-			rawEvidence, _ := json.Marshal(res.ProtocolEvidence)
-			if strings.Contains(string(rawEvidence), secretPass) {
-				t.Fatalf("protocol evidence leaked raw WS-Security password: %s", rawEvidence)
-			}
-			if strings.Contains(string(rawEvidence), "wsse:Password") && !strings.Contains(string(rawEvidence), ">[REDACTED]</wsse:Password>") {
-				t.Fatalf("protocol evidence did not redact <wsse:Password> element: %s", rawEvidence)
-			}
-		})
-	}
-
-	withSelfClosing := `<wsse:UsernameToken><Password/><Other>keep</Other><wsse:Password>secret</wsse:Password></wsse:UsernameToken>`
-	got := scrubSOAPWSSecurityPasswords(withSelfClosing)
-	want := `<wsse:UsernameToken><Password/><Other>keep</Other><wsse:Password>[REDACTED]</wsse:Password></wsse:UsernameToken>`
-	if got != want {
-		t.Fatalf("scrubSOAPWSSecurityPasswords(%q) = %q, want %q", withSelfClosing, got, want)
+		}
 	}
 }

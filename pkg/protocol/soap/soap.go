@@ -45,7 +45,20 @@ type soapSecurityConfig struct {
 	includeCreated bool
 	timestamp      bool
 	timestampTTL   time.Duration
+	// passwordFromSecretStore marks a password authored as a {{secret.NAME}}
+	// reference and resolved from the project secret store. Its Password
+	// element (text or digest) is withheld from snapshots and evidence, in
+	// unredacted debug too; a script-sourced password is never withheld here.
+	passwordFromSecretStore bool
 }
+
+// SecretStorePasswordConfigKey marks, in the protocol config, that
+// soap_ws_security_password was authored as a secret-store reference.
+const SecretStorePasswordConfigKey = "soap_ws_security_password_secret_store"
+
+// redactedSOAPPassword replaces a secret-store Password element value in
+// snapshots and evidence.
+const redactedSOAPPassword = "[REDACTED]"
 
 var envelopePrefixPattern = regexp.MustCompile(`<([A-Za-z_][A-Za-z0-9_.-]*):Envelope\b`)
 var soapNamespaceDeclPattern = regexp.MustCompile(`xmlns:([A-Za-z_][A-Za-z0-9_.-]*)\s*=\s*['"][^'"]+['"]`)
@@ -146,8 +159,17 @@ func (s *SOAP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 	discardSuccessfulBody := prepared.DiscardResponseBodyOnSuccess
 	prepared.DiscardResponseBodyOnSuccess = false
 	preparedBody, namespaceConflict := shapeSOAPBody(action, s.version, s.namespaces)
-	prepared.Body = preparedBody
-	prepared.Body = s.applySecurity(prepared.Body)
+	// Build the WS-Security header once per request so the evidence/redacted
+	// body carries the same Nonce/Created/Expires the server actually received.
+	// The decision is by origin, never by shape: a script-sourced password is
+	// not a secret and stays in the evidence header (it is redacted from run
+	// evidence only through the engine's gated imported-credential matcher).
+	// A password resolved from the secret store has its Password element value
+	// (PasswordText, or a PasswordDigest the exact-value secret matcher cannot
+	// recognize) replaced in every evidence copy, including unredacted debug;
+	// Nonce and Created are kept. The wire body is never altered.
+	securityXML, evidenceSecurityXML := s.securityHeaders()
+	prepared.Body = insertSOAPSecurityHeader(preparedBody, securityXML)
 	s.applyDefaults(&prepared)
 	if len(prepared.RedactedBody) == 0 {
 		redactedPrepared := *action
@@ -161,25 +183,54 @@ func (s *SOAP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 			redactedPrepared.SOAP = action.RedactedSOAP
 		}
 		redactedPreparedBody, _ := shapeSOAPBody(&redactedPrepared, s.version, s.namespaces)
-		redactedPreparedBody = s.applySecurity(redactedPreparedBody)
-		redactedPreparedBody = []byte(scrubSOAPWSSecurityPasswords(string(redactedPreparedBody)))
+		redactedPreparedBody = insertSOAPSecurityHeader(redactedPreparedBody, evidenceSecurityXML)
 		redactedPrepared.Body = redactedPreparedBody
 		s.applyDefaults(&redactedPrepared)
 		prepared.RedactedBody = redactedPreparedBody
 		prepared.RedactedHeaders = cloneHeaders(redactedPrepared.Headers)
 	} else {
-		prepared.RedactedBody = []byte(scrubSOAPWSSecurityPasswords(string(s.applySecurity(prepared.RedactedBody))))
+		prepared.RedactedBody = insertSOAPSecurityHeader(prepared.RedactedBody, evidenceSecurityXML)
+	}
+	// Evidence copies of the wire body are rebuilt from the shaped body with
+	// the evidence header rather than derived by text matching, so a
+	// secret-store password is withheld regardless of its bytes. Any other
+	// copy (for example a truncated or re-encoded HAR body) that carries
+	// neither the wire header verbatim nor the evidence header is withheld
+	// entirely: fail closed.
+	wireBodyText := string(prepared.Body)
+	evidenceWireBodyText := string(insertSOAPSecurityHeader(preparedBody, evidenceSecurityXML))
+	maskWireSecurity := func(text string) string {
+		if evidenceSecurityXML == securityXML || securityXML == "" || text == "" {
+			return text
+		}
+		if text == wireBodyText {
+			return evidenceWireBodyText
+		}
+		if strings.Contains(text, securityXML) {
+			return strings.ReplaceAll(text, securityXML, evidenceSecurityXML)
+		}
+		if strings.Contains(text, evidenceSecurityXML) || text == string(prepared.RedactedBody) {
+			// Already an evidence copy (the redacted snapshot body).
+			return text
+		}
+		return ""
 	}
 	targetURL := resolveSOAPURL(s.baseURL, prepared.Target)
 	envelopeOverheadKB := soapEnvelopeOverheadKB(action, prepared.Body)
 
 	result, err := s.http.Execute(ctx, &prepared)
-	if result != nil && result.Snapshot != nil {
-		result.Snapshot.RequestBody = scrubSOAPWSSecurityPasswords(result.Snapshot.RequestBody)
-		result.Snapshot.ResponseBody = scrubSOAPWSSecurityPasswords(result.Snapshot.ResponseBody)
-	}
 	if err != nil || result == nil {
 		return result, err
+	}
+	// The HTTP adapter's unredacted debug snapshot and replay HAR copy the
+	// wire body; withhold a secret-store password there too.
+	if result.Snapshot != nil {
+		result.Snapshot.RequestBody = maskWireSecurity(result.Snapshot.RequestBody)
+	}
+	for i := range result.NetworkEntries {
+		if har := result.NetworkEntries[i].HAR; har != nil && har.RequestBody != nil {
+			har.RequestBody.Text = maskWireSecurity(har.RequestBody.Text)
+		}
 	}
 	result.DependencyType = "soap"
 	storeExtraction := func(key, value string) bool {
@@ -232,6 +283,7 @@ func (s *SOAP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 			}
 			if result.Snapshot == nil {
 				result.Snapshot = buildSOAPSnapshot(&prepared, targetURL, result, s.unredactedDebugSnapshots)
+				result.Snapshot.RequestBody = maskWireSecurity(result.Snapshot.RequestBody)
 			}
 		}
 	} else if s.failOnFault && result.StatusCode >= 500 && result.ErrorMessage == "" {
@@ -243,9 +295,8 @@ func (s *SOAP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 		evidenceAction.RedactedHeaders = nil
 		evidenceAction.RedactedParams = nil
 		evidenceAction.RedactedSOAP = nil
-		evidenceAction.RedactedBody = []byte(scrubSOAPWSSecurityPasswords(string(prepared.Body)))
+		evidenceAction.RedactedBody = []byte(maskWireSecurity(string(prepared.Body)))
 	}
-	evidenceAction.Body = []byte(scrubSOAPWSSecurityPasswords(string(evidenceAction.Body)))
 	result.ProtocolEvidence = protocol.BuildProtocolEvidence(&evidenceAction, result)
 	if discardSuccessfulBody && result.Success {
 		result.ResponseBody = ""
@@ -467,49 +518,14 @@ func buildSOAPSnapshot(action *protocol.Action, targetURL string, result *protoc
 	if !raw && len(action.RedactedBody) > 0 {
 		body = string(action.RedactedBody)
 	}
-	body = scrubSOAPWSSecurityPasswords(body)
 	return &protocol.ErrorSnapshot{
 		RequestMethod:  action.Method,
 		RequestURL:     requestURL,
 		RequestHeaders: headers,
 		RequestBody:    body,
 		ResponseStatus: result.StatusCode,
-		ResponseBody:   scrubSOAPWSSecurityPasswords(result.ResponseBody),
+		ResponseBody:   result.ResponseBody,
 	}
-}
-
-var soapWSSecurityPasswordElementPattern = regexp.MustCompile(`(?is)(<(?:[A-Za-z0-9_.-]+:)?Password(?:\s[^>]*)?>)([^<]*)(</(?:[A-Za-z0-9_.-]+:)?Password\s*>)`)
-
-func scrubSOAPWSSecurityPasswords(xmlBody string) string {
-	if !strings.Contains(xmlBody, "Password") && !strings.Contains(xmlBody, "password") {
-		return xmlBody
-	}
-	return soapWSSecurityPasswordElementPattern.ReplaceAllStringFunc(xmlBody, func(match string) string {
-		parts := soapWSSecurityPasswordElementPattern.FindStringSubmatch(match)
-		if len(parts) != 4 {
-			return match
-		}
-		openTag, inner, closeTag := parts[1], parts[2], parts[3]
-		if strings.HasSuffix(strings.TrimSpace(strings.TrimSuffix(openTag, ">")), "/") {
-			return match
-		}
-		lowerOpen := strings.ToLower(openTag)
-		isWSSE := strings.HasPrefix(lowerOpen, "<wsse:password") ||
-			strings.Contains(lowerOpen, "wssecurity") ||
-			strings.Contains(lowerOpen, "usernametoken") ||
-			strings.Contains(lowerOpen, "passwordtext") ||
-			strings.Contains(lowerOpen, "passworddigest") ||
-			strings.Contains(strings.ToLower(xmlBody), "usernametoken") ||
-			strings.Contains(strings.ToLower(xmlBody), "wssecurity")
-		if !isWSSE {
-			return match
-		}
-		trimmed := strings.TrimSpace(inner)
-		if trimmed == "" || trimmed == "[REDACTED]" {
-			return match
-		}
-		return openTag + "[REDACTED]" + closeTag
-	})
 }
 
 func readSecurityConfig(config map[string]any) soapSecurityConfig {
@@ -526,6 +542,7 @@ func readSecurityConfig(config map[string]any) soapSecurityConfig {
 	if security.passwordType == "" && (security.username != "" || security.password != "") {
 		security.passwordType = "text"
 	}
+	security.passwordFromSecretStore, _ = config[SecretStorePasswordConfigKey].(bool)
 	security.includeNonce, _ = config["soap_ws_security_nonce"].(bool)
 	security.includeCreated, _ = config["soap_ws_security_created"].(bool)
 	if ttl, ok := config["soap_ws_security_timestamp_ttl_seconds"].(float64); ok {
@@ -606,7 +623,29 @@ func shapeSOAPBody(action *protocol.Action, version string, namespaces map[strin
 }
 
 func (s *SOAP) applySecurity(body []byte) []byte {
+	wire, _ := s.securityHeaders()
+	return insertSOAPSecurityHeader(body, wire)
+}
+
+// securityHeaders builds one WS-Security header (fresh Nonce/Created) for the
+// wire and its evidence copy, or "" for both when security is disabled or the
+// header cannot be built. The evidence copy equals the wire header except that
+// a secret-store password's Password element value is withheld.
+func (s *SOAP) securityHeaders() (wire, evidence string) {
 	if !s.security.enabled() {
+		return "", ""
+	}
+	wire, evidence, err := buildSecurityHeaders(s.security, s.now().UTC(), s.nonceGenerator)
+	if err != nil {
+		return "", ""
+	}
+	return wire, evidence
+}
+
+// insertSOAPSecurityHeader places a prebuilt WS-Security header into a SOAP
+// envelope body. Non-envelope bodies and an empty header are returned as-is.
+func insertSOAPSecurityHeader(body []byte, securityXML string) []byte {
+	if securityXML == "" {
 		return body
 	}
 	bodyStr := strings.TrimSpace(string(body))
@@ -617,20 +656,26 @@ func (s *SOAP) applySecurity(body []byte) []byte {
 	if prefix == "" {
 		prefix = "soapenv"
 	}
-	securityXML, err := buildSecurityHeaderXML(s.security, s.now().UTC(), s.nonceGenerator)
-	if err != nil || securityXML == "" {
-		return body
-	}
 
 	quotedPrefix := regexp.QuoteMeta(prefix)
 	headerClosePattern := compileGeneratedSOAPPattern("header-close:"+prefix, fmt.Sprintf(`(?is)</%s:Header\s*>`, quotedPrefix))
+	// The header is spliced in literally: a regexp replacement template would
+	// expand '$' sequences inside a password (or any other header text) and
+	// put a different value on the wire than the one configured.
 	if headerClosePattern.MatchString(bodyStr) {
-		return []byte(headerClosePattern.ReplaceAllString(bodyStr, securityXML+"$0"))
+		return []byte(headerClosePattern.ReplaceAllStringFunc(bodyStr, func(match string) string {
+			return securityXML + match
+		}))
 	}
 	selfClosingHeaderPattern := compileGeneratedSOAPPattern("header-self-close:"+prefix, fmt.Sprintf(`(?is)<%s:Header\b([^>]*)/>`, quotedPrefix))
 	if selfClosingHeaderPattern.MatchString(bodyStr) {
-		replacement := fmt.Sprintf(`<%s:Header$1>%s</%s:Header>`, prefix, securityXML, prefix)
-		return []byte(selfClosingHeaderPattern.ReplaceAllString(bodyStr, replacement))
+		return []byte(selfClosingHeaderPattern.ReplaceAllStringFunc(bodyStr, func(match string) string {
+			attrs := ""
+			if sub := selfClosingHeaderPattern.FindStringSubmatch(match); len(sub) > 1 {
+				attrs = sub[1]
+			}
+			return "<" + prefix + ":Header" + attrs + ">" + securityXML + "</" + prefix + ":Header>"
+		}))
 	}
 	bodyOpenPattern := compileGeneratedSOAPPattern("body-open:"+prefix, fmt.Sprintf(`(?is)<%s:Body\b[^>]*>`, quotedPrefix))
 	if bodyOpen := bodyOpenPattern.FindString(bodyStr); bodyOpen != "" {
@@ -743,17 +788,25 @@ func wrapSOAPOperation(body, operation string) string {
 }
 
 func buildSecurityHeaderXML(security soapSecurityConfig, now time.Time, nonceGenerator func() ([]byte, error)) (string, error) {
+	wire, _, err := buildSecurityHeaders(security, now, nonceGenerator)
+	return wire, err
+}
+
+// buildSecurityHeaders returns the wire header and its evidence copy, built
+// from the same Nonce/Created values.
+func buildSecurityHeaders(security soapSecurityConfig, now time.Time, nonceGenerator func() ([]byte, error)) (string, string, error) {
 	parts := make([]string, 0, 2)
+	evidenceParts := make([]string, 0, 2)
 	created := now.UTC().Format(time.RFC3339)
 
 	if security.timestamp {
 		expires := now.UTC().Add(security.timestampTTL).Format(time.RFC3339)
-		parts = append(parts,
-			`<wsu:Timestamp>`+
-				`<wsu:Created>`+xmlEscape(created)+`</wsu:Created>`+
-				`<wsu:Expires>`+xmlEscape(expires)+`</wsu:Expires>`+
-				`</wsu:Timestamp>`,
-		)
+		timestamp := `<wsu:Timestamp>` +
+			`<wsu:Created>` + xmlEscape(created) + `</wsu:Created>` +
+			`<wsu:Expires>` + xmlEscape(expires) + `</wsu:Expires>` +
+			`</wsu:Timestamp>`
+		parts = append(parts, timestamp)
+		evidenceParts = append(evidenceParts, timestamp)
 	}
 
 	if security.username != "" || security.password != "" {
@@ -763,30 +816,39 @@ func buildSecurityHeaderXML(security soapSecurityConfig, now time.Time, nonceGen
 			var err error
 			nonceBytes, err = nonceGenerator()
 			if err != nil {
-				return "", err
+				return "", "", err
 			}
 			nonceText = base64.StdEncoding.EncodeToString(nonceBytes)
 		}
 
 		passwordValue, passwordURI := security.passwordValue(now, created, nonceBytes)
-		usernameToken := `<wsse:UsernameToken>` +
-			`<wsse:Username>` + xmlEscape(security.username) + `</wsse:Username>` +
-			`<wsse:Password Type="` + passwordURI + `">` + xmlEscape(passwordValue) + `</wsse:Password>`
-		if security.includeNonce {
-			usernameToken += `<wsse:Nonce>` + nonceText + `</wsse:Nonce>`
+		usernameToken := func(password string) string {
+			token := `<wsse:UsernameToken>` +
+				`<wsse:Username>` + xmlEscape(security.username) + `</wsse:Username>` +
+				`<wsse:Password Type="` + passwordURI + `">` + password + `</wsse:Password>`
+			if security.includeNonce {
+				token += `<wsse:Nonce>` + nonceText + `</wsse:Nonce>`
+			}
+			if security.includeCreated {
+				token += `<wsu:Created>` + xmlEscape(created) + `</wsu:Created>`
+			}
+			return token + `</wsse:UsernameToken>`
 		}
-		if security.includeCreated {
-			usernameToken += `<wsu:Created>` + xmlEscape(created) + `</wsu:Created>`
+		wireToken := usernameToken(xmlEscape(passwordValue))
+		parts = append(parts, wireToken)
+		if security.passwordFromSecretStore && passwordValue != "" {
+			evidenceParts = append(evidenceParts, usernameToken(redactedSOAPPassword))
+		} else {
+			evidenceParts = append(evidenceParts, wireToken)
 		}
-		usernameToken += `</wsse:UsernameToken>`
-		parts = append(parts, usernameToken)
 	}
 
 	if len(parts) == 0 {
-		return "", nil
+		return "", "", nil
 	}
 
-	return `<wsse:Security xmlns:wsse="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd" xmlns:wsu="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-utility-1.0.xsd">` + strings.Join(parts, "") + `</wsse:Security>`, nil
+	const open = `<wsse:Security xmlns:wsse="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd" xmlns:wsu="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-utility-1.0.xsd">`
+	return open + strings.Join(parts, "") + `</wsse:Security>`, open + strings.Join(evidenceParts, "") + `</wsse:Security>`, nil
 }
 
 func (security soapSecurityConfig) enabled() bool {

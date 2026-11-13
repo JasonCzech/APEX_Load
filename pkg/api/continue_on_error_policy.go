@@ -56,9 +56,14 @@ type ContinueOnErrorResolution struct {
 
 // runtimeSettingsContinueOnError reads a runtime-settings layer's stated
 // continue-on-error intent. A layer with no error_handling section, or one that
-// omits continue_on_error, states nothing.
+// omits continue_on_error, states nothing. Neither does a partial layer whose
+// override_fields leave error_handling.continue_on_error unlisted: execution
+// and the stored projection ignore that value, so the policy must too.
 func runtimeSettingsContinueOnError(settings *RuntimeSettingsOverride) (bool, bool) {
 	if settings == nil || settings.ErrorHandling == nil || settings.ErrorHandling.ContinueOnError == nil {
+		return false, false
+	}
+	if !runtimeOverrideAppliesField(settings, "error_handling.continue_on_error") {
 		return false, false
 	}
 	return *settings.ErrorHandling.ContinueOnError, true

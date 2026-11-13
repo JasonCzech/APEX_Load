@@ -1746,52 +1746,7 @@ func TestStartScriptDebugStoredScriptAppliesRuntimeOverridesAndAdHocPrecedence(t
 		t.Fatalf("status = %d, want 400 for java_vuser executable surface override body=%s", respJavaBad.Code, respJavaBad.Body.String())
 	}
 
-	// 5. Credential-preserving imported script echoed via req.Script alongside runtime_overrides
-	// changing base_url to an untrusted host must be rejected.
-	preservedStored := server.runner.StoreScript(&dsl.Script{
-		Name:     "Preserved Import Debug Target",
-		Version:  "1.0.0",
-		Protocol: protocolName,
-		Metadata: &dsl.ScriptMetadata{
-			Import: &dsl.ImportMetadata{
-				Source: "har",
-				Preserved: map[string]any{
-					"credential_preservation": map[string]any{"enabled": true},
-				},
-			},
-		},
-		Config: dsl.ScriptConfig{
-			BaseURL: "https://trusted-debug.example.test",
-			HTTP: dsl.HTTPConfig{
-				DefaultHeaderList: dsl.HeaderList{
-					{Name: "Authorization", Value: "Bearer super-secret-debug-token"},
-				},
-			},
-		},
-		Actions: []dsl.Action{{
-			Name:   "authed-debug-get",
-			Type:   "http_request",
-			Method: "GET",
-			Target: "https://trusted-debug.example.test/v1/me",
-		}},
-	})
-	echoProjection := maskScriptSecrets(preservedStored.Script)
-	exfilDebugBody, _ := json.Marshal(ScriptDebugStartRequest{
-		Script: echoProjection,
-		RuntimeOverrides: &RuntimeSettingsOverride{
-			BaseURL:        "https://attacker.example.com",
-			OverrideFields: []string{"base_url"},
-		},
-	})
-	reqExfilDebug := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/"+preservedStored.ID+"/debug/sessions", bytes.NewReader(exfilDebugBody))
-	reqExfilDebug.Header.Set("Content-Type", "application/json")
-	respExfilDebug := httptest.NewRecorder()
-	server.mux.ServeHTTP(respExfilDebug, reqExfilDebug)
-	if respExfilDebug.Code != http.StatusBadRequest {
-		t.Fatalf("status = %d, want 400 when echoing preserved-credential script with base_url override in debug body=%s", respExfilDebug.Code, respExfilDebug.Body.String())
-	}
-
-	// 6. StartChecked directly enforces maxScriptDebugIterations when iterations come from RuntimeOverrides.
+	// 5. StartChecked directly enforces maxScriptDebugIterations when iterations come from RuntimeOverrides.
 	excessIter := maxScriptDebugIterations + 1
 	_, startErr := server.scriptDebug.StartChecked(stored.ID, &dsl.Script{
 		Name:     "Bounds Check",
@@ -1809,7 +1764,7 @@ func TestStartScriptDebugStoredScriptAppliesRuntimeOverridesAndAdHocPrecedence(t
 		t.Fatalf("StartChecked error = %v, want %q", startErr, scriptDebugIterationsError)
 	}
 
-	// 7. applyScriptDebugOverrides preserves valid java_vuser approval hash when top-level debug fields
+	// 6. applyScriptDebugOverrides preserves valid java_vuser approval hash when top-level debug fields
 	// (e.g. LogLevel, Iterations, ContinueOnError) mutate script.Config after applyReplayOrDebugRuntimeOverrides.
 	cont := true
 	reStampedJava := applyScriptDebugOverrides(approvedJava.Script.Script, &ScriptDebugStartRequest{

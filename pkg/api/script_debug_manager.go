@@ -375,7 +375,7 @@ func (m *ScriptDebugManager) StartChecked(scriptID string, script *dsl.Script, r
 		ignoreThinkTime = strings.EqualFold(strings.TrimSpace(script.Config.ThinkTime.Type), "none")
 	}
 	effectiveLogLevel := strings.TrimSpace(req.LogLevel)
-	if effectiveLogLevel == "" && script != nil {
+	if effectiveLogLevel == "" && script != nil && runtimeOverridesSpecifiesLogLevel(req.RuntimeOverrides) {
 		effectiveLogLevel = strings.TrimSpace(script.Config.Log.Level)
 	}
 	actionGraphDigest := strings.TrimSpace(req.ActionGraphDigest)
@@ -2571,7 +2571,7 @@ func replayRuntimeProfileForDebug(script *dsl.Script, req ScriptDebugStartReques
 		profile.HAROptions = &defaults
 	}
 	effectiveLogLevel := strings.TrimSpace(req.LogLevel)
-	if effectiveLogLevel == "" && script != nil {
+	if effectiveLogLevel == "" && script != nil && runtimeOverridesSpecifiesLogLevel(req.RuntimeOverrides) {
 		effectiveLogLevel = strings.TrimSpace(script.Config.Log.Level)
 	}
 	profile.LogLevel = normalizeDebugLogLevel(effectiveLogLevel)

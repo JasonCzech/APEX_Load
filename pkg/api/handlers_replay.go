@@ -227,6 +227,12 @@ func (s *Server) applyReplayOrDebugRuntimeOverrides(
 		writeError(w, http.StatusBadRequest, err.Error())
 		return nil, nil, nil, false
 	}
+	// The retained-credential edit policy is the hook for judging an override
+	// against a credential-preserving import's durable snapshot. It is
+	// currently permissive: imported values are not secrets (standing product
+	// decision), so a base_url/proxy/TLS override on a preserved import runs
+	// with the import's trust intact. Java Vuser executable-surface changes are
+	// still refused below.
 	if storedBase != nil && isCredentialPreservingImport(storedBase) {
 		if err := validatePreservedImportCredentialEdits(scriptClone, storedBase); err != nil {
 			writeError(w, http.StatusBadRequest, err.Error())
@@ -423,9 +429,20 @@ func (s *Server) handleReplayRequestContext(requestCtx context.Context, w http.R
 	} else if runtimeOverridesSpecifiesThinkTime(req.RuntimeOverrides) && script != nil {
 		ignoreThinkTime = strings.EqualFold(strings.TrimSpace(script.Config.ThinkTime.Type), "none")
 	}
+	// Classic replay logs at info and runs one iteration regardless of the
+	// script's own config; a runtime override that names the log level or the
+	// iteration count is the only thing that changes either.
 	replayLogLevel := "info"
-	if script != nil && strings.TrimSpace(script.Config.Log.Level) != "" {
+	if runtimeOverridesSpecifiesLogLevel(req.RuntimeOverrides) && script != nil && strings.TrimSpace(script.Config.Log.Level) != "" {
 		replayLogLevel = normalizeDebugLogLevel(script.Config.Log.Level)
+	}
+	replayIterations := 0
+	if runtimeOverridesSpecifiesIterations(req.RuntimeOverrides) && script != nil && script.Config.RunLogic.Iterations > 0 {
+		replayIterations = script.Config.RunLogic.Iterations
+		if replayIterations > maxScriptDebugIterations {
+			writeError(w, http.StatusBadRequest, scriptDebugIterationsError)
+			return
+		}
 	}
 	executionCtx, releaseExecutionCtx := s.runner.executionOperationContext(requestCtx)
 	defer releaseExecutionCtx()
@@ -453,6 +470,7 @@ func (s *Server) handleReplayRequestContext(requestCtx context.Context, w http.R
 		ReplaySessionID: replaySessionID,
 		LiveTableSeeds:  req.LiveTableSeeds,
 		GroupName:       req.GroupName,
+		Iterations:      replayIterations,
 		RuntimeProfile:  &engine.ReplayRuntimeProfile{Name: "classic replay", CaptureMode: "diagnostic", LogLevel: replayLogLevel, IgnoreThinkTime: ignoreThinkTime},
 		Variables:       req.Variables,
 		RedactionRules:  req.RedactionRules,
@@ -1144,4 +1162,17 @@ func (s *Server) broadcastReplayProgress(replaySessionID string, scriptID string
 		message["report"] = event.Report
 	}
 	s.hub.BroadcastJSON(message)
+}
+
+// runtimeOverridesSpecifiesLogLevel reports whether a replay/debug runtime
+// override names the log level (the legacy log section or log_level alias, or
+// a log/log.level override_fields path). Only then does the overridden
+// script's config.log.level replace the replay/debug default level.
+func runtimeOverridesSpecifiesLogLevel(overrides *RuntimeSettingsOverride) bool {
+	for _, path := range resolveEffectiveOverrideFields(overrides) {
+		if path == "log" || path == "log.level" {
+			return true
+		}
+	}
+	return false
 }
