@@ -191479,6 +191479,7 @@ export interface operations {
             };
           }) | null;
           "continue_on_error"?: (boolean) | null;
+          "expected_content_revision"?: string;
           "group_name"?: string;
           "ignore_think_time"?: (boolean) | null;
           "iterations"?: number;
@@ -193573,6 +193574,7 @@ export interface operations {
             };
           }) | null;
           "continue_on_error"?: (boolean) | null;
+          "expected_content_revision"?: string;
           "group_name"?: string;
           "ignore_think_time"?: (boolean) | null;
           "iterations"?: number;
@@ -195663,6 +195665,7 @@ export interface operations {
             };
           }) | null;
           "continue_on_error"?: (boolean) | null;
+          "expected_content_revision"?: string;
           "group_name"?: string;
           "ignore_think_time"?: (boolean) | null;
           "iterations"?: number;
@@ -197757,6 +197760,7 @@ export interface operations {
             };
           }) | null;
           "continue_on_error"?: (boolean) | null;
+          "expected_content_revision"?: string;
           "group_name"?: string;
           "ignore_think_time"?: (boolean) | null;
           "iterations"?: number;

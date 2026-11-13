@@ -17,29 +17,34 @@ import (
 // number of action-phase iterations to run, 1 to maxScriptDebugIterations;
 // 0 or omitted runs one.
 type ScriptDebugStartRequest struct {
-	LiveTableSeeds    []engine.LiveTableSandboxSeed `json:"live_table_seeds,omitempty"`
-	GroupName         string                        `json:"group_name,omitempty"`
-	ProjectID         string                        `json:"project_id,omitempty"`
-	ReplaySessionID   string                        `json:"replay_session_id,omitempty"`
-	ReplayProfile     string                        `json:"replay_profile,omitempty"`
-	RuntimeProfile    *engine.ReplayRuntimeProfile  `json:"runtime_profile,omitempty"`
-	Variables         map[string]string             `json:"variables,omitempty"`
-	RedactionRules    []engine.RedactionRule        `json:"redaction_rules,omitempty"`
-	StartPaused       bool                          `json:"start_paused,omitempty"`
-	Iterations        int                           `json:"iterations,omitempty"`
-	Breakpoints       []ScriptDebugBreakpoint       `json:"breakpoints,omitempty"`
-	BreakOnFailure    bool                          `json:"break_on_failure,omitempty"`
-	RunID             string                        `json:"run_id,omitempty"`
-	ContinueOnError   *bool                         `json:"continue_on_error,omitempty"`
-	LogLevel          string                        `json:"log_level,omitempty"`
-	Browser           *dsl.BrowserConfig            `json:"browser,omitempty"`
-	IgnoreThinkTime   *bool                         `json:"ignore_think_time,omitempty"`
-	RuntimeOverrides  *RuntimeSettingsOverride      `json:"runtime_overrides,omitempty"`
-	Script            *dsl.Script                   `json:"script,omitempty"`
-	Mode              string                        `json:"-"`
-	Preflight         *ReplayPreflight              `json:"-"`
-	SecretResolver    engine.SecretResolver         `json:"-"`
-	ActionGraphDigest string                        `json:"-"`
+	LiveTableSeeds   []engine.LiveTableSandboxSeed `json:"live_table_seeds,omitempty"`
+	GroupName        string                        `json:"group_name,omitempty"`
+	ProjectID        string                        `json:"project_id,omitempty"`
+	ReplaySessionID  string                        `json:"replay_session_id,omitempty"`
+	ReplayProfile    string                        `json:"replay_profile,omitempty"`
+	RuntimeProfile   *engine.ReplayRuntimeProfile  `json:"runtime_profile,omitempty"`
+	Variables        map[string]string             `json:"variables,omitempty"`
+	RedactionRules   []engine.RedactionRule        `json:"redaction_rules,omitempty"`
+	StartPaused      bool                          `json:"start_paused,omitempty"`
+	Iterations       int                           `json:"iterations,omitempty"`
+	Breakpoints      []ScriptDebugBreakpoint       `json:"breakpoints,omitempty"`
+	BreakOnFailure   bool                          `json:"break_on_failure,omitempty"`
+	RunID            string                        `json:"run_id,omitempty"`
+	ContinueOnError  *bool                         `json:"continue_on_error,omitempty"`
+	LogLevel         string                        `json:"log_level,omitempty"`
+	Browser          *dsl.BrowserConfig            `json:"browser,omitempty"`
+	IgnoreThinkTime  *bool                         `json:"ignore_think_time,omitempty"`
+	RuntimeOverrides *RuntimeSettingsOverride      `json:"runtime_overrides,omitempty"`
+	Script           *dsl.Script                   `json:"script,omitempty"`
+	// ExpectedContentRevision, on a stored-script start without a script body,
+	// is the stored revision the client shows. A different stored revision
+	// answers 409 rather than running content the client never saw; the run
+	// then uses the durable script at exactly that revision.
+	ExpectedContentRevision string                `json:"expected_content_revision,omitempty"`
+	Mode                    string                `json:"-"`
+	Preflight               *ReplayPreflight      `json:"-"`
+	SecretResolver          engine.SecretResolver `json:"-"`
+	ActionGraphDigest       string                `json:"-"`
 	// trustedPreservedImport is set only after loading the unchanged durable
 	// import snapshot. A request body cannot establish this trust.
 	trustedPreservedImport  bool
@@ -103,6 +108,9 @@ func (s *Server) handleStartScriptDebugScript(w http.ResponseWriter, r *http.Req
 	if !decodeOptionalJSONBodyAllowingUnknownFields(w, r, &req) {
 		return
 	}
+	if stored, ok = s.pinStoredDebugRevision(w, stored, req); !ok {
+		return
+	}
 
 	script, trustedPreservedImport, ok := s.bindStoredReplayRequestScript(w, stored, req.Script, req.ProjectID)
 	if !ok {
@@ -139,6 +147,9 @@ func (s *Server) handleStartReplaySessionScript(w http.ResponseWriter, r *http.R
 	if !decodeOptionalJSONBodyAllowingUnknownFields(w, r, &req) {
 		return
 	}
+	if stored, ok = s.pinStoredDebugRevision(w, stored, req); !ok {
+		return
+	}
 
 	script, trustedPreservedImport, ok := s.bindStoredReplayRequestScript(w, stored, req.Script, req.ProjectID)
 	if !ok {
@@ -148,6 +159,44 @@ func (s *Server) handleStartReplaySessionScript(w http.ResponseWriter, r *http.R
 	req.storedBaseScript = stored.Script
 	req.Mode = "replay"
 	s.handleStartScriptDebugRequest(w, r, stored.ID, script, req)
+}
+
+// scriptDebugRevisionChangedCode marks a stored-script start refused because
+// the stored script is no longer the revision the client expected.
+const scriptDebugRevisionChangedCode = "debug_script_revision_changed"
+
+// pinStoredDebugRevision binds a body-less stored-script start to the revision
+// the client expected. Without an expected revision, or with a script body (the
+// body is what runs), the stored script is returned unchanged. Otherwise the
+// durable snapshot is read: a different revision answers 409, and a match
+// returns the durable script so the run is exactly the checked revision, not a
+// possibly stale cached copy.
+func (s *Server) pinStoredDebugRevision(w http.ResponseWriter, stored *StoredScript, req ScriptDebugStartRequest) (*StoredScript, bool) {
+	expected := strings.TrimSpace(req.ExpectedContentRevision)
+	if expected == "" || req.Script != nil {
+		return stored, true
+	}
+	durable, found, err := s.runner.GetScriptAuthoringDurable(stored.ID)
+	if err != nil {
+		writeError(w, http.StatusServiceUnavailable, "the stored script revision could not be confirmed")
+		return nil, false
+	}
+	if !found || durable == nil || durable.Script == nil || normalizeProjectID(durable.ProjectID) != normalizeProjectID(stored.ProjectID) {
+		writeError(w, http.StatusNotFound, "script not found")
+		return nil, false
+	}
+	if durable.ContentRevision != expected {
+		writeJSON(w, http.StatusConflict, AuthoringIdempotencyError{Error: "the stored script changed since it was opened; reload it before debugging", Code: scriptDebugRevisionChangedCode})
+		return nil, false
+	}
+	if err := storedScriptReplayGateError(durable.Script); err != nil {
+		s.writeStoredScriptReplayGate(w, durable.Script, err)
+		return nil, false
+	}
+	pinned := *stored
+	pinned.Script = durable.Script
+	pinned.ContentRevision = durable.ContentRevision
+	return &pinned, true
 }
 
 // resolveTrustedStoredReplayEcho recognizes an unchanged disclosure-safe GET

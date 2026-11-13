@@ -101,4 +101,37 @@ describe('RunExecutionDetails load timeline', () => {
     await act(async () => root.render(<RunExecutionDetails test={changed} report={null} history={[]} manifestModel={manifestModel} />))
     expect(container.querySelector('[data-testid="telemetry-policy-segments"]')).not.toBeNull()
   })
+
+  it("shows each group's effective runtime settings from the immutable manifest, not the mutable record", async () => {
+    const record = { ...run, runtime_settings: { base_url: 'https://later.example.test' } } as TestSummary
+    const immutable = { ...(manifestModel as object), manifest: {
+      runtime_changes: [],
+      initial_configuration_provenance: { source: 'archive_provenance', immutable: true },
+      initial_configuration: {
+        duration: '2m', total_vusers: 4,
+        runtime_settings: { base_url: 'https://started.example.test', http: { tls: { max_version: '1.2' } }, override_fields: ['base_url', 'http.tls.max_version'] },
+        groups: [{ name: 'Orders', script_id: 's', script_name: 'Orders', protocol: 'soap', vusers: 4, runtime_settings: {
+          soap: { fault_handling: { fail_on_fault: true }, ws_security: { username_token: { username: '[REDACTED]', password: '[REDACTED]' } } },
+          override_fields: ['soap.fault_handling.fail_on_fault', 'soap.ws_security.username_token'],
+        } }],
+      },
+      scripts: [{ group_name: 'Orders', protocol: 'soap' }],
+    } } as never
+    await act(async () => root.render(<RunExecutionDetails test={record} report={null} history={[]} manifestModel={immutable} />))
+
+    const groups = container.querySelector('[aria-label="Execution groups"]')
+    expect(groups).toBeTruthy()
+    if (!groups) return
+    const view = groups.querySelector('[data-testid="effective-runtime-settings"]')
+    expect(view).toBeTruthy()
+    if (!view) return
+    const row = (path: string) => view.querySelector(`[data-runtime-path="${path}"]`)
+    expect(row('base_url')?.textContent).toContain('https://started.example.test')
+    expect(row('base_url')?.getAttribute('data-provenance')).toBe('scenario_default')
+    expect(row('http.tls.max_version')?.textContent).toContain('1.2')
+    expect(row('soap.fault_handling.fail_on_fault')?.getAttribute('data-provenance')).toBe('group_override')
+    expect(row('soap.ws_security.username_token.password')?.textContent).toContain('Stored secret (hidden)')
+    expect(view.textContent).not.toContain('later.example.test')
+    expect(view.textContent).not.toContain('[REDACTED]')
+  })
 })

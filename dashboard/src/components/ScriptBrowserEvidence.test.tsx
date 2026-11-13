@@ -111,6 +111,16 @@ describe('selected browser evidence', () => {
     const host = document.createElement('div'); const root = createRoot(host)
     try { await act(async () => root.render(<ScriptBrowserEvidence running={false} />)); expect(host.textContent).toContain('Choose Debug > Run a single iteration to capture'); expect(host.textContent).not.toContain('Debug one iteration') } finally { await act(async () => root.unmount()) }
   })
+  it('shows why native browser replay will not match the debugger, only when told', async () => {
+    const host = document.createElement('div'); const root = createRoot(host)
+    const start = vi.fn<() => Promise<string | null>>().mockResolvedValue(null)
+    try {
+      await act(async () => root.render(<ScriptBrowserEvidence running={false} onStartNativeReplay={start} />))
+      expect(host.querySelector('[data-testid="native-replay-note"]')).toBeNull()
+      await act(async () => root.render(<ScriptBrowserEvidence running={false} onStartNativeReplay={start} nativeReplayNote="2 session runtime overrides are not applied here." />))
+      expect(host.querySelector('[aria-label="Native browser replay"] [data-testid="native-replay-note"]')?.textContent).toBe('2 session runtime overrides are not applied here.')
+    } finally { await act(async () => root.unmount()) }
+  })
   it('starts a native browser replay session, renders progress, and reports start errors', async () => {
     const host = document.createElement('div'); document.body.append(host)
     const root = createRoot(host)

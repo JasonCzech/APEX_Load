@@ -11,7 +11,7 @@ import {
 } from '../../types'
 import type { LibraryAssignment, ScenarioAuthoringBaseline, ScriptAuthoringBaseline, StoredScenario, StoredScript } from '../../types/storedContent'
 import type { ScenarioGroupPayload, ScenarioUpsertPayload } from '../../components/scenarioPayloadUtils'
-import type { RuntimeSettingsOverride } from '../../types/runtimeSettings'
+import type { PartialRuntimeSettingsOverride, RuntimeSettingsOverride } from '../../types/runtimeSettings'
 import type {
   ScenarioDataPoolBinding,
   SharedDataPool,
@@ -93,8 +93,11 @@ type ScriptDebugBreakpointsRequestBody = JsonRequestBody<'handleUpdateScriptDebu
 type ScriptDebugOptionsRequestBody = JsonRequestBody<'handleUpdateScriptDebugOptions'>
 
 // The draft route takes the same body as the stored-script route, plus the
-// script itself (required).
-type DraftScriptDebugStartBody = Omit<DraftScriptDebugStartRequestBody, 'script'> & { script: ScriptDefinition }
+// script itself (required). runtime_overrides is the dashboard's partial
+// override row (debugSessionOverrides.ts), the same JSON the generated type
+// describes with looser header entries.
+type DraftScriptDebugStartBody = Omit<DraftScriptDebugStartRequestBody, 'script' | 'runtime_overrides'> & { script: ScriptDefinition; runtime_overrides?: PartialRuntimeSettingsOverride }
+type StoredScriptDebugStartBody = Omit<ScriptDebugStartRequest, 'runtime_overrides'> & { runtime_overrides?: PartialRuntimeSettingsOverride }
 
 type ScriptListResponse = {
   scripts: StoredScript[]
@@ -741,13 +744,15 @@ export function useScriptApi() {
   )
 
   const replayScript = useCallback(
-    (id: string, payload?: { live_table_seeds?: import('../../types/replay').LiveTableSandboxSeed[]; group_name?: string; project_id?: string; replay_session_id?: string; variables?: Record<string, string>; ignore_think_time?: boolean; script?: ScriptDefinition }) =>
+    // runtime_overrides: a partial override row the controller applies to a clone of
+    // the script (debugSessionOverrides.ts); omit `script` to replay the stored script.
+    (id: string, payload?: { live_table_seeds?: import('../../types/replay').LiveTableSandboxSeed[]; group_name?: string; project_id?: string; replay_session_id?: string; variables?: Record<string, string>; ignore_think_time?: boolean; script?: ScriptDefinition; runtime_overrides?: PartialRuntimeSettingsOverride }) =>
       request<ScriptReplayResponse>(`/scripts/${id}/replay`, { method: 'POST', body: JSON.stringify(payload || {}) }),
     [],
   )
 
   const replayDraftScript = useCallback(
-    (payload: { live_table_seeds?: import('../../types/replay').LiveTableSandboxSeed[]; script: ScriptDefinition; group_name?: string; project_id?: string; replay_session_id?: string; variables?: Record<string, string>; ignore_think_time?: boolean }) =>
+    (payload: { live_table_seeds?: import('../../types/replay').LiveTableSandboxSeed[]; script: ScriptDefinition; group_name?: string; project_id?: string; replay_session_id?: string; variables?: Record<string, string>; ignore_think_time?: boolean; runtime_overrides?: PartialRuntimeSettingsOverride }) =>
       request<ScriptReplayResponse>('/scripts/replay', { method: 'POST', body: JSON.stringify(payload) }),
     [],
   )
@@ -765,8 +770,8 @@ export function useScriptApi() {
   )
 
   const startScriptDebugSession = useCallback(
-    (id: string, payload?: ScriptDebugStartRequest) => {
-      const body: ScriptDebugStartRequest = payload || {}
+    (id: string, payload?: StoredScriptDebugStartBody) => {
+      const body: StoredScriptDebugStartBody = payload || {}
       return request<ScriptDebugStartResponse>(`/scripts/${id}/debug/sessions`, { method: 'POST', body: JSON.stringify(body) })
     },
     [],
