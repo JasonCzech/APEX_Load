@@ -5,6 +5,7 @@ import {
   debugHttpRunConfiguration,
   debugPacingLabel,
   debugRetriesLabel,
+  debugRunTarget,
   debugSessionBaseURL,
   debugSessionOverridesLabel,
   debugThinkTimeLabel,
@@ -76,5 +77,22 @@ describe('debug run configuration', () => {
     expect(label).toContain('(session override)')
     expect(label).toContain('0.25 seconds')
     expect(debugThinkTimeLabel({ session, script: { base_url: '' } }, true)).toMatch(/^Ignored for debug \(/)
+  })
+
+  it('records the session base URL override as the run target, without credentials', () => {
+    const script: ScriptConfig = { base_url: 'https://api.example.com' }
+    expect(debugRunTarget(undefined, script)).toBe('https://api.example.com')
+    expect(debugRunTarget(undefined, { base_url: '' })).toBe('Action-specific targets')
+    expect(debugRunTarget(setSessionOverride(undefined, 'base_url', 'https://staging.example.test'), script)).toBe('https://staging.example.test')
+    const withCredentials = debugRunTarget(setSessionOverride(undefined, 'base_url', 'https://user:hunter2@staging.example.test'), { base_url: '' })
+    expect(withCredentials).toContain('staging.example.test')
+    expect(withCredentials).not.toContain('hunter2')
+    // An override of some other field keeps the script's base URL.
+    expect(debugRunTarget(setSessionOverride(undefined, 'log.level', 'debug'), script)).toBe('https://api.example.com')
+    // The script's own base URL is recorded without credentials too.
+    const scriptCredentials = debugRunTarget(undefined, { base_url: 'https://user:secret@api.example.test' })
+    expect(scriptCredentials).toContain('api.example.test')
+    expect(scriptCredentials).not.toContain('secret')
+    expect(scriptCredentials).not.toContain('user:')
   })
 })

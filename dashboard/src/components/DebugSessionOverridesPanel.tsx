@@ -54,6 +54,8 @@ export interface DebugSessionOverridesPanelProps {
   engineDefaults?: ScriptConfig
   /** Writes the overrides into script.config (marks the script modified), then clears them. */
   onPromote?: () => number
+  /** Why Promote is unavailable right now (for example, unapplied Source edits); the overrides stay. */
+  promoteDisabledReason?: string
 }
 
 export default function DebugSessionOverridesPanel({
@@ -65,6 +67,7 @@ export default function DebugSessionOverridesPanel({
   ignoreThinkTime,
   engineDefaults,
   onPromote,
+  promoteDisabledReason,
 }: DebugSessionOverridesPanelProps) {
   const [groupId, setGroupId] = useState<CanonicalRuntimeGroupId>('target_identity')
   const [headerName, setHeaderName] = useState('')
@@ -138,7 +141,7 @@ export default function DebugSessionOverridesPanel({
       case 'number':
         return (
           <label>
-            <span>{spec.label}{spec.unit ? ` (${spec.unit})` : ''}</span>
+            <span>{spec.label}</span>
             <input
               className="settings-input"
               type="number"
@@ -257,8 +260,9 @@ export default function DebugSessionOverridesPanel({
         <button
           type="button"
           className="btn btn-sm btn-secondary"
-          disabled={disabled || count === 0 || !onPromote}
-          title="Writes these values into the script’s runtime settings as an unsaved edit, then clears them here."
+          disabled={disabled || count === 0 || !onPromote || Boolean(promoteDisabledReason)}
+          title={promoteDisabledReason || 'Writes these values into the script’s runtime settings as an unsaved edit, then clears them here.'}
+          aria-describedby={promoteDisabledReason && count > 0 ? 'debug-session-promote-blocked' : undefined}
           onClick={() => {
             const promoted = onPromote?.() ?? 0
             setNotice(promoted > 0 ? `Promoted ${promoted} ${promoted === 1 ? 'setting' : 'settings'} to the script’s runtime settings. Save the script to keep ${promoted === 1 ? 'it' : 'them'}.` : '')
@@ -267,6 +271,7 @@ export default function DebugSessionOverridesPanel({
           Promote session overrides to script
         </button>
       </div>
+      {promoteDisabledReason && count > 0 && <p id="debug-session-promote-blocked" className="form-hint">{promoteDisabledReason}</p>}
       {notice && <p role="status" className="form-hint">{notice}</p>}
     </section>
   )

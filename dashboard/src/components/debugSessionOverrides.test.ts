@@ -212,7 +212,7 @@ describe('session override fields', () => {
     const fields = debugOverrideFieldsFor('security_proxy_auth', 'http')
     const proxyMode = fields.find(field => field.path === 'http.proxy_mode')
     expect(proxyMode?.options?.map(option => option.value)).toContain('pac')
-    expect(fields.find(field => field.path === 'http.proxy.pac_url')).toMatchObject({ kind: 'url', label: 'PAC script URL' })
+    expect(fields.find(field => field.path === 'http.proxy.pac_url')).toMatchObject({ kind: 'url', label: 'PAC URL' })
     const draft = setSessionOverride(setSessionOverride(undefined, 'http.proxy_mode', 'pac'), 'http.proxy.pac_url', 'https://proxy.example.test/proxy.pac')
     expect(unrenderedSessionOverrides(draft, 'http')).toEqual([])
     const body = draftSessionRequestBody({ script: HTTP_SCRIPT }, draft)

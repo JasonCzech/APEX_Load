@@ -6,6 +6,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ScriptDefinition } from '../types/scripts'
 import DebugSessionOverridesPanel from './DebugSessionOverridesPanel'
 import { sessionOverrideValue, type DebugSessionOverrideDraft } from './debugSessionOverrides'
+import { DEBUG_OVERRIDE_FIELDS } from './debugSessionOverrideFields'
+import { effectiveRuntimeFieldLabel, hasCuratedRuntimeFieldLabel } from './runtime-settings/effectiveRuntimeSummaryModel'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -225,5 +227,25 @@ describe('DebugSessionOverridesPanel', () => {
   it('locks the fields while a run is live', async () => {
     await render(<Harness disabled />)
     expect(container.querySelector<HTMLFieldSetElement>('fieldset.debug-session-override-fields')?.disabled).toBe(true)
+  })
+})
+
+describe('debug session override labels', () => {
+  it('names every field the way the group editor and the shared read-only view do', () => {
+    for (const spec of DEBUG_OVERRIDE_FIELDS) {
+      expect(hasCuratedRuntimeFieldLabel(spec.path), spec.path).toBe(true)
+      expect(spec.label, spec.path).toBe(effectiveRuntimeFieldLabel(spec.path))
+    }
+    const shown = (path: string) => DEBUG_OVERRIDE_FIELDS.find(field => field.path === path)?.label
+    expect(shown('http.tls.min_version')).toBe('TLS min version')
+    expect(shown('soap.fault_handling.fail_on_fault')).toBe('Fail on SOAP fault')
+    expect(shown('http.request_timeout_ms')).toBe('Request timeout (ms)')
+    expect(shown('http.max_conns_per_host')).toBe('Max connections per host')
+    expect(shown('http.tls_timeout_ms')).toBe('TLS handshake timeout (ms)')
+    expect(shown('think_time.mean_ms')).toBe('Think time mean (ms)')
+    expect(shown('log.on_error_only')).toBe('Extended log only on errors')
+    expect(shown('http.user_agent')).toBe('User agent')
+    expect(shown('http.cookies_enabled')).toBe('Cookies')
+    expect(shown('error_handling.max_retries')).toBe('Max retries')
   })
 })

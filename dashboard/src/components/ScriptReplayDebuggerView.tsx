@@ -258,6 +258,8 @@ export interface ScriptReplayDebuggerViewProps {
   scriptHasUnsavedEdits?: boolean
   /** Applies a config edit through the Author edit path (marks the script modified). */
   onPromoteSessionOverrides?: (update: (config: ScriptConfig) => ScriptConfig) => void
+  /** Set while Promote cannot write safely (unapplied or invalid Source edits would drop it). */
+  promoteSessionOverridesBlockedReason?: string
 }
 
 export function ScriptReplayDebuggerView({
@@ -344,6 +346,7 @@ export function ScriptReplayDebuggerView({
   warnings,
   scriptHasUnsavedEdits = !scriptId,
   onPromoteSessionOverrides,
+  promoteSessionOverridesBlockedReason,
 }: ScriptReplayDebuggerViewProps) {
   // The Base URL applies only to relative action targets.
   const absoluteTargetCount = [...(script.init || []), ...(script.actions || []), ...(script.teardown || [])].filter(action => /^https?:\/\//i.test(action.target || "")).length
@@ -471,6 +474,8 @@ export function ScriptReplayDebuggerView({
   // What the shown run applied: the recorded run's session overrides, else the next run's.
   const runConfigLayers = { session: runRecord ? runRecord.options.runtimeOverrides : replayOptions.runtimeOverrides, script: script.config, engine: engineDefaults }
   const promoteToScript = onPromoteSessionOverrides ? () => {
+    // Nothing is written, so nothing is cleared: the overrides stay until the Source edits are applied or reset.
+    if (promoteSessionOverridesBlockedReason) return 0
     const draft = replayOptions.runtimeOverrides
     const { promoted } = promoteSessionOverrides(script.config, draft)
     if (promoted.length === 0) return 0
@@ -735,7 +740,9 @@ export function ScriptReplayDebuggerView({
                 </fieldset>
                 <LazyLoadBoundary title="Session runtime overrides could not be loaded.">
                   <Suspense fallback={<p className="replay-panel-subtitle">Loading session runtime overrides…</p>}>
+                    {/* Its notice, unsent header and group belong to one script in one project. */}
                     <DebugSessionOverridesPanel
+                      key={`${projectId || ''}:${scriptId || 'draft'}`}
                       script={script}
                       overrides={replayOptions.runtimeOverrides}
                       onChange={runtimeOverrides => setReplayOptions(prev => ({ ...prev, runtimeOverrides }))}
@@ -744,6 +751,7 @@ export function ScriptReplayDebuggerView({
                       ignoreThinkTime={replayOptions.ignoreThinkTime}
                       engineDefaults={engineDefaults}
                       onPromote={promoteToScript}
+                      promoteDisabledReason={promoteSessionOverridesBlockedReason}
                     />
                   </Suspense>
                 </LazyLoadBoundary>

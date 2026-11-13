@@ -101,7 +101,7 @@ export interface EffectiveRuntimeSummary {
 const OTHER_CATEGORY_LABEL = 'Other runtime settings'
 
 /** Paths a summary shows from the script when the surface knows the script and no override covers them. */
-const SCRIPT_KEY_PATHS = [
+export const SCRIPT_KEY_PATHS = [
   'base_url',
   'http.version',
   'http.request_timeout_ms',
@@ -138,6 +138,98 @@ const FIELD_LABELS: Readonly<Record<string, string>> = {
   'soap.ws_security.timestamp.ttl_seconds': 'WS-Security timestamp TTL (seconds)',
   'run_logic.iterations': 'Iterations',
   'log.level': 'Log level',
+  // Every field the debugger's session overrides editor offers has a name here, so the
+  // debugger and the read-only views (preview, manifest, run report, archive) agree.
+  'http.user_agent': 'User agent',
+  'think_time.type': 'Think time type',
+  'think_time.mean_ms': 'Think time mean (ms)',
+  'think_time.min_ms': 'Think time min (ms)',
+  'think_time.max_ms': 'Think time max (ms)',
+  'think_time.multiplier': 'Think time multiplier',
+  'think_time.limit_ms': 'Think time limit (ms)',
+  'http.tls_timeout_ms': 'TLS handshake timeout (ms)',
+  'http.idle_timeout_ms': 'Idle timeout (ms)',
+  'http.max_conns_per_host': 'Max connections per host',
+  'http.keep_alive': 'Keep-alive',
+  'http.tls.insecure_skip_verify': 'Skip TLS verification',
+  'http.proxy_mode': 'Proxy mode',
+  'http.proxy.url': 'Proxy URL',
+  'http.proxy.pac_url': 'PAC URL',
+  'http.proxy.username': 'Proxy username',
+  'http.proxy.password': 'Proxy password',
+  'http.auth.type': 'Auth type',
+  'http.auth.username': 'Auth username',
+  'http.auth.password': 'Auth password',
+  'http.auth.token': 'Auth token',
+  'http.auth.domain': 'Auth domain',
+  'http.max_redirects': 'Max redirects',
+  'http.cookies_enabled': 'Cookies',
+  'error_handling.max_retries': 'Max retries',
+  'error_handling.retry_delay_ms': 'Retry delay (ms)',
+  'error_handling.retry_backoff': 'Retry backoff',
+  'error_handling.snapshot_on_error': 'Snapshot on error',
+  'log.on_error_only': 'Extended log only on errors',
+  'log.max_response_bytes': 'Max logged response (bytes)',
+  // The group editor's own names for the paths it edits, so the read-only views match it.
+  'error_handling.continue_on_error': 'Continue on error',
+  'error_handling.fail_transaction_on_error_message': 'Fail transaction on error message',
+  'error_handling.honor_retry_after': 'Honor Retry-After',
+  'error_handling.retry_after_max_ms': 'Retry-After cap (ms)',
+  'error_handling.retry_on': 'Retry on',
+  'pacing.type': 'Pacing',
+  'pacing.arrival_process': 'Arrival process',
+  'pacing.burstiness': 'Burstiness',
+  'pacing.delay_ms': 'Pacing delay (ms)',
+  'pacing.interval_ms': 'Pacing interval (ms)',
+  'pacing.min_delay_ms': 'Min pacing delay (ms)',
+  'pacing.max_delay_ms': 'Max pacing delay (ms)',
+  'pacing.min_interval_ms': 'Min pacing interval (ms)',
+  'pacing.max_interval_ms': 'Max pacing interval (ms)',
+  'pacing.quota.adaptive_aimd': 'Adaptive AIMD throttling',
+  'pacing.rate_stages': 'Rate stages',
+  'pacing.seed': 'Arrival seed',
+  'pacing.tps': 'Target TPS',
+  'run_logic.action_sequence': 'Action sequence',
+  'run_logic.auto_transactions': 'Auto-transactions',
+  'run_logic.block_scheduling': 'Block scheduling',
+  'run_logic.blocks': 'Run logic blocks',
+  'run_logic.global_iterations': 'Global iterations',
+  'run_logic.max_in_flight': 'Maximum in-flight iterations',
+  'run_logic.max_transactions': 'Max transactions',
+  'run_logic.termination_mode': 'Termination mode',
+  'run_logic.workload_model': 'Workload model',
+  'think_time.distribution': 'Think time distribution',
+  'think_time.std_ms': 'Think time std dev (ms)',
+  'http.auth.hosts': 'Send credentials only to hosts',
+  'http.cache_enabled': 'HTTP cache',
+  'http.clear_cookies_per_iteration': 'Clear learned cookies each iteration',
+  'http.max_idle_conns': 'Max idle connections',
+  'http.proxy.no_proxy': 'No-proxy hosts',
+  'http.tls.ca_cert_file': 'CA cert file',
+  'http.tls.client_cert_file': 'Client cert file',
+  'http.tls.client_key_file': 'Client key file',
+  'http.traceparent': 'Trace context',
+  'http.traceparent_sampled': 'Trace sampling',
+  'browser.capture_screenshots': 'Capture screenshots',
+  'browser.device_profile': 'Device profile',
+  'browser.download_resources': 'Download resources',
+  'browser.engine': 'Browser engine',
+  'browser.headless': 'Headless',
+  'browser.orientation': 'Orientation',
+  'browser.quic': 'HTTP/3 (QUIC)',
+  'browser.slow_mo_ms': 'Slow-mo (ms)',
+  'browser.system_language': 'Emulated system language',
+  'browser.touch_mode': 'Touch mode',
+  'browser.user_agent': 'Browser user agent',
+  'browser.viewport.height': 'Viewport height',
+  'browser.viewport.width': 'Viewport width',
+  'browser_emulation.browser_type': 'Browser type',
+  'browser_emulation.browser_version': 'Browser version',
+  'browser_emulation.cache.clear_cache_for_new_user': 'Clear cache for a new user',
+  'browser_emulation.custom_user_agent': 'Custom User-Agent',
+  'browser_emulation.language': 'Browser language',
+  'browser_emulation.mode': 'Browser emulation mode',
+  'browser_emulation.platform': 'Browser platform',
 }
 
 const LABEL_WORDS: Readonly<Record<string, string>> = {
@@ -156,6 +248,11 @@ const SECTION_WORDS: Readonly<Record<string, string>> = {
 
 function humanize(segment: string): string[] {
   return segment.split('_').filter(Boolean).map(word => LABEL_WORDS[word.toLowerCase()] ?? word.toLowerCase())
+}
+
+/** Whether a path has a curated name rather than one built from its segments. */
+export function hasCuratedRuntimeFieldLabel(path: string): boolean {
+  return Object.prototype.hasOwnProperty.call(FIELD_LABELS, path)
 }
 
 /** A sentence-case label for a canonical override path. */

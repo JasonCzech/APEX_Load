@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import type { PartialRuntimeSettingsOverride } from '../../types/runtimeSettings'
 import type { ScriptConfig } from '../../types/scripts'
 import { effectiveRuntimeGroupSources, effectiveRuntimeSourcesFromManifest } from './effectiveRuntimeSources'
-import { buildEffectiveRuntimeSummary, formatEffectiveRuntimeValue, type EffectiveRuntimeSummary } from './effectiveRuntimeSummaryModel'
+import { buildEffectiveRuntimeSummary, effectiveRuntimeFieldLabel, formatEffectiveRuntimeValue, hasCuratedRuntimeFieldLabel, SCRIPT_KEY_PATHS, type EffectiveRuntimeSummary } from './effectiveRuntimeSummaryModel'
 
 function entry(summary: EffectiveRuntimeSummary, path: string) {
   for (const category of summary.categories) {
@@ -192,5 +192,26 @@ describe('buildEffectiveRuntimeSummary', () => {
     expect(entry(summary, 'error_handling.continue_on_error')).toMatchObject({ provenance: 'scenario_default', text: 'Disabled' })
     const manifest = { scripts: [{ group_name: 'Checkout', iterations: 5, continue_on_error: resolution }] } as unknown as Parameters<typeof effectiveRuntimeSourcesFromManifest>[0]
     expect(effectiveRuntimeSourcesFromManifest(manifest).groups[0].continueOnError).toEqual(resolution)
+  })
+})
+
+describe('effective runtime field labels', () => {
+  it('names every always-shown script key path with a curated label', () => {
+    for (const path of SCRIPT_KEY_PATHS) expect(hasCuratedRuntimeFieldLabel(path), path).toBe(true)
+  })
+
+  it('uses the group editor names for the paths every read-only view shows', () => {
+    expect(effectiveRuntimeFieldLabel('error_handling.continue_on_error')).toBe('Continue on error')
+    expect(effectiveRuntimeFieldLabel('pacing.type')).toBe('Pacing')
+    expect(effectiveRuntimeFieldLabel('run_logic.auto_transactions')).toBe('Auto-transactions')
+    expect(effectiveRuntimeFieldLabel('run_logic.workload_model')).toBe('Workload model')
+    expect(effectiveRuntimeFieldLabel('error_handling.honor_retry_after')).toBe('Honor Retry-After')
+  })
+
+  it('shows continue on error under its editor name in a summary', () => {
+    const resolution = { effective: false, source: 'scenario', scenario_value: false, scenario_explicit: true }
+    const [group] = effectiveRuntimeGroupSources([{ name: 'Checkout', script_id: 's', script_name: 'S', protocol: 'http', vusers: 1, continue_on_error: resolution }])
+    const summary = buildEffectiveRuntimeSummary(group)
+    expect(entry(summary, 'error_handling.continue_on_error')).toMatchObject({ label: 'Continue on error' })
   })
 })

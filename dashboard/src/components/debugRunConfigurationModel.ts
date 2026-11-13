@@ -108,6 +108,13 @@ export function debugSessionBaseURL(layers: DebugRunConfigurationLayers): string
   return resolved.session ? `${formatOverrideValue(resolved.value)}${SESSION_OVERRIDE_MARK}` : undefined
 }
 
+/** The target a debug run records in its history: the session base URL override, then the script's, both without credentials. */
+export function debugRunTarget(session: DebugSessionOverrideDraft | undefined, script: ScriptConfig): string {
+  const resolved = effectiveDebugValue('base_url', { session, script })
+  if (resolved.provenance === 'session_override' && resolved.value) return formatOverrideValue(resolved.value)
+  return script.base_url ? formatOverrideValue(script.base_url) : 'Action-specific targets'
+}
+
 /** Max retries, with the delay and backoff when retries are on. */
 export function debugRetriesLabel(layers: DebugRunConfigurationLayers): string {
   const retries = resolveDebugRunValue('error_handling.max_retries', layers)

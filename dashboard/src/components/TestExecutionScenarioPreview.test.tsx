@@ -330,7 +330,7 @@ describe('TestExecutionScenarioPreview', () => {
       ?.textContent
 
     // The group's section wins whole, so the omitted snapshot half executes false. Reporting the
-    // run-level 'Enabled (scenario override)' here would claim snapshots the run never takes.
+    // run-level 'Enabled (scenario default)' here would claim snapshots the run never takes.
     expect(cardValue('.scenario-script-detail-card', 'Snapshot on error')).toBe('Disabled (group override)')
 
     // Same rule one level up: the run-level section is pinned but omits continue_on_error, so the
@@ -386,7 +386,7 @@ describe('TestExecutionScenarioPreview', () => {
       ?.querySelector('.scenario-setting-value, .scenario-script-detail-value')
       ?.textContent
     // The partial group lists only continue_on_error, so the run's snapshot setting applies.
-    expect(cardValue('.scenario-script-detail-card', 'Snapshot on error')).toBe('Enabled (scenario override)')
+    expect(cardValue('.scenario-script-detail-card', 'Snapshot on error')).toBe('Enabled (scenario default)')
     expect(cardValue('.scenario-setting-card', 'Iterations')).toBe('7')
     expect(cardValue('.scenario-setting-card', 'Log level')).toBe('extended')
     expect(cardValue('.scenario-setting-card', 'Continue on error')).toBe('Script-level value not exposed')
@@ -957,5 +957,55 @@ describe('TestExecutionScenarioPreview', () => {
     expect(entry?.getAttribute('data-provenance')).toBe('scenario_default')
     expect(entry?.textContent).toContain('5')
     expect(entry?.textContent).toContain('Scenario default')
+  })
+
+  it('reads a listed group clear the way the shared runtime view and execution do, in one provenance vocabulary', async () => {
+    // The group lists base_url and log.level with no value: execution applies the clear, so the
+    // scenario row's and the script's values below do not run.
+    const group = {
+      name: 'Orders', script_id: 'script-1', script_name: 'Orders Script', protocol: 'http', vusers: 2,
+      runtime_settings: { base_url: '', log: { level: '' }, override_fields: ['base_url', 'log.level'] },
+    }
+    await act(async () => {
+      root.render(
+        <TestExecutionScenarioPreview
+          test={{ id: 'test-clear', name: 'Clear', status: 'QUEUED', total_vusers: 2, duration: '5m', created_at: '2026-05-12T20:00:00Z', runtime_settings: { base_url: 'https://scenario.example.test', log: { level: 'debug' }, run_logic: { auto_transactions: 'actions' }, override_fields: ['base_url', 'log.level', 'run_logic.auto_transactions'] }, groups: [group] } as never}
+          startCapacityConflict={null}
+          startShakeoutConflict={null}
+          startFeedback=""
+          onDismissStartConflict={vi.fn()}
+          onConfirmStartAnyway={vi.fn()}
+          onContinueAfterShakeoutFailure={vi.fn()}
+          onCancelShakeoutRun={vi.fn()}
+          queuedScenarioPreview={{ points: [{ second: 0, group0: 2, total: 2 }], totalVUsers: 2, showVUsers: true, peakVUsers: 2, totalSeconds: 300, steadySeconds: 300, startDelaySeconds: 0, preBaselineSeconds: 0, postBaselineSeconds: 0 }}
+          queuedScenarioRows={[{
+            group,
+            detail: { id: 'script-1', name: 'Orders Script', protocol: 'http', script: { config: { base_url: 'https://script.example.test', log: { level: 'standard' } }, actions: [] } },
+            actionCount: 0, initCount: 0, teardownCount: 0, dataSourceCount: 0,
+          }] as never}
+          snapshotSource="immutable_manifest"
+          snapshotLoading={false}
+          snapshotError=""
+          expandedScenarioScript="Orders"
+          onExpandedScenarioScriptChange={vi.fn()}
+          onEditScript={vi.fn()}
+          groupColors={['#0a84ff']}
+        />,
+      )
+    })
+    const cardValue = (label: string) => Array.from(container.querySelectorAll('.scenario-script-detail-card'))
+      .find(card => card.querySelector('.scenario-script-detail-label')?.textContent === label)
+      ?.querySelector('.scenario-script-detail-value')?.textContent
+    expect(cardValue('Base URL')).toBe('Not set (engine default applies) (group override)')
+    expect(cardValue('Log level')).toBe('Not set (engine default applies) (group override)')
+    // The scenario row's layer reads as the shared view names it.
+    expect(cardValue('Auto transactions')).toBe('actions (scenario default)')
+    const view = container.querySelector('[data-testid="effective-runtime-settings"]')
+    for (const path of ['base_url', 'log.level']) {
+      const entry = view?.querySelector(`[data-runtime-path="${path}"]`)
+      expect(entry?.getAttribute('data-provenance')).toBe('group_override')
+      expect(entry?.textContent).toContain('Not set (engine default applies)')
+    }
+    expect(container.textContent).not.toContain('scenario override')
   })
 })
