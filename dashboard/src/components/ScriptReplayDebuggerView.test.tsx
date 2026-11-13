@@ -4,14 +4,21 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { BrowserReplayEvent, BrowserReplayReport, ScriptDebugSession } from '../types/replay'
-import type { ScriptDefinition } from '../types/scripts'
-import { DEFAULT_REPLAY_OPTIONS } from './scriptEditorState'
+import type { ScriptConfig, ScriptDefinition } from '../types/scripts'
+import { DEFAULT_REPLAY_OPTIONS, type ReplayOptionsState } from './scriptEditorState'
 import { buildOutlineModel } from './scriptOutlineModel'
 import { buildScriptPhaseActionRows } from './scriptEditorWorkbench'
 import { useScriptReplayDebuggerController } from './useScriptReplayDebuggerController'
 
-const { inspectorLoadState } = vi.hoisted(() => ({
+const { inspectorLoadState, engineDefaultsState } = vi.hoisted(() => ({
   inspectorLoadState: { failNext: false, importCount: 0 },
+  // What GET /api/v1/dsl/config-defaults answers (dsl.DefaultScriptConfig).
+  engineDefaultsState: { config: { base_url: '', http: { request_timeout_ms: 60000, connect_timeout_ms: 30000, tls_timeout_ms: 10000, max_conns_per_host: 100, max_redirects: 10, keep_alive: true, cookies_enabled: true, tls: { min_version: '1.2' } } } },
+}))
+
+vi.mock('./debugEngineDefaults', async importOriginal => ({
+  ...(await importOriginal<typeof import('./debugEngineDefaults')>()),
+  useEngineConfigDefaults: () => engineDefaultsState.config,
 }))
 
 vi.mock('./RequestResponseInspector', () => {
@@ -51,7 +58,13 @@ function Harness({
   onRevealInScript,
   activeWorkspace,
   onOpenRequestResponse,
+  script = SAMPLE_SCRIPT,
+  onReplayOptions,
+  onPromoteSessionOverrides,
 }: {
+  script?: ScriptDefinition
+  onReplayOptions?: (options: ReplayOptionsState) => void
+  onPromoteSessionOverrides?: (update: (config: ScriptConfig) => ScriptConfig) => void
   detailHost: HTMLDivElement
   report: BrowserReplayReport | null
   session: ScriptDebugSession | null
@@ -64,7 +77,8 @@ function Harness({
   onOpenRequestResponse?: () => void
 }) {
   const [expandedEvent, setExpandedEvent] = useState<number | null>(initialExpandedEvent)
-  const [replayOptions, setReplayOptions] = useState(DEFAULT_REPLAY_OPTIONS)
+  const [replayOptions, setReplayOptions] = useState<ReplayOptionsState>(DEFAULT_REPLAY_OPTIONS)
+  onReplayOptions?.(replayOptions)
   const [followExecution, setFollowExecution] = useState(true)
   const rows = buildScriptPhaseActionRows(SAMPLE_SCRIPT)
   const outline = buildOutlineModel(rows)
@@ -145,7 +159,7 @@ function Harness({
       onRuntimeInspectionMode={() => {}}
       replayVariableTimeline={[]}
       saving={false}
-      script={SAMPLE_SCRIPT}
+      script={script}
       scriptId="script-1"
       scriptLevelIssues={[]}
       selectedOutlineParameterName={null}
@@ -162,6 +176,8 @@ function Harness({
       toggleStepPathBreakpoint={async () => {}}
       validating={false}
       warnings={[]}
+      scriptHasUnsavedEdits={false}
+      onPromoteSessionOverrides={onPromoteSessionOverrides}
     />
   )
 }
@@ -613,5 +629,77 @@ describe('ScriptReplayDebuggerView', () => {
     expect(nextReq.textContent).toContain('{{var.auth_token}}')
     // Secret-sourced header is masked by InspectorHeaderTable without rendering a no-op reveal toggle.
     expect(nextReq.querySelector('button[aria-label="Show Authorization value"]')).toBeNull()
+  })
+  describe('session runtime overrides and run configuration', () => {
+    const buttonByText = (text: string | RegExp) => [...host.querySelectorAll('button')].find(button => typeof text === 'string' ? button.textContent === text : text.test(button.textContent || ''))
+    const runConfigRow = (label: string) => [...host.querySelectorAll('table[aria-label="Effective run configuration"] tr')].find(row => row.querySelector('th')?.textContent === label)?.querySelector('td')?.textContent
+
+    async function openRunConfiguration() {
+      const tab = buttonByText('Run Configuration')
+      expect(tab).toBeTruthy()
+      await act(async () => { tab!.click() })
+    }
+
+    async function openSessionOverrides() {
+      const options = buttonByText(/^Debug options/)
+      expect(options).toBeTruthy()
+      await act(async () => { options!.click() })
+      await vi.waitFor(() => expect(host.querySelector('[data-testid="debug-session-runtime-overrides"]')).toBeTruthy())
+    }
+
+    async function typeBaseURL(value: string) {
+      const input = host.querySelector<HTMLInputElement>('[data-testid="debug-session-runtime-overrides"] [data-override-path="base_url"] input')
+      expect(input).toBeTruthy()
+      await act(async () => {
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, value)
+        input!.dispatchEvent(new Event('input', { bubbles: true }))
+      })
+    }
+
+    it('shows the engine defaults for unset HTTP settings and marks pacing as skipped', async () => {
+      await act(async () => { root.render(<Harness detailHost={portalHost} report={null} session={null} />) })
+      await openRunConfiguration()
+      expect(runConfigRow('Timeouts')).toBe('Request 60000 ms · Connect 30000 ms · TLS 10000 ms')
+      expect(runConfigRow('Connections & redirects')).toBe('Keep-alive on · Max redirects 10 · Max conns/host 100')
+      expect(runConfigRow('Pacing')).toBe('Skipped in single-VUser debug replay')
+      expect(runConfigRow('Session runtime overrides')).toBe('None')
+    })
+
+    it('keeps session overrides out of the script and shows them in the run configuration', async () => {
+      let options: ReplayOptionsState = DEFAULT_REPLAY_OPTIONS
+      const script: ScriptDefinition = { ...SAMPLE_SCRIPT, config: { ...SAMPLE_SCRIPT.config } }
+      const before = structuredClone(script)
+      await act(async () => { root.render(<Harness detailHost={portalHost} report={null} session={null} script={script} onReplayOptions={next => { options = next }} />) })
+      await openSessionOverrides()
+      expect(host.querySelector('[data-testid="debug-session-overrides-source"]')?.textContent).toContain('The script itself is not sent')
+      await typeBaseURL('https://staging.example.test')
+      expect(options.runtimeOverrides?.override_fields).toEqual(['base_url'])
+      expect(script).toEqual(before)
+      expect(buttonByText(/^Debug options/)?.textContent).toBe('Debug options (1)')
+      expect(host.querySelector('.debug-session-summary')?.textContent).toContain('1 session runtime override')
+      await openRunConfiguration()
+      expect(runConfigRow('Session runtime overrides')).toBe('1 setting: base_url')
+      expect(runConfigRow('Base URL (relative targets)')).toContain('https://staging.example.test (session override)')
+      const reset = buttonByText('Reset session options')
+      expect(reset).toBeTruthy()
+      await act(async () => { reset!.click() })
+      expect(options.runtimeOverrides).toBeUndefined()
+    })
+
+    it('promotes session overrides through the Author edit path and clears them', async () => {
+      let options: ReplayOptionsState = DEFAULT_REPLAY_OPTIONS
+      const promote = vi.fn<(update: (config: ScriptConfig) => ScriptConfig) => void>()
+      await act(async () => { root.render(<Harness detailHost={portalHost} report={null} session={null} onReplayOptions={next => { options = next }} onPromoteSessionOverrides={promote} />) })
+      await openSessionOverrides()
+      await typeBaseURL('https://staging.example.test')
+      const button = buttonByText('Promote session overrides to script')
+      expect(button).toBeTruthy()
+      await act(async () => { button!.click() })
+      expect(promote).toHaveBeenCalledTimes(1)
+      const update = promote.mock.calls[0][0]
+      expect(update(SAMPLE_SCRIPT.config)).toEqual({ base_url: 'https://staging.example.test' })
+      expect(options.runtimeOverrides).toBeUndefined()
+      expect(host.querySelector('[data-testid="debug-session-runtime-overrides"] [role="status"]')?.textContent).toContain('Promoted 1 setting')
+    })
   })
 })

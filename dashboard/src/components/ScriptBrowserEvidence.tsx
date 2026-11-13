@@ -138,6 +138,7 @@ export default function ScriptBrowserEvidence({
   nativeReplayUnavailable,
   nativeReplayDisabled,
   nativeReplayTitle,
+  nativeReplayNote,
   onStartNativeReplay,
   onCompleteNativeReplay,
   onDismissNativeReplay,
@@ -155,6 +156,8 @@ export default function ScriptBrowserEvidence({
   nativeReplayUnavailable?: boolean
   nativeReplayDisabled?: boolean
   nativeReplayTitle?: string
+  /** Why the replay will not match the debugger's options (for example, session runtime overrides it does not apply). */
+  nativeReplayNote?: string
   onStartNativeReplay?: () => Promise<string | null>
   onCompleteNativeReplay?: (report: BrowserReplayReport | null, events: BrowserReplayEvent[]) => void
   onDismissNativeReplay?: () => void
@@ -180,6 +183,7 @@ export default function ScriptBrowserEvidence({
         <div>
           <h4>Native browser replay</h4>
           <p>Run one browser iteration and retain a native HAR and replay evidence archive.</p>
+          {nativeReplayNote && <p className="form-hint" data-testid="native-replay-note">{nativeReplayNote}</p>}
         </div>
         <button
           type="button"

@@ -274,6 +274,8 @@ import { useScriptReplayDebuggerController } from './useScriptReplayDebuggerCont
 import { omitUnavailableReplayReport, omitUnavailableReplaySession, replayVariablesForInspection, runtimeEvidenceUnavailable } from './runtimeVariableEvidence'
 import { EMPTY_DEBUG_RUNTIME, admitDebugRuntimeSession, admitDebugRuntimeDelta, beginDebugRuntime, invalidateDebugRuntime, currentRuntimeLookup, runtimeRequestIsCurrent, runtimeCommandIsAcknowledged, type DebugRuntimeAdmission, type DebugRuntimeCommand, type DebugRuntimeRequest, type RuntimeInspectionMode } from './debugRuntimeState'
 import { ScriptReplayDebuggerView } from './ScriptReplayDebuggerView'
+import { debugRunTarget } from './debugRunConfigurationModel'
+import { draftSessionRequestBody, nativeReplaySessionOverridesNote, storedSessionRequestBody, storedSessionSendsScriptBody } from './debugSessionOverrides'
 import {
   applyValidationRuntimeSettingsMetadata,
   findActionIndexByName,
@@ -1762,8 +1764,8 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
     if (sandboxSeedScopeRef.current === sandboxSeedScope) return
     sandboxSeedScopeRef.current = sandboxSeedScope
     // A saved draft is still the same editor session. Navigating to a different
-    // script or project must never reuse its explicit input data accidentally.
-    if (!editorOwnsSavedEcho) setReplayOptions(previous => previous.liveTableSeedsText ? { ...previous, liveTableSeedsText: '' } : previous)
+    // script or project must never reuse its explicit input data or session overrides.
+    if (!editorOwnsSavedEcho) setReplayOptions(previous => previous.liveTableSeedsText || previous.runtimeOverrides ? { ...previous, liveTableSeedsText: '', runtimeOverrides: undefined } : previous)
   }, [editorOwnsSavedEcho, sandboxSeedScope, setReplayOptions])
   const editorResourceScopeRef = useRef({ projectId, folderId, scriptId, initialScript })
   const editorResourceScopeVersionRef = useRef(0)
@@ -4184,7 +4186,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
       }
       currentRunRef.current = {
         id: replaySessionId, scriptName: currentScript.name, transactions: captureDebugTransactionDefinitions(currentScript), options: structuredClone({ ...replayOptions, startPaused, liveTableSeedsText: undefined }), breakpoints: structuredClone(payload.breakpoints), iterations: requestedIterations ?? 1,
-        target: currentScript.config.base_url || 'Action-specific targets', draft: scriptEditorDirty, dataSourceCount: currentScript.data_sources?.length || 0,
+        target: debugRunTarget(replayOptions.runtimeOverrides, currentScript.config), draft: scriptEditorDirty, dataSourceCount: currentScript.data_sources?.length || 0,
         failurePolicy: debugContinuesAfterFailure(replayOptions, currentScript) ? 'Continue on error' : 'Stop on error',
         inputs: (currentScript.parameters || []).map(p => ({ name: p.name, source: p.data_source || p.type, selection: p.selection || 'default', update: p.update, startRow: p.start_row, seed: p.seed })),
       }
@@ -4227,9 +4229,10 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
       // actually ran.
       if (jsonDirty) commitJsonDraft(currentScript)
       startRequestDispatched = true
+      // An unmodified stored script is sent as its id plus runtime_overrides, never its body.
       const res = scriptId
-        ? await api.startScriptDebugSession(scriptId, payload)
-        : await api.startDraftScriptDebugSession(payload)
+        ? await api.startScriptDebugSession(scriptId, storedSessionRequestBody(payload, { script: currentScript, unsavedEdits: scriptEditorDirty, baselineRevision: authoringBaseline?.projection.content_revision, capture: replayOptions.capture, networkTrace: replayOptions.networkTrace !== false, overrides: replayOptions.runtimeOverrides }))
+        : await api.startDraftScriptDebugSession(draftSessionRequestBody(payload, replayOptions.runtimeOverrides))
       if (!replayResourceIsCurrent()) return
       if (!res.session || !admitRuntimeSession(res.session, 'start', startRuntimeRequest)) {
         // Keep the generated public ID reachable while a bounded trusted GET
@@ -8734,6 +8737,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
           nativeReplayUnavailable={nativeReplayUnavailable}
           nativeReplayDisabled={replaying || nativeReplayBusy || replayGateButton.disabled || Boolean(jsonParseMessage)}
           nativeReplayTitle={replayGateButton.disabled ? replayGateButton.title : undefined}
+          nativeReplayNote={nativeReplaySessionOverridesNote(replayOptions.runtimeOverrides)}
           onStartNativeReplay={async () => {
             const replayResourceScope = editorResourceScopeRef.current
             if (replaying || nativeReplayRunningRef.current || replayStartInFlightRef.current === replayResourceScope) return null
@@ -10030,6 +10034,9 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
             toggleStepPathBreakpoint={toggleStepPathBreakpoint}
             validating={validating}
             warnings={warnings}
+            scriptHasUnsavedEdits={!scriptId || storedSessionSendsScriptBody({ unsavedEdits: scriptEditorDirty, baselineRevision: authoringBaseline?.projection.content_revision })}
+            onPromoteSessionOverrides={update => setScript(prev => ({ ...prev, config: update(prev.config) }))}
+            promoteSessionOverridesBlockedReason={jsonDirty || jsonParseMessage ? 'Apply or reset your Source changes first, then promote the session overrides.' : undefined}
           />
           )}
 

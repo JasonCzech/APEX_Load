@@ -54,6 +54,8 @@ import {
 import { copyTextToClipboard } from '../utils/clipboardUtils'
 import { formatBrowserRuntimeSummary } from './browserRuntimeSummary'
 import { runtimeBrowserSettings } from './runtimeSettingsModel'
+import { EffectiveRuntimeSettingsView } from './runtime-settings/EffectiveRuntimeSettingsView'
+import { effectiveRuntimeGroupSources } from './runtime-settings/effectiveRuntimeSources'
 import { formatTimeCompact } from '../utils/timeUtils'
 import {
   ARCHIVE_PAGE_SIZE_OPTIONS,
@@ -1205,6 +1207,10 @@ export default function TestExecutionArchive({
                         </dl>
                       </div>
                     ))}
+                  </div>
+                  {/* The archived run's own group and run-level rows (masked), resolved the way it ran. */}
+                  <div className="advanced-group-table-wrap archive-effective-runtime">
+                    <EffectiveRuntimeSettingsView groups={effectiveRuntimeGroupSources(archiveReport.manifest.provenance?.groups)} scenarioRow={archiveReport.manifest.provenance?.runtime_settings} />
                   </div>
                   <MonitorRuleResults results={archiveReport.manifest.monitor_rule_results} />
                   <PrometheusArchiveEvidence report={archiveReport} testId={test.id} history={loadImpactData} /><ElasticArchiveEvidence report={archiveReport} testId={test.id} history={loadImpactData} /><MonitorArchiveEvidence report={archiveReport} testId={test.id} history={loadImpactData} />
