@@ -249,6 +249,22 @@ describe('TestHub', () => {
     await flushTimeouts()
   }
 
+  // Add group opens the script picker; the group exists once a script is chosen.
+  const addGroupWithScript = async (scriptName = 'Checkout Flow') => {
+    await clickButton('Add group')
+    await addGroupWithScriptFromOpenPicker(scriptName)
+  }
+  const addGroupWithScriptFromOpenPicker = async (scriptName = 'Checkout Flow') => {
+    const useButton = Array.from(document.body.querySelectorAll('.scenario-existing-script-library button')).find(button => (
+      button.textContent?.includes('Use for Group') && button.closest('tr')?.textContent?.includes(scriptName)
+    ))
+    expect(useButton).toBeTruthy()
+    await act(async () => { useButton?.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+    await flushTimeouts()
+    // Choosing the script finishes the add: the picker closes.
+    expect(document.body.querySelector('.scenario-existing-script-library')).toBeNull()
+  }
+
   const clickModelFamily = async (label: string) => {
     await clickWizardStep('Model & shape')
     const card = Array.from(container.querySelectorAll('.scenario-source-card')).find(item => item.querySelector('span')?.textContent === label)
@@ -2433,7 +2449,7 @@ describe('TestHub', () => {
     await flushPromises()
     await clickWizardStep('Start')
     await chooseLibraryScriptForGroup()
-    await clickButton('Add group')
+    await addGroupWithScript()
     await clickWizardStep('Run settings')
 
     const groupRows = Array.from(container.querySelectorAll('.composition-track-label'))
@@ -2441,13 +2457,13 @@ describe('TestHub', () => {
     expect(groupRows.map(row => row.textContent)).toEqual([
       // A new group starts at the Fixed VUsers default, so grid and plan agree.
       'Checkout Flow5 VUsers · load',
-      'Group 25 VUsers · load',
+      'Checkout Flow (#2)5 VUsers · load',
     ])
     expect(groupRows[1].getAttribute('aria-pressed')).toBe('true')
 
     const loadPanel = container.querySelector('.scenario-load-group-panel')
     expect(loadPanel?.querySelectorAll('.scenario-script-group-card')).toHaveLength(1)
-    expect(loadPanel?.textContent).toContain('Group 2')
+    expect(loadPanel?.textContent).toContain('Checkout Flow (#2)')
     expect(loadPanel?.textContent).not.toContain('Group 1')
 
     await act(async () => {
@@ -2456,7 +2472,7 @@ describe('TestHub', () => {
 
     expect(container.querySelectorAll('.scenario-load-group-panel .scenario-script-group-card')).toHaveLength(1)
     expect(container.querySelector('.scenario-load-group-panel')?.textContent).toContain('Checkout Flow')
-    expect(container.querySelector('.scenario-load-group-panel')?.textContent).not.toContain('Group 2')
+    expect(container.querySelector('.scenario-load-group-panel')?.textContent).not.toContain('Checkout Flow (#2)')
     expect(Array.from(container.querySelectorAll('.composition-track-label'))[0].getAttribute('aria-pressed')).toBe('true')
 
     await clickScenarioSettingsSection('Ramp pattern')
@@ -2514,7 +2530,7 @@ describe('TestHub', () => {
     await flushPromises()
     await clickWizardStep('Start')
     await chooseLibraryScriptForGroup()
-    await clickButton('Add group')
+    await addGroupWithScript()
 
     const removeButtons = Array.from(container.querySelectorAll<HTMLButtonElement>('.scenario-script-group-card button'))
       .filter(button => button.textContent === 'Remove')
@@ -2524,7 +2540,7 @@ describe('TestHub', () => {
     })
 
     const remainingGroup = container.querySelector('.scenario-script-group-card')
-    expect((remainingGroup?.querySelector('input[placeholder="Group 1"]') as HTMLInputElement | null)?.value).toBe('Group 1')
+    expect((remainingGroup?.querySelector('input[placeholder="Group 1"]') as HTMLInputElement | null)?.value).toBe('Checkout Flow (#2)')
     await chooseLibraryScriptForGroup()
     expect(container.querySelector('.scenario-script-group-card strong')?.textContent).toBe('Checkout Flow')
   })
@@ -2908,10 +2924,8 @@ describe('TestHub', () => {
     await act(async () => root.render(<TestHub testStatuses={{}} onSelectTest={vi.fn()} initialView="builder" />))
     await flushPromises()
     await chooseLibraryScriptForGroup()
-    await clickButton('Add group')
-    await chooseLibraryScriptForGroup('Checkout Flow', 1)
-    await clickButton('Add group')
-    await chooseLibraryScriptForGroup('Checkout Flow', 2)
+    await addGroupWithScript()
+    await addGroupWithScript()
     await clickWizardStep('Run settings')
     await clickRunSettingsTab('Browser/script runtime')
     await act(async () => setSelectValue(container.querySelector<HTMLSelectElement>('[aria-label="Runtime scope"]')!, '1'))
@@ -4102,14 +4116,9 @@ describe('TestHub', () => {
     await flushPromises()
     await chooseLibraryScriptForGroup('Orders API')
     const roleOptions = () => Array.from(container.querySelectorAll('select')).filter(select => Array.from(select.options).some(option => option.value === 'load')).map(select => Array.from(select.options).map(option => option.textContent))
-    const vusers = () => Array.from(container.querySelectorAll('.scenario-group-vusers strong')).map(cell => cell.textContent)
     expect(roleOptions()).toEqual([['Load']])
-    expect(vusers()[0]).toBe('5')
-    await clickButton('Add group')
-    await chooseLibraryScriptForGroup('Mobile Checkout', 1)
+    await addGroupWithScript('Mobile Checkout')
     expect(roleOptions()).toEqual([['Load'], ['Load', 'Observer canary']])
-    // Each browser VUser runs a browser: an untouched group starts lower.
-    expect(vusers()).toEqual(['5', '2'])
     // Swapping that group to an HTTP script takes the default back up.
     const change = Array.from(container.querySelectorAll('.scenario-script-group-card button')).filter(button => button.getAttribute('aria-label')?.startsWith('Mobile Checkout: change the script'))[0]
     await act(async () => { change?.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
@@ -4117,7 +4126,6 @@ describe('TestHub', () => {
     const use = Array.from(document.body.querySelectorAll('.scenario-existing-script-library button')).find(button => button.textContent?.includes('Use for') && button.closest('tr')?.textContent?.includes('Orders API'))
     await act(async () => { use?.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
     await flushTimeouts()
-    expect(vusers()).toEqual(['5', '5'])
     expect(roleOptions()).toEqual([['Load'], ['Load']])
   })
 
@@ -4680,14 +4688,14 @@ describe('TestHub', () => {
     const choice = () => panel().querySelector('[aria-label="How to start this scenario"]')
     expect(name.compareDocumentPosition(choice()!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     const table = panel().querySelector('[role="table"][aria-label="Script groups"]')!
-    expect(Array.from(table.querySelectorAll('[role="columnheader"]')).map(header => header.textContent)).toEqual(['Group', 'Script', 'VUsers', 'Initialization', 'Role', 'Actions'])
+    expect(Array.from(table.querySelectorAll('[role="columnheader"]')).map(header => header.textContent)).toEqual(['Group', 'Script', 'Initialization', 'Role', 'Actions'])
     // A voice user can say what they see: the name starts with the visible label.
     expect(table.querySelector('.scenario-script-select-button')?.getAttribute('aria-label')).toBe('Add script to Group 1')
 
     await chooseLibraryScriptForGroup()
     expect(choice()).toBeNull()
     expect(panel().querySelector('.scenario-script-select-button')?.getAttribute('aria-label')).toBe('Checkout Flow: change the script for Checkout Flow')
-    expect(panel().querySelector('.scenario-group-vusers')?.textContent).toMatch(/\d+$/)
+    expect(panel().querySelector('.scenario-group-vusers')).toBeNull()
     // Copying stays within reach, behind a small button.
     expect(Array.from(panel().querySelectorAll('button')).some(button => button.textContent === 'Copy existing scenario' && button.classList.contains('btn-ghost'))).toBe(true)
   })
@@ -4815,35 +4823,6 @@ describe('TestHub', () => {
     expect(container.textContent).toContain('Current session can view scenarios but cannot create or edit them.')
     expect(onScenarioViewChange).toHaveBeenCalledWith('library')
     expect(container.querySelector('.scenario-wizard-step')).toBeNull()
-  })
-
-  it('shows a goal-driven group\'s VUsers as sized automatically', async () => {
-    const stored: StoredScenario = { id: 'goal-vusers', name: 'Goal VUsers', duration: '5m', workload_shape_id: 'open-arrival-rate', scenario_mode: 'goal_oriented', scripts: [{ order: 0, script_id: 'script-1', vusers: 1 }], created_at: '', updated_at: '', script_count: 1 }
-    apiMock.listScenarios.mockResolvedValue({ scenarios: [stored], count: 1 })
-    await act(async () => root.render(<TestHub testStatuses={{}} onSelectTest={vi.fn()} initialView="library" />))
-    await flushPromises()
-    await clickButton('Edit')
-    await flushPromises()
-    const vusers = container.querySelector('.scenario-group-vusers')
-    expect(vusers?.querySelector('strong')?.textContent).toBe('Auto')
-    expect(vusers?.getAttribute('title')).toBe('Sized from the goal on the Run settings step')
-  })
-
-  it('shows the VUsers of groups a traffic profile maps as sized automatically, and the rest as set', async () => {
-    const stored = {
-      id: 'profile-vusers', name: 'Profile VUsers', duration: '5m', workload_shape_id: 'production-replay', scenario_mode: 'goal_oriented',
-      scripts: [{ order: 0, name: 'Mapped', script_id: 'script-1', vusers: 1 }, { order: 1, name: 'Static', script_id: 'script-1', vusers: 3 }],
-      traffic_profile: { version: 1, runtime_target: 'tps', interpolation: 'step', source_duration: '5m', target_duration: '5m', mappings: [{ series_key: 'checkout', series_name: 'checkout', group_name: 'Mapped', points: [], peak_target: 5 }] },
-      created_at: '', updated_at: '', script_count: 2,
-    } as unknown as StoredScenario
-    apiMock.listScenarios.mockResolvedValue({ scenarios: [stored], count: 1 })
-    await act(async () => root.render(<TestHub testStatuses={{}} onSelectTest={vi.fn()} initialView="library" />))
-    await flushPromises()
-    await clickButton('Edit')
-    await flushPromises()
-    const cells = Array.from(container.querySelectorAll('.scenario-group-vusers'))
-    expect(cells.map(cell => cell.querySelector('strong')?.textContent)).toEqual(['Auto', '3'])
-    expect(cells[0].getAttribute('title')).toBe('Sized from the traffic profile on the Run settings step')
   })
 
   it('gives a traffic-profile scenario profile settings, not a throughput target to enter', async () => {
@@ -5014,17 +4993,15 @@ describe('TestHub', () => {
 
     expect(document.body.querySelector('.scenario-existing-script-library')).toBeNull()
 
-    await clickButton('Add group')
-    expect(groupList?.querySelectorAll('.scenario-script-group-card')).toHaveLength(1)
-
     await chooseLibraryScriptForGroup()
     expect(addGroupButton?.disabled).toBe(false)
 
+    // Add group opens the script picker straight away; no group exists until a script is chosen.
     await clickButton('Add group')
+    expect(document.body.querySelector('.scenario-existing-script-library')).not.toBeNull()
+    expect(groupList?.querySelectorAll('.scenario-script-group-card')).toHaveLength(1)
+    await addGroupWithScriptFromOpenPicker()
     expect(groupList?.querySelectorAll('.scenario-script-group-card')).toHaveLength(2)
-    expect(addGroupButton?.disabled).toBe(true)
-
-    await chooseLibraryScriptForGroup('Checkout Flow', 1)
     expect(addGroupButton?.disabled).toBe(false)
     const groupNameInputs = Array.from(groupList?.querySelectorAll<HTMLInputElement>('input[placeholder^="Group"]') || [])
     expect(groupNameInputs.map(input => input.value)).toEqual(['Checkout Flow', 'Checkout Flow (#2)'])

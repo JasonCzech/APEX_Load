@@ -25,13 +25,14 @@ import ScriptsPage from './ScriptsPage'
 import { assertDraftHasNoInlineCredentials, clearScenarioAuthoringDraft, parseScenarioDraftCheckpoint, readScenarioDraftCheckpoint, saveScenarioAuthoringDraft, type ScenarioAuthoringDraft } from './scenarioAuthoringDraft'
 import type { ScenarioDraftSummary } from '../types/scenarioDrafts'
 import { scenarioScriptReadiness } from './scenarioScriptReadiness'
-import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, memo, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { flushSync } from 'react-dom'
 import LoadPlanChart from './LoadPlanChart'
 import { ApplicationRepository, DashboardAuthEffectiveAccessResource, DraftCapacityEstimate, GeneratorAssignmentSettings, GoalConfig, LoadModelSupportEntry, LoadModelTemplate, LoadModelValidationReport, LoadStageDraft, RunArchiveReport, RuntimeSettingsOverride, ScenarioDataPoolBinding, ScenarioRuntimeSettingsDraft, ScenarioValidationContext, SharedDataPool, StoredScenario, StoredScript, SystemInventoryGenerator, TestSummary, TrafficProfileDeriveResponse } from '../types'
 import { describeValidationContextChanges, scenarioValidationContextChanges, type ValidationStaleCause } from './scriptAuthoringSession'
 import { type ScriptConfig } from '../types/scripts'
 import { useApi } from '../hooks/useApi'
+import { ApplicationContext } from '../hooks/applicationContext'
 import { useProject } from '../hooks/useProject'
 import { isEffectiveOperationAllowed } from '../utils/authAccessUtils'
 import { getErrorMessage } from '../utils/errorUtils'
@@ -680,6 +681,13 @@ function scriptLibrarySearchText(script: StoredScript) {
   ].filter(Boolean).join(' ').toLowerCase()
 }
 
+function scriptReleaseNames(script: StoredScript): string[] {
+  return uniqueValues([
+    ...(script.library_assignment?.releases || []).map(release => release.name),
+    ...(script.associated_releases || []).map(release => release.name),
+  ].filter(Boolean))
+}
+
 function scriptReleaseList(script: StoredScript) {
   const releases = script.associated_releases || []
   if (releases.length === 0) return 'No releases yet'
@@ -950,6 +958,11 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
   const [assignedReleaseFilter, setAssignedReleaseFilter] = useLibraryFilter<string>(filterScope, 'assignedRelease', 'all')
   const [scenarioReleaseFilter, setScenarioReleaseFilter] = useLibraryFilter<string>(filterScope, 'release', 'all')
   const [scriptLibraryQuery, setScriptLibraryQuery] = useState('')
+  const [scriptReleaseFilter, setScriptReleaseFilter] = useState('all')
+  const applicationContext = useContext(ApplicationContext)
+  const [scenarioReleaseId, setScenarioReleaseId] = useState('')
+  const [newScenarioReleaseName, setNewScenarioReleaseName] = useState('')
+  const [scenarioReleaseCreating, setScenarioReleaseCreating] = useState(false)
   const [scriptReadinessFilter, setScriptReadinessFilter] = useState('all')
   const [scriptProtocolFilter, setScriptProtocolFilter] = useState('all')
   const [pickedScriptIds, setPickedScriptIds] = useState<string[]>([])
@@ -1335,9 +1348,15 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
     if (!query) return scenarios
     return scenarios.filter(scenario => scenarioSearchText(scenario).includes(query))
   }, [scenarioCloneQuery, scenarios])
+  const scriptReleaseOptions = useMemo(() => {
+    const names = new Set<string>()
+    scripts.forEach(script => scriptReleaseNames(script).forEach(name => names.add(name)))
+    return Array.from(names).sort((a, b) => a.localeCompare(b))
+  }, [scripts])
   const visibleScriptLibrary = useMemo(() => {
     const query = scriptLibraryQuery.trim().toLowerCase()
     const filtered = scripts.filter(script => !script.archived_at && (!query || scriptLibrarySearchText(script).includes(query))
+      && (scriptReleaseFilter === 'all' || scriptReleaseNames(script).includes(scriptReleaseFilter))
       && (scriptProtocolFilter === 'all' || scriptProtocols(script).includes(scriptProtocolFilter))
       && (scriptReadinessFilter === 'all' || scenarioScriptReadiness(script).blocked === (scriptReadinessFilter === 'blocked')))
     return [...filtered].sort((left, right) => {
@@ -1349,7 +1368,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
       }
       return String(leftValue).localeCompare(String(rightValue), undefined, { numeric: true, sensitivity: 'base' }) * direction
     })
-  }, [scriptLibraryQuery, scriptLibrarySortDirection, scriptLibrarySortField, scripts, scriptReadinessFilter, scriptProtocolFilter])
+  }, [scriptLibraryQuery, scriptLibrarySortDirection, scriptLibrarySortField, scripts, scriptReadinessFilter, scriptProtocolFilter, scriptReleaseFilter])
   const showScenarioLibrary = !showForm && !showPlans
   const sourcePending = scenarioSourceMode === 'csv_driven'
     ? selectedShapeId !== CSV_DRIVEN_SHAPE_ID || !form.traffic_profile
@@ -1701,6 +1720,9 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
   // Reset every builder field to a pristine "new scenario" state. Does not touch
   // showForm/view or the persisted draft — callers decide those.
   const resetBuilderToBlank = useCallback(() => {
+    setScenarioReleaseId('')
+    setNewScenarioReleaseName('')
+    setScriptReleaseFilter('all')
     // Leaving the builder's work leaves its project draft in the library.
     projectDraftRef.current = null
     builderSessionRef.current += 1
@@ -1847,6 +1869,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
   // durable revision that scenario body describes.
   const openEditFrom = (scenario: StoredScenario, baseline: ScenarioAuthoringBaseline | null) => {
     resetBuilderToBlank()
+    setScenarioReleaseId(scenario.library_assignment?.releases[0]?.id || '')
     const fallbackScriptId = scripts[0]?.id || ''
     const nextForm = scenarioFormStateFromStoredScenario(scenario, fallbackScriptId)
     const storedClosed = nextForm.goal_config?.workload_shape_config?.closed_vuser
@@ -2599,20 +2622,6 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
     return report
   }
 
-  const addScenarioGroup = () => {
-    if (!canAddScenarioGroup) return
-    setForm(prev => {
-      if (prev.groups.some(group => !group.script_id.trim()) || duplicateScenarioGroupNameIndexes(prev.groups.map(group => group.name)).size > 0) return prev
-      const nextGroups = [...prev.groups, emptyScenarioGroup('', prev.groups.length)]
-      return { ...prev, groups: nextGroups }
-    })
-		if (isSteppedRamp) updateSteppedRamp()
-		if (isGuidedClosedVUser) updateClosedVUser()
-		if (isGoalDriven) updateGoalDriven(undefined, form.groups.length)
-    setStageGroupIndex(form.groups.length)
-    setLoadModelValidation(null)
-  }
-
   const addScenarioGroupFromScript = (script: StoredScript) => {
     if (!canAddScenarioGroup) return
     setForm(prev => {
@@ -2674,6 +2683,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
       return
     }
     addScenarioGroupFromScript(script)
+    setScriptSelectionTargetIndex(null)
   }
 
   const removeScenarioGroup = (index: number) => {
@@ -3149,6 +3159,16 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
         return null
       }
       const saved = persisted.saved
+      const chosenRelease = scenarioReleaseId && scenarioReleaseId !== '__new__' ? scenarioReleaseId : ''
+      const currentRelease = saved.library_assignment?.releases[0]?.id || ''
+      const releaseApplicationId = applicationContext?.activeApplication?.id
+      if (releaseApplicationId && chosenRelease !== currentRelease && (chosenRelease || saved.library_assignment)) {
+        try {
+          await api.replaceLibraryAssignment('scenarios', saved.id, chosenRelease ? releaseApplicationId : saved.library_assignment?.application?.id || null, chosenRelease ? [chosenRelease] : [], saved.library_assignment?.revision || 0)
+        } catch (cause) {
+          setError(`Saved the scenario, but could not set its release: ${getErrorMessage(cause, 'assignment failed')}`)
+        }
+      }
       setScenarioBaseline(persisted.baseline)
       originalShapeIdRef.current = selectedShapeId
       // A replay's notice is set where the builder continues from it.
@@ -4055,6 +4075,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
                 </label>
               </div>
               <div className="settings-grid scenario-picker-filters">
+                <label className="scenario-field"><span>Release</span><select className="settings-input" value={scriptReleaseFilter} onChange={event => setScriptReleaseFilter(event.target.value)}><option value="all">All releases</option>{scriptReleaseOptions.map(name => <option key={name} value={name}>{name}</option>)}</select></label>
                 <label className="scenario-field"><span>Readiness</span><select className="settings-input" value={scriptReadinessFilter} onChange={event => setScriptReadinessFilter(event.target.value)}><option value="all">All readiness states</option><option value="unblocked">No known authoring blockers</option><option value="blocked">Blocked</option></select></label>
                 <label className="scenario-field"><span>Protocol</span><select className="settings-input" value={scriptProtocolFilter} onChange={event => setScriptProtocolFilter(event.target.value)}><option value="all">All protocols</option>{[...new Set(scripts.flatMap(scriptProtocols))].sort().map(protocol => <option key={protocol}>{protocol}</option>)}</select></label>
                 <button type="button" className="btn btn-secondary scenario-picker-bulk-add" disabled={!pickedScriptIds.length} onClick={() => {
@@ -4232,8 +4253,21 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
   // A name another saved scenario already uses: saving is still allowed, but
   // the library would show two rows the author cannot tell apart.
   const nameTakenBy = form.name.trim() ? allScenarios.find(scenario => !scenario.archived_at && scenario.id !== editingId && scenarioNameKey(scenario.name) === scenarioNameKey(form.name)) : undefined
+  const addScenarioRelease = async () => {
+    const name = newScenarioReleaseName.trim()
+    if (!name || !applicationContext || scenarioReleaseCreating) return
+    setScenarioReleaseCreating(true)
+    try {
+      const created = await applicationContext.createAndSelectRelease(name)
+      if (created) { setScenarioReleaseId(created.id); setNewScenarioReleaseName('') }
+    } catch (cause) {
+      setError(getErrorMessage(cause, 'Unable to create release'))
+    } finally {
+      setScenarioReleaseCreating(false)
+    }
+  }
   const renderScenarioNameField = () => (
-    <div className="settings-grid scenario-core-grid">
+    <div className="settings-grid scenario-core-grid scenario-name-release-row">
       {/* The note sits outside the label so it describes the field rather than naming it. */}
       <div className="scenario-field">
         <label className="scenario-field">
@@ -4242,6 +4276,24 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
         </label>
         {nameTakenBy && <small id="scenario-name-taken" className="scenario-field-warning">Another scenario here is already named {nameTakenBy.name}{nameTakenBy.ref_key ? ` (${nameTakenBy.ref_key})` : ''}. Give this one a different name to tell them apart.</small>}
       </div>
+      {applicationContext?.activeApplication && (
+        <div className="scenario-field">
+          <label className="scenario-field">
+            <span>Release</span>
+            <select className="settings-input" value={scenarioReleaseId} onChange={event => setScenarioReleaseId(event.target.value)}>
+              <option value="">No release</option>
+              {applicationContext.releases.filter(release => !release.archived_at || release.id === scenarioReleaseId).map(release => <option key={release.id} value={release.id}>{release.name}</option>)}
+              <option value="__new__">+ Add new release…</option>
+            </select>
+          </label>
+          {scenarioReleaseId === '__new__' && (
+            <div className="scenario-release-add">
+              <input className="settings-input" aria-label="New release name" value={newScenarioReleaseName} onChange={event => setNewScenarioReleaseName(event.target.value)} placeholder="New release name" />
+              <button type="button" className="btn btn-sm btn-secondary" disabled={scenarioReleaseCreating || !newScenarioReleaseName.trim()} onClick={() => void addScenarioRelease()}>Add</button>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
 
@@ -4432,18 +4484,17 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
           <div className="scenario-assignment-header">
             <div>
               <h4>Scripts and groups</h4>
-              <p>One row per script group. Tune VUsers and ramp on the Run settings step.</p>
+              <p>One row per script group. VUsers and ramp are set on the Run settings step.</p>
             </div>
             {/* Copying stays within reach of a draft that has scripts (when there is
                 a saved scenario to copy); it asks before replacing them. */}
             {!showStartChoice && !editingId && scenarios.length > 0 && <button type="button" className="btn btn-sm btn-ghost" onClick={() => setScenarioStartPath('copy')}>Copy existing scenario</button>}
           </div>
-          {/* One row per group: group, script, VUsers, initialization scope and role. */}
+          {/* One row per group: group, script, initialization scope and role. */}
           <div className="scenario-script-group-list scenario-script-group-list-spacious scenario-group-table" role="table" aria-label="Script groups">
             <div className="scenario-group-row scenario-group-header" role="row">
               <span role="columnheader">Group</span>
               <span role="columnheader">Script</span>
-              <span role="columnheader">VUsers</span>
               <span role="columnheader">Initialization</span>
               <span role="columnheader">Role</span>
               <span role="columnheader"><span className="sr-only">Actions</span></span>
@@ -4453,9 +4504,6 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
               const isSelectionTarget = scriptSelectionTargetIndex === index
               const groupLabel = group.name || `Group ${index + 1}`
               const readiness = selectedScript ? scriptReadiness.get(selectedScript.id) : undefined
-              const vusersSizedBy = form.traffic_profile
-                ? trafficProfileMappingForGroup(form.traffic_profile, group.name) ? 'the traffic profile' : ''
-                : form.scenario_mode === 'goal_oriented' ? 'the goal' : ''
               return (
                 <div
                   key={`${group.script_id || 'script'}-${index}`}
@@ -4491,12 +4539,6 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
                       {selectedScript && <span className="protocol-badge">{selectedScript.protocol || 'http'}</span>}
                     </button>
                     {selectedScript && <div className="scenario-script-readiness"><p>{readiness?.summary}</p><button type="button" className="btn btn-sm btn-secondary" onClick={() => setReviewScriptId(selectedScript.id)}>Review script</button></div>}
-                  </div>
-                  {/* A group a traffic profile maps, or any group of a goal-oriented
-                      scenario without one, has its VUsers sized for it; its count is a seed. */}
-                  <div className="scenario-group-cell scenario-group-vusers" role="cell" title={vusersSizedBy ? `Sized from ${vusersSizedBy} on the Run settings step` : 'Set on the Run settings step'}>
-                    <span className="scenario-group-label" aria-hidden="true">VUsers</span>
-                    <strong>{vusersSizedBy ? 'Auto' : maxStageVUsers(group.stages) || Number(group.vusers) || 0}</strong>
                   </div>
                   <div className="scenario-group-cell" role="cell">
                     <label className="scenario-field">
@@ -4547,7 +4589,7 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
           <button
             type="button"
             className="scenario-add-group-card"
-            onClick={addScenarioGroup}
+            onClick={() => { if (canAddScenarioGroup) chooseScriptForGroup(formGroups.length) }}
             disabled={!canAddScenarioGroup}
             title={!canAddScenarioGroup ? addScenarioGroupBlockedReason : undefined}
           >
