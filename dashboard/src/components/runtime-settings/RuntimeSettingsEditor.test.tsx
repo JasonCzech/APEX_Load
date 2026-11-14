@@ -214,6 +214,38 @@ describe('RuntimeSettingsEditor', () => {
     expect(onSelectSection).toHaveBeenCalledWith('jms')
   })
 
+  it('highlights Transport & connections when the Kafka tab is open and routes that pill to Kafka', () => {
+    act(() => {
+      root.render(
+        <RuntimeSettingsEditor
+          mode="author"
+          script={{
+            name: 'Orders producer',
+            version: '1.0.0',
+            protocol: 'kafka',
+            config: { kafka: { brokers: ['broker-1:9092'], topic: 'orders' } } as ScriptConfig,
+            actions: [],
+          }}
+        />,
+      )
+    })
+    expect(pill('transport_connections')).toBeTruthy()
+    act(() => {
+      container.querySelector<HTMLButtonElement>('#runtime-settings-tab-kafka')?.click()
+    })
+    expect(container.querySelector('#runtime-settings-tab-kafka')?.getAttribute('aria-selected')).toBe('true')
+    expect(pill('transport_connections')?.getAttribute('aria-pressed')).toBe('true')
+    expect(pill('target_identity')?.getAttribute('aria-pressed')).toBe('false')
+
+    act(() => {
+      pill('think_time')?.click()
+    })
+    act(() => {
+      pill('transport_connections')?.click()
+    })
+    expect(container.querySelector('#runtime-settings-tab-kafka')?.getAttribute('aria-selected')).toBe('true')
+  })
+
   it('filters canonical group pills by search over labels, descriptions and field paths', () => {
     act(() => {
       root.render(
