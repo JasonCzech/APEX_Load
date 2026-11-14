@@ -1,8 +1,11 @@
 import { type RuntimeSettingsOverride, type ScenarioRuntimeSettingsDraft, type StoredScript } from '../types'
 import { type ScriptConfig } from '../types/scripts'
-import { type PartialRuntimeSettingsOverride } from '../types/runtimeSettings'
+import { type PartialRuntimeSettingsOverride, type RuntimeProtocolSectionKey } from '../types/runtimeSettings'
 import {
+  RUNTIME_PROTOCOL_OVERRIDE_SECTIONS,
+  effectiveRuntimeValue,
   isPartialRuntimeDraft,
+  isRuntimeProtocolSectionApplicable,
   isRuntimeDraftEmpty,
   isRuntimeFieldApplicable,
   overrideFieldValue,
@@ -11,10 +14,16 @@ import {
   runtimeOverrideFieldPaths,
   runtimeOverridePathWireSegments,
   runtimeOverrideFromScriptConfig,
+  runtimeOverrideMapParent,
   runtimeOverrideRowFromDraft,
+  runtimeRowMapKeys,
   setOverrideField,
   upgradeRuntimeDraftToPartial,
 } from './runtimeSettingsModel'
+import {
+  protocolCredentialFieldPaths,
+  protocolUncopyableCredentialPaths,
+} from './runtime-settings/protocolCredentialLeaves'
 
 /**
  * Apply one UI edit to a replacement section. The first edit materializes the
@@ -53,6 +62,10 @@ export function copyRuntimeSettingsForProtocol(
   if (!isRuntimeFieldApplicable('websocket', protocol)) copy.websocket = undefined
   if (!isRuntimeFieldApplicable('web_runtime', protocol)) copy.web_runtime = undefined
   if (!isRuntimeFieldApplicable('java_vuser', protocol)) copy.java_vuser = undefined
+  // runtimeProtocolFieldApplies: a native protocol section reaches only its own protocol.
+  for (const section of RUNTIME_PROTOCOL_OVERRIDE_SECTIONS) {
+    if (!isRuntimeProtocolSectionApplicable(section, protocol)) copy[section] = undefined
+  }
   if ((protocol || '').trim().toLowerCase() !== 'soap') {
     copy.soap = undefined
   } else if (copy.soap?.ws_security?.username_token) {
@@ -111,6 +124,56 @@ function keepTargetSOAPCredentials(
   // remaining leaves, as overrideFieldPathsExcluding does.
   next = upgradeRuntimeDraftToPartial(next)
   for (const path of inherited) next = resetOverrideField(next, path)
+  return next
+}
+
+/**
+ * keepTargetProtocolCredentials mirrors the backend helper of the same name
+ * (runtime_protocol_sections.go): a copied native protocol section never
+ * carries the source's credential leaves. A credential path the target's own
+ * prior row set is kept; every other one is left out of the row (which then
+ * lists the section's remaining paths), so the target keeps inheriting it
+ * from its script or the scenario root.
+ */
+function keepTargetProtocolCredentials(
+  row: ScenarioRuntimeSettingsDraft,
+  prior: ScenarioRuntimeSettingsDraft | undefined,
+  section: RuntimeProtocolSectionKey,
+  inheritedTargets: { script?: ScriptConfig; scenario?: ScenarioRuntimeSettingsDraft },
+): ScenarioRuntimeSettingsDraft {
+  if (row[section] === undefined) return row
+  const paths = protocolCredentialFieldPaths(row, section)
+  if (paths.length === 0) return row
+  let next = upgradeRuntimeDraftToPartial(row)
+  const inherited: string[] = []
+  for (const path of paths) {
+    const own = overrideFieldValue(prior, path)
+    if (own !== undefined && own !== '') {
+      next = setOverrideField(next, path, own)
+    } else {
+      next = resetOverrideField(next, path)
+      inherited.push(path)
+    }
+  }
+  // The copy still replaces every other value of a map it now lists key by key
+  // (overrideFieldPathsExcludingValue): each key the target's prior row, its
+  // script or the scenario root holds there, and the copy does not, is listed
+  // with no value, so it is cleared exactly as the whole-section copy clears it.
+  const maps = new Set(inherited.map(runtimeOverrideMapParent).filter((map): map is string => Boolean(map)))
+  for (const map of maps) {
+    const copied = new Set(runtimeRowMapKeys(next, map))
+    const scriptMap = effectiveRuntimeValue(map, { script: inheritedTargets.script }).value
+    const targetKeys = [
+      ...runtimeRowMapKeys(prior, map),
+      ...(scriptMap !== null && typeof scriptMap === 'object' && !Array.isArray(scriptMap) ? Object.keys(scriptMap) : []),
+      ...runtimeRowMapKeys(inheritedTargets.scenario, map),
+    ]
+    for (const key of new Set(targetKeys)) {
+      const keyPath = `${map}.${key}`
+      if (copied.has(key) || inherited.includes(keyPath)) continue
+      next = setOverrideField(next, keyPath, undefined)
+    }
+  }
   return next
 }
 
@@ -188,6 +251,10 @@ function mergeJavaVuserLayer(base?: MaterializedJavaVuser, override?: Materializ
     if (override.jvm_sharing === 'dedicated') delete merged.vusers_per_jvm
   }
   if (override.vusers_per_jvm) merged.vusers_per_jvm = override.vusers_per_jvm
+  if (override.startup_timeout_ms) merged.startup_timeout_ms = override.startup_timeout_ms
+  if (override.action_timeout_ms) merged.action_timeout_ms = override.action_timeout_ms
+  if (override.param_left_brace) merged.param_left_brace = override.param_left_brace
+  if (override.param_right_brace) merged.param_right_brace = override.param_right_brace
   return merged
 }
 
@@ -207,6 +274,10 @@ function setNested(target: Record<string, unknown>, segments: string[], value: u
   let current = target
   for (const segment of segments.slice(0, -1)) {
     const child = current[segment]
+    // applyConfigOverrideField: a listed leaf with no value under a block no
+    // layer has (no Kafka OAuth, no JMS TLS) copies that absence instead of
+    // allocating an empty block that validation would read as configured.
+    if (value === undefined && (child === undefined || child === null)) return
     if (child === null || typeof child !== 'object' || Array.isArray(child)) current[segment] = {}
     current = current[segment] as Record<string, unknown>
   }
@@ -336,6 +407,11 @@ function applyEffectiveRuntimeLayer(base: RuntimeSettingsOverride, layer: Runtim
   if (layer.browser_emulation) next.browser_emulation = structuredClone(layer.browser_emulation)
   if (layer.web_runtime) next.web_runtime = mergeMaterializedWeb(next.web_runtime, layer.web_runtime)
   if (layer.java_vuser) next.java_vuser = mergeJavaVuserLayer(next.java_vuser, layer.java_vuser)
+  // applyRuntimeProtocolSections: each native protocol section a v1 layer carries replaces the lower one whole.
+  for (const section of RUNTIME_PROTOCOL_OVERRIDE_SECTIONS) {
+    const value = (layer as PartialRuntimeSettingsOverride)[section]
+    if (value !== undefined && value !== null) Object.assign(next, { [section]: structuredClone(value) })
+  }
 
   if (layer.browser_config) {
     next.browser_config = structuredClone(layer.browser_config)
@@ -411,6 +487,10 @@ export interface RuntimeApplyReport {
   /** Targets left unchanged: the source runs with SOAP WS-Security credentials,
    * the target has none of its own, and credentials are never copied. */
   missingSOAPCredentialTargets: number[]
+  /** Targets left unchanged because a copied protocol section keeps a
+   * credential inside a list (a Kafka broker with userinfo): leaving it out
+   * would drop the whole list, and credentials are never copied. */
+  uncopyableCredentialTargets?: Array<{ target: number; paths: string[] }>
 }
 
 function hasSOAPCredentials(settings?: ScenarioRuntimeSettingsDraft): boolean {
@@ -434,7 +514,7 @@ export function applyEffectiveRuntimeSettingsToGroupsWithReport<T extends Runtim
   sourceIndex: number,
   targetIndexes: number[],
 ): { groups: RuntimeApplyResult<T>[]; report: RuntimeApplyReport } {
-  const report: RuntimeApplyReport = { missingSOAPCredentialTargets: [] }
+  const report: RuntimeApplyReport = { missingSOAPCredentialTargets: [], uncopyableCredentialTargets: [] }
   const sourceGroup = groups[sourceIndex]
   if (!sourceGroup) return { groups, report }
   const sourceScriptConfig = findScriptById(scripts, sourceGroup.script_id)?.script?.config
@@ -462,7 +542,7 @@ export function applyEffectiveRuntimeSettingsToGroupsWithReport<T extends Runtim
           redaction_rules: targetRedactionRules === undefined ? undefined : structuredClone(targetRedactionRules),
         }
       : undefined
-    let runtimeSettings = copied
+    let runtimeSettings: ScenarioRuntimeSettingsDraft | undefined = copied
       ? keepTargetSOAPCredentials(
           { ...copied, env: protectedTargetFields?.env, redaction_rules: protectedTargetFields?.redaction_rules },
           group.runtimeSettings,
@@ -474,6 +554,19 @@ export function applyEffectiveRuntimeSettingsToGroupsWithReport<T extends Runtim
     const targetEnvPaths = isPartialRuntimeDraft(group.runtimeSettings)
       ? runtimeOverrideFieldPaths(group.runtimeSettings).filter(path => path === 'env' || path.startsWith('env.') || path === 'redaction_rules')
       : []
+    if (runtimeSettings) {
+      const blocked = RUNTIME_PROTOCOL_OVERRIDE_SECTIONS.flatMap(section => protocolUncopyableCredentialPaths(runtimeSettings, section))
+      if (blocked.length > 0) {
+        report.uncopyableCredentialTargets?.push({ target: groupIndex, paths: blocked })
+        return group
+      }
+      for (const section of RUNTIME_PROTOCOL_OVERRIDE_SECTIONS) {
+        runtimeSettings = keepTargetProtocolCredentials(runtimeSettings, group.runtimeSettings, section, {
+          script: targetScript?.script?.config,
+          scenario: scenarioDraft,
+        })
+      }
+    }
     if (targetEnvPaths.length > 0) {
       let partial = upgradeRuntimeDraftToPartial(runtimeSettings ? { ...runtimeSettings, env: undefined, redaction_rules: undefined } : undefined)
       partial = resetOverrideField(resetOverrideField(partial, 'env'), 'redaction_rules')

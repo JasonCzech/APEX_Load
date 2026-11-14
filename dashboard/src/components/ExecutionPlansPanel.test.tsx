@@ -1228,6 +1228,22 @@ describe('ExecutionPlansPanel', () => {
       expect(dialog.querySelector('[role="alert"]')?.textContent).toContain('http.proxy.password')
     })
 
+    it('offers the native protocol tabs and refuses a typed Kafka SASL password', async () => {
+      await openEditor([{ order: 0, scenario_id: 's1', enabled: true }])
+      const dialog = await openEntryRuntime(1)
+      const tabs = Array.from(dialog.querySelectorAll<HTMLButtonElement>('[role="tab"]')).map(candidate => (candidate.textContent || '').trim())
+      expect(tabs).toEqual(expect.arrayContaining(['Kafka', 'JMS', 'Event Hubs', 'gRPC', 'Database', 'Network', 'Appium', 'Java over HTTP']))
+      const kafka = Array.from(dialog.querySelectorAll<HTMLButtonElement>('[role="tab"]')).find(candidate => (candidate.textContent || '').trim() === 'Kafka')
+      await act(async () => kafka!.click())
+      await flush()
+      await act(async () => setValue(inputLabelled(dialog, 'SASL password'), 'hunter2'))
+      await clickIn(dialog, 'Apply to entry')
+      expect(dialog.querySelector('[role="alert"]')?.textContent).toContain('kafka.sasl_password')
+      await clickIn(dialog, 'Cancel')
+      const saved = await savePlan()
+      expect(JSON.stringify(saved)).not.toContain('hunter2')
+    })
+
     it('offers the WebSocket section, since an entry row applies to every group of its scenario', async () => {
       await openEditor([{ order: 0, scenario_id: 's1', enabled: true }])
       const dialog = await openEntryRuntime(1)

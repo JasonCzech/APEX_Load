@@ -16,6 +16,8 @@ import {
   applyRuntimeOverrideEdit,
   formatEffectiveRuntimeField,
   isFieldOverridden,
+  isRuntimeProtocolSectionApplicable,
+  RUNTIME_PROTOCOL_OVERRIDE_SECTIONS,
   isRuntimeDraftEmpty,
   isRuntimeFieldApplicable,
   overlayRuntimeOverrideSection,
@@ -63,6 +65,9 @@ import {
 } from './httpRequestDefaultsModel'
 import AuthHostsField from './AuthHostsField'
 import SoapOverrideTab from './runtimeTabs/SoapOverrideTab'
+import { renderProtocolOverrideFields } from './runtimeTabs/ProtocolOverrideTab'
+import { PROTOCOL_OVERRIDE_TAB_LABELS } from './runtime-settings/protocolOverrideFieldSpecs'
+import { type PartialRuntimeSettingsOverride, type RuntimeProtocolSectionKey } from '../types/runtimeSettings'
 import { canonicalPacingType, canonicalWorkloadModel } from './runtimeWorkspaceModel'
 import { scriptHasLLMActions, type HTTPTransportTabId, type RuntimeSettingsSectionId } from './scriptEditorRuntimeSettingsModel'
 import { CanonicalRuntimeGroupRail } from './runtime-settings/CanonicalRuntimeGroupRail'
@@ -143,7 +148,7 @@ export interface RuntimeSettingsGroupEditorProps {
   /** Section applicability protocols. A scenario- or test-wide mount passes every
    *  member protocol so a section applicable to at least one group stays editable;
    *  unset falls back to the focus group's own protocol. */
-  applicableProtocols?: string[]
+  applicableProtocols?: readonly string[]
   /** Scenario- or test-wide mounts: whether any member group runs LLM actions,
    *  which gates the LLM quota editor. Unset offers the editor. */
   scopeUsesLLMActions?: boolean
@@ -205,6 +210,8 @@ type RuntimeTabId =
   | 'web_http'
   | 'soap'
   | 'java_env'
+  | 'websocket'
+  | RuntimeProtocolSectionKey
 
 /** Nested sub-tabs within the HTTP Transport tab (mirrors the Script Editor). */
 type HttpSubTabId = 'request_defaults' | 'session_cache' | 'timeouts' | 'connection' | 'tls' | 'proxy' | 'authentication' | 'browser_emulation'
@@ -313,6 +320,16 @@ const TAB_SECTION: Record<RuntimeTabId, RuntimeSettingsSectionId> = {
   web_http: 'web_runtime',
   soap: 'soap',
   java_env: 'java_vuser',
+  websocket: 'websocket',
+  // Kafka has no Author runtime section of its own; its fields sit with the target.
+  kafka: 'script_config',
+  jms: 'jms',
+  eventhubs: 'eventhubs',
+  grpc: 'grpc',
+  database: 'database',
+  network: 'network',
+  appium: 'appium',
+  java_http: 'java_http',
 }
 
 const SECTION_TAB: Partial<Record<RuntimeSettingsSectionId, RuntimeTabId>> = {
@@ -328,6 +345,14 @@ const SECTION_TAB: Partial<Record<RuntimeSettingsSectionId, RuntimeTabId>> = {
   web_runtime: 'web_http',
   soap: 'soap',
   java_vuser: 'java_env',
+  websocket: 'websocket',
+  jms: 'jms',
+  eventhubs: 'eventhubs',
+  grpc: 'grpc',
+  database: 'database',
+  network: 'network',
+  appium: 'appium',
+  java_http: 'java_http',
 }
 
 /** The tab (and HTTP sub-tab) whose controls render an override path, for its panel list. */
@@ -342,7 +367,24 @@ const TAB_PATH_ROOTS: Partial<Record<RuntimeTabId, readonly string[]>> = {
   web_http: ['web_runtime'],
   soap: ['soap'],
   java_env: ['java_vuser'],
+  websocket: ['websocket'],
+  kafka: ['kafka'],
+  jms: ['jms'],
+  eventhubs: ['eventhubs'],
+  grpc: ['grpc'],
+  database: ['database'],
+  network: ['network'],
+  appium: ['appium'],
+  java_http: ['java_http'],
 }
+
+/** The Java Env fields its own editor lacks, rendered from the catalog specs below it. */
+const JAVA_ENV_SPEC_PATHS = [
+  'java_vuser.startup_timeout_ms',
+  'java_vuser.action_timeout_ms',
+  'java_vuser.param_left_brace',
+  'java_vuser.param_right_brace',
+] as const
 
 const QUOTA_NUMBER_FIELDS: ReadonlyArray<[keyof Omit<PacingQuota, 'adaptive_aimd'>, string, number | undefined]> = [
   ['tpm', 'Tokens per minute (TPM)', undefined],
@@ -523,6 +565,23 @@ export default function RuntimeSettingsGroupEditor({
 
   const inheritedSoap: SOAPSettings = structuredClone((inheritedOverride as { soap?: SOAPSettings } | undefined)?.soap ?? {})
   const effectiveSoap: SOAPSettings = overlayRuntimeOverrideSection(inheritedSoap, overrides[index], 'soap') ?? {}
+  // The protocol, websocket and Java Env spec tabs read every value through the
+  // shared resolver (effectiveRuntimeValue) that execution uses: group row,
+  // scenario row, script, engine default.
+  const resolverLayers = {
+    scenario: scenarioDefault as PartialRuntimeSettingsOverride | undefined,
+    script: focusGroup.scriptConfig,
+    engine: engineDefaults,
+  }
+  // A map edited key by key at any layer resolves with each layer's listed keys
+  // laid over the layers below it (layerPathValue), so inherited per-key edits show.
+  const inheritedAt = (path: string) => effectiveRuntimeValue(path, resolverLayers).value
+  const effectiveAt = (path: string) => effectiveRuntimeValue(path, { ...resolverLayers, group: overrides[index] }).value
+  const scopeProtocols = applicableProtocols && applicableProtocols.length > 0 ? applicableProtocols : [focusGroup.protocol]
+  // Shown per group protocol; a scenario- or test-wide mount shows a section
+  // when any member group runs it.
+  const protocolSectionApplicable = (section: RuntimeProtocolSectionKey) =>
+    scopeProtocols.some(protocol => isRuntimeProtocolSectionApplicable(section, protocol))
   const inheritedPacingExt = inheritedPacing as ExtendedPacing
   const effectivePacing: ExtendedPacing = overlayRuntimeOverrideSection(inheritedPacingExt, overrides[index], 'pacing') ?? {}
   const effectiveRunLogic: Partial<RunLogicSettings> = overlayRuntimeOverrideSection(inheritedRunLogic, overrides[index], 'run_logic') ?? {}
@@ -594,6 +653,8 @@ export default function RuntimeSettingsGroupEditor({
   // Paths a tab renders with its own control; the tab's panel list shows the
   // rest of its overridden fields, so every override has a reset action.
   const inlinePaths = new Set<string>()
+  // Controls that also render every path under theirs (key-by-key map editors).
+  const inlinePrefixes = new Set<string>()
   /** `alsoPaths` are further override paths the control writes: the field reads
    *  as overridden (with this layer's provenance) when any of them is listed. */
   const field = (path: string, label: string, control: ReactNode, wide?: boolean, onReset?: () => void, alsoPaths: string[] = []) => {
@@ -877,14 +938,19 @@ export default function RuntimeSettingsGroupEditor({
   }
 
   const applyNow = () => {
-    let notice: string | null = null
+    const notices: string[] = []
+    const nameOf = (target: number) => (groups[target] ? groupLabel(groups[target], target) : `Group ${target + 1}`)
     if (applyTargets.length > 0) {
-      const missing = onApplyToGroups(index, applyTargets)?.missingSOAPCredentialTargets ?? []
+      const report = onApplyToGroups(index, applyTargets)
+      const missing = report?.missingSOAPCredentialTargets ?? []
       if (missing.length > 0) {
-        const names = missing.map(target => (groups[target] ? groupLabel(groups[target], target) : `Group ${target + 1}`)).join(', ')
-        notice = `Not applied to ${names}: no SOAP WS-Security credentials of its own. Credentials are not copied between groups, so enter them for that group first.`
+        notices.push(`Not applied to ${missing.map(nameOf).join(', ')}: no SOAP WS-Security credentials of its own. Credentials are not copied between groups, so enter them for that group first.`)
+      }
+      for (const blocked of report?.uncopyableCredentialTargets ?? []) {
+        notices.push(`Not applied to ${nameOf(blocked.target)}: ${blocked.paths.join(', ')} carry credentials, which are never copied between groups. Use the section's secret fields in ${groupLabel(focusGroup, index)}, then apply again.`)
       }
     }
+    const notice = notices.length > 0 ? notices.join(' ') : null
     setApplyNotice(notice)
     setApplyOpen(false)
     setApplyTargets([])
@@ -942,6 +1008,8 @@ export default function RuntimeSettingsGroupEditor({
     { id: 'web_http', label: 'Web/HTTP', show: webRuntimeApplicable },
     { id: 'soap', label: 'SOAP', show: soapApplicable },
     { id: 'java_env', label: 'Java Env', show: javaVuserApplicable },
+    { id: 'websocket', label: PROTOCOL_OVERRIDE_TAB_LABELS.websocket, show: fieldApplicable('websocket') },
+    ...RUNTIME_PROTOCOL_OVERRIDE_SECTIONS.map(section => ({ id: section, label: PROTOCOL_OVERRIDE_TAB_LABELS[section], show: protocolSectionApplicable(section) })),
   ]
   const visibleTabs = tabs.filter(tab => tab.show)
   // Clamp the active tab to a visible one so switching focus to a group that hides the
@@ -998,10 +1066,29 @@ export default function RuntimeSettingsGroupEditor({
         const location = pathUnder(path, 'browser') ? 'browser_emulation' : httpSubTabForTransport(getRuntimeFieldLocation(path, 'http')?.httpTransportTab)
         return location === httpSubTab
       })
-      .filter(path => !inlinePaths.has(path))
+      .filter(path => !inlinePaths.has(path) && ![...inlinePrefixes].some(prefix => pathUnder(path, prefix)))
       .map(path => ({ path, value: overrideValue(path) }))
     return <RuntimeOverridePanelList entries={entries} provenance={groupProvenance} badgeLabel={groupBadgeLabel} onReset={path => resetPaths(path)} />
   }
+
+  const protocolField = (path: string, label: string, control: ReactNode, wide?: boolean, onReset?: () => void, ownsChildren?: boolean) => {
+    if (ownsChildren) inlinePrefixes.add(path)
+    return field(path, label, control, wide, onReset)
+  }
+  const protocolTab = (section: RuntimeProtocolSectionKey | 'websocket') => (
+    <>
+      {renderProtocolOverrideFields({
+        section,
+        effectiveAt,
+        inheritedAt,
+        overridden,
+        overrideValue,
+        edit: update => commit(update(overrides[index])),
+        renderField: protocolField,
+      })}
+      {panelOverrides(section)}
+    </>
+  )
 
   const patchProxy = (next: Partial<NonNullable<NonNullable<ScenarioRuntimeSettingsDraft['http']>['proxy']>>) => {
     patchHttp({ proxy: next })
@@ -2423,12 +2510,28 @@ export default function RuntimeSettingsGroupEditor({
               listOverrideInherits
               dedicatedClassLoaderNote="Each Java VUser keeps its own Actions instance and child loader for its full lifecycle when enabled, and its own JVM unless the group uses shared JVMs."
             />
+            {renderProtocolOverrideFields({
+              section: 'java_vuser',
+              paths: JAVA_ENV_SPEC_PATHS,
+              effectiveAt,
+              inheritedAt,
+              overridden,
+              overrideValue,
+              edit: update => commit(update(overrides[index])),
+              renderField: protocolField,
+            })}
             {panelOverrides('java_env')}
           </>
         )}
+
+        {activeTab === 'websocket' && protocolTab('websocket')}
+        {RUNTIME_PROTOCOL_OVERRIDE_SECTIONS.map(section => (
+          activeTab === section ? <div key={section}>{protocolTab(section)}</div> : null
+        ))}
       </div>
 
-      {fieldApplicable('websocket') && <label className="runtime-apply-row"><span>WebSocket callback interval (ms)</span><input className="settings-input" type="number" min={0} max={60000} value={draft.websocket?.callback_interval_ms ?? ''} placeholder={String(inheritedOverride?.websocket?.callback_interval_ms ?? 500)} onChange={event => editSection('websocket', { callback_interval_ms: event.target.value === '' ? undefined : Number(event.target.value) })} /></label>}
+      {/* The callback interval keeps its compact row beside the tabs (the run settings dialog edits it there); the WebSocket tab holds the whole section. */}
+      {fieldApplicable('websocket') && activeTab !== 'websocket' && <label className="runtime-apply-row"><span>WebSocket callback interval (ms)</span><input className="settings-input" type="number" min={0} max={60000} value={draft.websocket?.callback_interval_ms ?? ''} placeholder={String(inheritedOverride?.websocket?.callback_interval_ms ?? 500)} onChange={event => editSection('websocket', { callback_interval_ms: event.target.value === '' ? undefined : Number(event.target.value) })} /></label>}
       {applyPanelAvailable && (
       <div className="runtime-apply-row">
         <button type="button" className="btn btn-sm btn-secondary" onClick={() => setApplyOpen(open => !open)} disabled={groups.length < 2}>
