@@ -61,8 +61,9 @@ type soapSecurityConfig struct {
 	timestampTTL   time.Duration
 	// passwordFromSecretStore marks a password authored as a {{secret.NAME}}
 	// reference and resolved from the project secret store. Its Password
-	// element (text or digest) is withheld from snapshots and evidence, in
-	// unredacted debug too; a script-sourced password is never withheld here.
+	// element (text or digest, plus a digest's Nonce) is withheld from
+	// snapshots and evidence, in unredacted debug too; a script-sourced
+	// password is never withheld here.
 	passwordFromSecretStore bool
 }
 
@@ -175,14 +176,16 @@ func (s *SOAP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 	prepared.DiscardResponseBodyOnSuccess = false
 	preparedBody, namespaceConflict := shapeSOAPBody(action, s.version, s.namespaces)
 	// Build the WS-Security header once per request so the evidence/redacted
-	// body carries the same Nonce/Created/Expires the server actually received.
+	// body carries the same Created/Expires (and Nonce, unless it belongs to a
+	// secret-store digest) the server actually received.
 	// The decision is by origin, never by shape: a script-sourced password is
 	// not a secret and stays in the evidence header (it is redacted from run
 	// evidence only through the engine's gated imported-credential matcher).
 	// A password resolved from the secret store has its Password element value
 	// (PasswordText, or a PasswordDigest the exact-value secret matcher cannot
 	// recognize) replaced in every evidence copy, including unredacted debug;
-	// Nonce and Created are kept. The wire body is never altered.
+	// a PasswordDigest's Nonce is withheld with it, Created is kept. The wire
+	// body is never altered.
 	securityXML, evidenceSecurityXML := s.securityHeaders()
 	prepared.Body = insertSOAPSecurityHeader(preparedBody, securityXML)
 	s.applyDefaults(&prepared)
@@ -808,7 +811,8 @@ func buildSecurityHeaderXML(security soapSecurityConfig, now time.Time, nonceGen
 }
 
 // buildSecurityHeaders returns the wire header and its evidence copy, built
-// from the same Nonce/Created values.
+// from the same Nonce/Created values (a secret-store PasswordDigest's Nonce is
+// withheld in the evidence copy).
 func buildSecurityHeaders(security soapSecurityConfig, now time.Time, nonceGenerator func() ([]byte, error)) (string, string, error) {
 	parts := make([]string, 0, 2)
 	evidenceParts := make([]string, 0, 2)
@@ -837,22 +841,31 @@ func buildSecurityHeaders(security soapSecurityConfig, now time.Time, nonceGener
 		}
 
 		passwordValue, passwordURI := security.passwordValue(now, created, nonceBytes)
-		usernameToken := func(password string) string {
+		usernameToken := func(password, nonce string) string {
 			token := `<wsse:UsernameToken>` +
 				`<wsse:Username>` + xmlEscape(security.username) + `</wsse:Username>` +
 				`<wsse:Password Type="` + passwordURI + `">` + password + `</wsse:Password>`
 			if security.includeNonce {
-				token += `<wsse:Nonce>` + nonceText + `</wsse:Nonce>`
+				token += `<wsse:Nonce>` + nonce + `</wsse:Nonce>`
 			}
 			if security.includeCreated {
 				token += `<wsu:Created>` + xmlEscape(created) + `</wsu:Created>`
 			}
 			return token + `</wsse:UsernameToken>`
 		}
-		wireToken := usernameToken(xmlEscape(passwordValue))
+		wireToken := usernameToken(xmlEscape(passwordValue), nonceText)
 		parts = append(parts, wireToken)
 		if security.passwordFromSecretStore && passwordValue != "" {
-			evidenceParts = append(evidenceParts, usernameToken(redactedSOAPPassword))
+			// The adapter knows the origin, so it withholds by origin: the
+			// Password element, and for a PasswordDigest also the Nonce it
+			// was computed from. The engine never infers origin from the
+			// placeholder's shape, so an authored "[REDACTED]" digest keeps
+			// its script-sourced nonce.
+			evidenceNonce := nonceText
+			if security.passwordType == "digest" {
+				evidenceNonce = redactedSOAPPassword
+			}
+			evidenceParts = append(evidenceParts, usernameToken(redactedSOAPPassword, evidenceNonce))
 		} else {
 			evidenceParts = append(evidenceParts, wireToken)
 		}

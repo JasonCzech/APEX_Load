@@ -96,8 +96,9 @@ func TestSOAPEvidenceWSSecurityHeaderMatchesWireRequest(t *testing.T) {
 // A WS-Security password resolved from the secret store ({{secret.NAME}})
 // stays hidden in every evidence copy, unredacted debug included. In digest
 // mode the exact-value secret matcher cannot recognize the PasswordDigest, so
-// the adapter withholds the Password element itself by origin, keeping Nonce
-// and Created. The wire request is untouched.
+// the adapter withholds the Password element itself by origin, and with it
+// the Nonce the digest was computed from; Created is kept. In text mode the
+// Nonce is kept. The wire request is untouched.
 func TestSOAPEvidenceWithholdsSecretStoreWSSecurityPassword(t *testing.T) {
 	for _, passwordType := range []string{"digest", "text"} {
 		for _, unredacted := range []bool{false, true} {
@@ -149,8 +150,17 @@ func TestSOAPEvidenceWithholdsSecretStoreWSSecurityPassword(t *testing.T) {
 					t.Fatalf("digest mode must not send the plain password")
 				}
 				wireNonce := regexp.MustCompile(`<wsse:Nonce>([^<]*)</wsse:Nonce>`).FindStringSubmatch(wireRequestBody)
-				if passwordType == "digest" && (len(wireNonce) != 2 || !strings.Contains(res.Snapshot.RequestBody, wireNonce[0])) {
-					t.Fatalf("snapshot must keep the wire Nonce: %s", res.Snapshot.RequestBody)
+				if passwordType == "digest" {
+					if len(wireNonce) != 2 || wireNonce[1] == "" {
+						t.Fatalf("digest wire request must send a Nonce: %s", wireRequestBody)
+					}
+					// The nonce is an input of the withheld digest: the adapter
+					// withholds it by origin, so the engine never has to guess
+					// from the placeholder's shape.
+					wantNonce := "<wsse:Nonce>" + redactedSOAPPassword + "</wsse:Nonce>"
+					if !strings.Contains(res.Snapshot.RequestBody, wantNonce) {
+						t.Fatalf("snapshot Nonce: want %s in %s", wantNonce, res.Snapshot.RequestBody)
+					}
 				}
 				if !strings.Contains(res.Snapshot.RequestBody, ">"+redactedSOAPPassword+"</wsse:Password>") {
 					t.Fatalf("snapshot must withhold the secret-store Password element: %s", res.Snapshot.RequestBody)
@@ -160,6 +170,9 @@ func TestSOAPEvidenceWithholdsSecretStoreWSSecurityPassword(t *testing.T) {
 					Evidence any
 					Network  any
 				}{res.Snapshot, res.ProtocolEvidence, res.NetworkEntries})
+				if passwordType == "digest" && strings.Contains(string(all), wireNonce[1]) {
+					t.Fatalf("evidence carries the secret-store digest's Nonce %q: %s", wireNonce[1], all)
+				}
 				if strings.Contains(string(all), wireToken[1]) || strings.Contains(string(all), resolved) {
 					t.Fatalf("evidence carries the secret-store password token %q: %s", wireToken[1], all)
 				}
