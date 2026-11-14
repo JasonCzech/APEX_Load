@@ -101,6 +101,7 @@ const PLAN_ENTRY_CONTRACT = {
     'failure_policy',
     'order',
     'runtime_overrides',
+    'runtime_overrides_schema',
     'scenario_id',
     'scenario_name',
     'timeslot_id',
