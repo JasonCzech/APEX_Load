@@ -397,10 +397,15 @@ func TestRuntimeProtocolSecretsReconcileMaskedEcho(t *testing.T) {
 	if cleared.Kafka.SASLPassword != "" || len(cleared.Kafka.Properties) != 0 || len(cleared.Kafka.Brokers) != 0 || cleared.Network.Password != "" {
 		t.Errorf("orphan sentinels kept: kafka %+v network %+v", cleared.Kafka, cleared.Network)
 	}
-	// A broker list whose length changed cannot restore by position.
+	// A broker list whose length changed cannot restore by position: the
+	// sentinel is kept so the save is refused rather than silently dropping
+	// or misplacing a credential broker.
 	reordered := reconcileGroupRuntimeSecrets(&RuntimeSettingsOverride{Kafka: &dsl.KafkaConfig{Brokers: []string{scrub.Redacted}}}, prior)
-	if len(reordered.Kafka.Brokers) != 0 {
+	if len(reordered.Kafka.Brokers) != 1 || reordered.Kafka.Brokers[0] != scrub.Redacted {
 		t.Errorf("broker sentinel restored across a length change: %v", reordered.Kafka.Brokers)
+	}
+	if _, _, _, err := protectLegacyRuntimeOverrideSecrets("scope", 0, nil, reordered); err == nil || !strings.Contains(err.Error(), "re-enter the credential brokers") {
+		t.Errorf("unmatched broker sentinel saved: %v", err)
 	}
 }
 

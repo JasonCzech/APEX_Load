@@ -567,6 +567,9 @@ func protectRuntimeProtocolSecrets(o *RuntimeSettingsOverride, protect func(path
 			}
 			continue
 		}
+		if leaf.fieldPath == "kafka.brokers" && maskedRuntimeBroker(value) {
+			return fmt.Errorf("runtime override %s is a masked credential broker that no longer matches a saved broker because the broker list changed; re-enter the credential brokers", leaf.path)
+		}
 		sensitive := runtimeCredentialLeafSecretBearing(leaf)
 		if sensitive && leaf.inAnyList && !runtimeOverrideExactSecretPattern.MatchString(strings.TrimSpace(value)) {
 			// The engine resolves references in capability maps, not in
@@ -582,6 +585,12 @@ func protectRuntimeProtocolSecrets(o *RuntimeSettingsOverride, protect func(path
 		}
 	}
 	return nil
+}
+
+// maskedRuntimeBroker reports whether a kafka broker is (or carries) the
+// editor's redaction sentinel.
+func maskedRuntimeBroker(broker string) bool {
+	return strings.Contains(broker, scrub.Redacted) || isMaskedURLUserinfo(broker)
 }
 
 // maskRuntimeProtocolSecrets redacts the secret-bearing leaves of a cloned
@@ -622,19 +631,37 @@ func maskRuntimeProtocolSecrets(o *RuntimeSettingsOverride, showReferences bool)
 
 // reconcileRuntimeProtocolSecrets restores leaves a client echoed back as the
 // redaction sentinel from the prior stored override at the same path. A
-// sentinel with no secret-bearing prior value is dropped (fail closed); list
-// elements are matched by position only while the list length is unchanged.
+// sentinel with no secret-bearing prior value is dropped (fail closed).
+//
+// A masked kafka broker is a bare sentinel that names no host, so it is
+// matched by position only while the rest of the list is exactly the prior
+// list: same length, and every unmasked element equal to the prior element at
+// its index. Any other edit (delete-and-add, reorder, an in-place replacement
+// beside a masked element) leaves the sentinel unmatched; when the prior list
+// held a credential broker the sentinel is kept so protect refuses the save
+// (the user re-enters the credential brokers) rather than restoring a deleted
+// broker or dropping a kept one.
 func reconcileRuntimeProtocolSecrets(incoming, prior *RuntimeSettingsOverride) {
 	if incoming == nil {
 		return
 	}
 	priorLeaves := map[string]runtimeCredentialLeaf{}
+	priorCredentialBroker := false
 	for _, leaf := range runtimeProtocolCredentialLeaves(prior) {
 		priorLeaves[leaf.path] = leaf
+		if leaf.fieldPath == "kafka.brokers" && (runtimeCredentialLeafSecretBearing(leaf) || textHasReservedRuntimeSecretReference(leaf.get())) {
+			priorCredentialBroker = true
+		}
 	}
-	priorBrokers := 0
-	if prior != nil && prior.Kafka != nil {
-		priorBrokers = len(prior.Kafka.Brokers)
+	brokersMatchByPosition := incoming.Kafka != nil && prior != nil && prior.Kafka != nil &&
+		len(incoming.Kafka.Brokers) == len(prior.Kafka.Brokers)
+	if brokersMatchByPosition {
+		for index, broker := range incoming.Kafka.Brokers {
+			if !maskedRuntimeBroker(broker) && broker != prior.Kafka.Brokers[index] {
+				brokersMatchByPosition = false
+				break
+			}
+		}
 	}
 	droppedBroker := false
 	for _, leaf := range runtimeProtocolCredentialLeaves(incoming) {
@@ -645,8 +672,8 @@ func reconcileRuntimeProtocolSecrets(incoming, prior *RuntimeSettingsOverride) {
 			priorValue = priorLeaf.get()
 		}
 		isBroker := leaf.fieldPath == "kafka.brokers"
-		if isBroker && incoming.Kafka != nil && len(incoming.Kafka.Brokers) != priorBrokers {
-			// Positions moved, so a sentinel cannot be matched safely.
+		if isBroker && !brokersMatchByPosition {
+			// The list changed, so a sentinel cannot be matched safely.
 			hasPrior, priorValue = false, ""
 		}
 		switch leaf.kind {
@@ -663,6 +690,10 @@ func reconcileRuntimeProtocolSecrets(incoming, prior *RuntimeSettingsOverride) {
 				continue
 			}
 			if isBroker && !hasPrior {
+				if priorCredentialBroker {
+					// Kept for protect to refuse: see the function comment.
+					continue
+				}
 				leaf.set("")
 				droppedBroker = true
 				continue

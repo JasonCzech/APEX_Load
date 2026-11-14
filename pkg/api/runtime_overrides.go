@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
@@ -109,6 +110,21 @@ func protectRuntimeOverrideSecretsWithOptions(scope string, groupIndex int, scri
 			existing[name] = struct{}{}
 		}
 	}
+	// held lists the controller-reserved references the override already
+	// carries at any leaf (a restored [REDACTED] echo, or a sealed value kept
+	// verbatim). A literal is never sealed under one of those names: that
+	// would point two leaves at one secret and overwrite the other leaf's
+	// stored value.
+	held := heldReservedRuntimeSecretNames(protected)
+	sealName := func(path string) string {
+		name := runtimeOverrideSecretName(scope, groupIndex, path)
+		for attempt := 1; ; attempt++ {
+			if _, taken := held[name]; !taken {
+				return name
+			}
+			name = runtimeOverrideSecretName(scope, groupIndex, fmt.Sprintf("%s#%d", path, attempt))
+		}
+	}
 	protect := func(path, value string, sensitive bool) (string, error) {
 		if value == "" || !sensitive {
 			return value, nil
@@ -123,6 +139,10 @@ func protectRuntimeOverrideSecretsWithOptions(scope string, groupIndex int, scri
 			if !deferRedacted {
 				return "", fmt.Errorf("runtime override %s contains a redaction sentinel; enter or clear the credential", path)
 			}
+			// A deferred sentinel writes no value, so it cannot overwrite
+			// another leaf's secret: keep the path's own name, which is
+			// where any previously stored value lives. Diverting to a
+			// path#N name would reference a secret that was never written.
 			name := runtimeOverrideSecretName(scope, groupIndex, path)
 			if _, collision := existing[name]; collision {
 				return "", fmt.Errorf("runtime override %s conflicts with reserved secret reference %s", path, name)
@@ -130,7 +150,7 @@ func protectRuntimeOverrideSecretsWithOptions(scope string, groupIndex int, scri
 			changed = true
 			return "{{secret." + name + "}}", nil
 		}
-		name := runtimeOverrideSecretName(scope, groupIndex, path)
+		name := sealName(path)
 		if _, collision := existing[name]; collision {
 			return "", fmt.Errorf("runtime override %s conflicts with reserved secret reference %s", path, name)
 		}
@@ -255,11 +275,11 @@ func protectRuntimeOverrideSecretsWithOptions(scope string, groupIndex int, scri
 		if session := browser.Session; session != nil {
 			for index := range session.Identities {
 				identity := &session.Identities[index]
-				identity.Password, err = protect(fmt.Sprintf("browser.session.identities.%d.password", index), identity.Password, true)
+				identity.Password, err = protect(browserIdentitySecretPath(session, index, "password"), identity.Password, true)
 				if err != nil {
 					return nil, nil, false, err
 				}
-				identity.StorageState, err = protect(fmt.Sprintf("browser.session.identities.%d.storage_state", index), identity.StorageState, true)
+				identity.StorageState, err = protect(browserIdentitySecretPath(session, index, "storage_state"), identity.StorageState, true)
 				if err != nil {
 					return nil, nil, false, err
 				}
@@ -276,6 +296,50 @@ func protectRuntimeOverrideSecretsWithOptions(scope string, groupIndex int, scri
 		return nil, nil, false, err
 	}
 	return protected, values, changed, nil
+}
+
+// browserIdentitySecretPath names a session identity's sealed credential by
+// the identity's username, the same key reconcileBrowserSessionSecrets
+// restores a masked echo by, so inserting, deleting or reordering identities
+// never seals one identity's new value under a name another identity still
+// holds. An empty or duplicated username falls back to the list index; such an
+// identity's mask is never restored, so it carries no prior reference.
+func browserIdentitySecretPath(session *dsl.BrowserSessionConfig, index int, field string) string {
+	username := session.Identities[index].Username
+	if strings.TrimSpace(username) != "" {
+		matches := 0
+		for _, identity := range session.Identities {
+			if identity.Username == username {
+				matches++
+			}
+		}
+		if matches == 1 {
+			return "browser.session.identities[" + strconv.Quote(username) + "]." + field
+		}
+	}
+	return fmt.Sprintf("browser.session.identities.%d.%s", index, field)
+}
+
+// heldReservedRuntimeSecretNames returns the normalized controller-reserved
+// secret names referenced anywhere in o.
+func heldReservedRuntimeSecretNames(o *RuntimeSettingsOverride) map[string]struct{} {
+	held := map[string]struct{}{}
+	if o == nil {
+		return held
+	}
+	raw, err := json.Marshal(o)
+	if err != nil {
+		return held
+	}
+	for _, match := range runtimeOverrideSecretReferencePattern.FindAllSubmatch(raw, -1) {
+		if len(match) < 2 {
+			continue
+		}
+		if name, err := engine.NormalizeLogicalSecretName(string(match[1])); err == nil && strings.HasPrefix(name, runtimeOverrideSecretPrefix) {
+			held[name] = struct{}{}
+		}
+	}
+	return held
 }
 
 func runtimeOverrideSecretName(scope string, groupIndex int, path string) string {
