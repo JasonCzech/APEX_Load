@@ -7,7 +7,7 @@
 // applicability rule (see pkg/api fieldApplicableForProtocol).
 
 import { type RuntimeBrowserSettings, type RuntimeJavaVuserSettings, type RuntimeSettingsOverride, type ScenarioRuntimeSettingsDraft } from '../types'
-import { type PartialRuntimeSettingsOverride } from '../types/runtimeSettings'
+import { type PartialRuntimeSettingsOverride, type RuntimeProtocolOverrideSections, type RuntimeProtocolSectionKey } from '../types/runtimeSettings'
 import { type BrowserConfig, type BrowserEmulationConfig, type ErrorHandlingConfig, type HTTPConfig, type LogConfig, type PacingConfig, type RunLogicConfig, type ScriptConfig, type ScriptResultsConfig, type SOAPConfig, type ThinkTimeConfig, type WebRuntimeConfig, type WebSocketConfig } from '../types/scripts'
 import { formatBrowserRuntimeSummary } from './browserRuntimeSummary'
 import { formatHTTPVersion } from './httpVersionModel'
@@ -257,6 +257,7 @@ export function isRuntimeDraftEmpty(draft?: ScenarioRuntimeSettingsDraft): boole
   return (
     (draft.override_fields?.length ?? 0) === 0 &&
     draft.soap === undefined &&
+    RUNTIME_PROTOCOL_OVERRIDE_SECTIONS.every(section => draft[section] === undefined) &&
     draft.iterations === undefined &&
     !draft.pacing?.type &&
     !draft.think_time &&
@@ -291,7 +292,11 @@ function isJavaVuserSettingsEmpty(java?: RuntimeJavaVuserSettings): boolean {
     java.dedicated_class_loader === undefined &&
     java.skip_parameter_evaluation === undefined &&
     !java.jvm_sharing &&
-    !java.vusers_per_jvm
+    !java.vusers_per_jvm &&
+    !java.startup_timeout_ms &&
+    !java.action_timeout_ms &&
+    !java.param_left_brace &&
+    !java.param_right_brace
   )
 }
 
@@ -350,8 +355,19 @@ export function runtimeDraftFromOverride(override?: PartialRuntimeSettingsOverri
     env: override.env ? { ...override.env } : undefined,
     redaction_rules: override.redaction_rules ? override.redaction_rules.map(rule => ({ ...rule })) : undefined,
     ...(extension.soap !== undefined ? { soap: structuredClone(extension.soap) } : {}),
+    ...protocolSectionsOf(extension),
     ...(partial ? { override_fields: normalizeRuntimeOverrideFields(extension.override_fields) } : {}),
   }
+}
+
+/** Deep copies of the native protocol sections a row carries (a null section reads as absent). */
+function protocolSectionsOf(source: RuntimeProtocolOverrideSections): RuntimeProtocolOverrideSections {
+  const out: Record<string, unknown> = {}
+  for (const section of RUNTIME_PROTOCOL_OVERRIDE_SECTIONS) {
+    const value = source[section]
+    if (value !== undefined && value !== null) out[section] = structuredClone(value)
+  }
+  return out as RuntimeProtocolOverrideSections
 }
 
 function withoutUndefinedBrowserFields(browser: RuntimeBrowserSettings): RuntimeBrowserSettings | undefined {
@@ -391,11 +407,12 @@ export function overrideFromRuntimeDraft(draft?: ScenarioRuntimeSettingsDraft): 
     redaction_rules: draft.redaction_rules ? draft.redaction_rules.map(rule => ({ ...rule })) : undefined,
   }
   if (draft.soap !== undefined) legacy.soap = structuredClone(draft.soap)
+  Object.assign(legacy, protocolSectionsOf(draft))
   return legacy
 }
 
 /** The override payload shape the scenario and create-test APIs accept. */
-export type RuntimeOverridePayload = {
+export type RuntimeOverridePayload = RuntimeProtocolOverrideSections & {
   iterations?: number
   pacing?: PacingConfig
   think_time?: ThinkTimeConfig
@@ -454,7 +471,7 @@ export function legacyRuntimeOverridePayload(runtimeSettings: ScenarioRuntimeSet
 
   const javaVuser = hasJavaVuserOverride(runtimeSettings.java_vuser) ? runtimeSettings.java_vuser : undefined
 
-  if ((!hasCanonicalRunLogic && runtimeSettings.iterations === undefined) && !pacing && !thinkTime && !browser && (!hasCanonicalLog && !runtimeSettings.log_level) && (!hasCanonicalRunLogic && !runtimeSettings.auto_transactions) && !hasErrorHandling && !runtimeSettings.log && !runtimeSettings.run_logic && !runtimeSettings.http && runtimeSettings.results === undefined && runtimeSettings.websocket === undefined && !runtimeSettings.web_runtime && !runtimeSettings.browser_config && !runtimeSettings.browser_emulation && !javaVuser && runtimeSettings.soap === undefined && !runtimeSettings.base_url && !runtimeSettings.env && !runtimeSettings.redaction_rules) {
+  if ((!hasCanonicalRunLogic && runtimeSettings.iterations === undefined) && !pacing && !thinkTime && !browser && (!hasCanonicalLog && !runtimeSettings.log_level) && (!hasCanonicalRunLogic && !runtimeSettings.auto_transactions) && !hasErrorHandling && !runtimeSettings.log && !runtimeSettings.run_logic && !runtimeSettings.http && runtimeSettings.results === undefined && runtimeSettings.websocket === undefined && !runtimeSettings.web_runtime && !runtimeSettings.browser_config && !runtimeSettings.browser_emulation && !javaVuser && runtimeSettings.soap === undefined && RUNTIME_PROTOCOL_OVERRIDE_SECTIONS.every(section => runtimeSettings[section] === undefined) && !runtimeSettings.base_url && !runtimeSettings.env && !runtimeSettings.redaction_rules) {
     return undefined
   }
 
@@ -480,6 +497,7 @@ export function legacyRuntimeOverridePayload(runtimeSettings: ScenarioRuntimeSet
     ...(runtimeSettings.browser_emulation !== undefined ? { browser_emulation: runtimeSettings.browser_emulation } : {}),
     ...(javaVuser ? { java_vuser: { ...javaVuser } } : {}),
     ...(runtimeSettings.soap !== undefined ? { soap: structuredClone(runtimeSettings.soap) } : {}),
+    ...protocolSectionsOf(runtimeSettings),
     ...(runtimeSettings.base_url !== undefined ? { base_url: runtimeSettings.base_url } : {}),
     ...(runtimeSettings.env ? { env: { ...runtimeSettings.env } } : {}),
     ...(runtimeSettings.redaction_rules ? { redaction_rules: runtimeSettings.redaction_rules.map(rule => ({ ...rule })) } : {}),
@@ -580,6 +598,9 @@ export function runtimeOverrideFromScriptConfig(config?: ScriptConfig): PartialR
     // runtimeSettingsFromScriptConfig projects a non-zero SOAP section too, so
     // Apply to groups and the inherited view see the script's SOAP settings.
     ...(hasNonZeroValue(config.soap) ? { soap: structuredClone(config.soap) } : {}),
+    // runtimeProtocolSectionsFromScriptConfig projects each non-zero native
+    // protocol section the same way.
+    ...scriptProtocolSections(config),
     iterations: config.run_logic?.iterations,
     pacing: config.pacing,
     think_time: config.think_time,
@@ -613,10 +634,23 @@ export function runtimeOverrideFromScriptConfig(config?: ScriptConfig): PartialR
           skip_parameter_evaluation: config.java_vuser.skip_parameter_evaluation,
           jvm_sharing: config.java_vuser.jvm_sharing,
           vusers_per_jvm: config.java_vuser.vusers_per_jvm,
+          startup_timeout_ms: config.java_vuser.startup_timeout_ms,
+          action_timeout_ms: config.java_vuser.action_timeout_ms,
+          param_left_brace: config.java_vuser.param_left_brace,
+          param_right_brace: config.java_vuser.param_right_brace,
         }
       : undefined,
     base_url: config.base_url || undefined,
   }
+}
+
+function scriptProtocolSections(config: ScriptConfig): RuntimeProtocolOverrideSections {
+  const out: Record<string, unknown> = {}
+  const sections = config as unknown as Record<string, unknown>
+  for (const section of RUNTIME_PROTOCOL_OVERRIDE_SECTIONS) {
+    if (hasNonZeroValue(sections[section])) out[section] = structuredClone(sections[section])
+  }
+  return out as RuntimeProtocolOverrideSections
 }
 
 /**
@@ -770,7 +804,8 @@ function formatPartialEffectiveRuntimeField(
  * that is not mirrored here fails that test.
  */
 export const RUNTIME_OVERRIDE_SCHEMA: Readonly<Record<string, string>> = {
-  ScriptConfig: 'base_url results:ResultsConfig websocket:WebSocketConfig pacing:PacingConfig think_time:ThinkTimeConfig error_handling:ErrorHandlingConfig log:LogConfig run_logic:RunLogicConfig http:HTTPConfig web_runtime:WebRuntimeConfig soap:SOAPConfig browser:BrowserConfig browser_emulation:BrowserEmulationConfig',
+  ScriptConfig: 'base_url results:ResultsConfig websocket:WebSocketConfig pacing:PacingConfig think_time:ThinkTimeConfig error_handling:ErrorHandlingConfig log:LogConfig run_logic:RunLogicConfig http:HTTPConfig web_runtime:WebRuntimeConfig soap:SOAPConfig browser:BrowserConfig browser_emulation:BrowserEmulationConfig kafka:KafkaConfig jms:JMSConfig eventhubs:EventHubsConfig grpc:GRPCConfig database:DatabaseConfig network:NetworkConfig appium:AppiumConfig java_http:JavaHTTPConfig',
+  AppiumConfig: 'capabilities:* element_timeout_ms server_url session_timeout_ms',
   AuthConfig: 'domain hosts password token type username',
   BrowserCacheSimulationConfig: 'cache_content_urls check_newer_versions clear_cache_for_new_user download_non_html_resources new_user_each_iteration simulate_cache simulate_prefetch',
   BrowserConfig: 'available_screen_height available_screen_width cache_content_urls cache_enabled capture_document_metrics capture_interactions capture_screenshots check_newer_versions client_certificates client_metrics device_profile download_resources engine ept_calibration experience_canary geolocation:BrowserGeolocation har_artifact_dir har_capture har_capture_policy har_sla_threshold_ms headless http_credentials:BrowserHTTPCredentials locale new_user_per_iteration orientation proxy:BrowserProxyConfig quic review_policy:BrowserReviewPolicy session:BrowserSessionConfig slow_mo_ms storage_state system_language timezone touch_mode traceparent user_agent viewport:BrowserViewport',
@@ -782,13 +817,24 @@ export const RUNTIME_OVERRIDE_SCHEMA: Readonly<Record<string, string>> = {
   BrowserSessionConfig: 'identities jwt:BrowserSessionJWT preflight_url start_gap_ms strategy',
   BrowserSessionJWT: 'audience client_id login_url private_key start_url',
   BrowserViewport: 'height width',
+  DatabaseConfig: 'conn_max_lifetime_ms driver dsn dsn_secret max_idle_conns max_open_conns max_rows query_timeout_ms read_only rollback_on_teardown',
   DataFormattingConfig: 'auto_detect chain',
   DownloadFiltersConfig: 'hosts mode',
   ErrorHandlingConfig: 'continue_on_error fail_transaction_on_error_message honor_retry_after max_retries retry_after_max_ms retry_backoff retry_delay_ms retry_on snapshot_on_error',
+  EventHubsConfig: 'auth_type checkpoint_container_url connection_string connection_string_secret consumer_group consumer_mode event_hub mock namespace observe_partition_tail owner_level partition_id partition_key processor_max_partitions start_position tail_poll_interval_ms timeout_ms',
+  GRPCConfig: 'authority max_recv_msg_size metadata:* plain_text proto_files timeout_ms use_reflection',
   HTTPConfig: 'accept_encoding accept_language aura_recorded_failures auth:AuthConfig cache_enabled cache_excluded_mime_types cache_max_unused_iterations challenge_delay_ms clear_cookies_per_iteration connect_timeout_ms content_check_error_limit cookies_enabled default_header_list default_headers:* dns_cache fail_noncritical_resources html_excluded_mime_types html_parse_mode http_errors_as_warnings idle_timeout_ms ip_version keep_alive legacy_html_checks max_conns_per_host max_idle_conns max_meta_refresh max_redirects page_timeout_ms proxy:ProxyConfig proxy_mode quic:HTTPQUICConfig receive_buffer_bytes request_timeout_ms resource_timeout_as_warning tls:TLSConfig tls_timeout_ms traceparent traceparent_sampled user_agent version',
   HTTPQUICConfig: 'alt_svc_cache broken_ttl_ms handshake_timeout_ms keep_alive_ms max_idle_timeout_ms',
+  JMSConfig: 'acknowledgement broker_url client_id delivery_mode destination destination_type message_vpn mock password properties:* provider reply_to subscription timeout_ms tls:JMSTLSConfig username',
+  JMSTLSConfig: 'ca_cert_secret insecure_skip_verify trust_store_ref',
+  JavaHTTPConfig: 'accept body_encoding codec content_type extractor_type helper_mode object_schema preserve_binary_result request_mapping:* response_mapping:*',
+  KafkaConfig: 'acks auto_offset_reset brokers client_id compression consumer_group consumer_transactions idempotence isolation_level max_message_bytes mock oauth:KafkaOAuthConfig oauth_scope partition_strategy partitions producer:KafkaProducerConfig profile properties:* sasl_mechanism sasl_password sasl_password_secret sasl_username schema schema_id schema_registry_url security_protocol serialization subject timeout_ms tls:KafkaTLSConfig topic transactional_id',
+  KafkaOAuthConfig: 'authentication_method client_id client_secret client_secret_ref mode scope token_url',
+  KafkaProducerConfig: 'admission_timeout_ms batch_bytes buffer_bytes delivery_timeout_ms linger_ms max_in_flight_requests request_timeout_ms retries',
+  KafkaTLSConfig: 'ca_cert_file client_cert_file client_key_file insecure_skip_verify max_version min_version',
   LogConfig: 'error_buffer_bytes extended_options level max_response_bytes on_error_only redact_run_evidence',
   MessageDetailConfig: 'include_resources max_item_bytes max_items max_total_bytes mode sample_rate',
+  NetworkConfig: 'address base_dn from host password port subprotocol timeout_ms tls to username',
   NetworkSimulationConfig: 'bandwidth_kbps jitter_ms latency_ms mode packet_loss_pct preset',
   PacingConfig: 'arrival_process burstiness delay_ms interval_ms max_delay_ms max_interval_ms min_delay_ms min_interval_ms quota:QuotaPacingConfig rate_stages seed tps type',
   ProtocolMixExpectation: 'max_fallback_ratio max_quic_failure_ratio min_samples',
@@ -819,7 +865,39 @@ export const JAVA_VUSER_OVERRIDE_FIELDS = [
   'skip_parameter_evaluation',
   'jvm_sharing',
   'vusers_per_jvm',
+  'startup_timeout_ms',
+  'action_timeout_ms',
+  'param_left_brace',
+  'param_right_brace',
 ] as const
+
+/**
+ * The native protocol override sections, in the backend's order (pkg/api
+ * runtimeProtocolOverrideSections). Each is the JSON key on both the override
+ * and the script config, an override_fields top section and an apply-to-groups
+ * field. Without override_fields a section replaces the script's whole section.
+ */
+export const RUNTIME_PROTOCOL_OVERRIDE_SECTIONS = ['kafka', 'jms', 'eventhubs', 'grpc', 'database', 'network', 'appium', 'java_http'] as const satisfies readonly RuntimeProtocolSectionKey[]
+
+/**
+ * Every protocol family with protocol-gated runtime sections, for a mount that
+ * spans every group (a plan entry's row applies to every group of the scenario
+ * it runs, and execution plans accept the native sections from schema 1).
+ */
+export const PLAN_ENTRY_RUNTIME_PROTOCOLS: readonly string[] = ['http', 'browser', 'java_vuser', 'websocket', 'soap', ...RUNTIME_PROTOCOL_OVERRIDE_SECTIONS]
+
+/** dsl.ProtocolFamily: the http/N spellings are http and every jms-* variant is jms. */
+export function runtimeProtocolFamily(protocol?: string): string {
+  const trimmed = (protocol || '').trim().toLowerCase()
+  if (trimmed === 'http/1.1' || trimmed === 'http/2' || trimmed === 'http/3') return 'http'
+  if (trimmed.startsWith('jms-')) return 'jms'
+  return trimmed
+}
+
+/** runtimeProtocolFieldApplies: a native protocol section applies only to its own protocol family. */
+export function isRuntimeProtocolSectionApplicable(section: RuntimeProtocolSectionKey, protocol?: string): boolean {
+  return runtimeProtocolFamily(protocol) === section
+}
 
 const schemaStructCache = new Map<string, Map<string, string>>()
 
@@ -1041,6 +1119,22 @@ export function runtimeOverridePathWireSegments(path: string): string[] | undefi
   return shape ? wireSegments(shape) : undefined
 }
 
+/** The map path a map-key override path (`kafka.properties.KEY`) lies in, else undefined. */
+export function runtimeOverrideMapParent(path: string): string | undefined {
+  const canonical = normalizeRuntimeOverrideFieldPath(path)
+  const shape = canonical ? overridePathShape(canonical) : undefined
+  if (!canonical || shape?.kind !== 'map_key') return undefined
+  const key = shape.segments[shape.segments.length - 1]
+  return canonical.slice(0, canonical.length - key.length - 1)
+}
+
+/** The keys a row's section holds under a map path (whatever paths it lists). */
+export function runtimeRowMapKeys(row: ScenarioRuntimeSettingsDraft | PartialRuntimeSettingsOverride | undefined, mapPath: string): string[] {
+  if (!row) return []
+  const value = readOverridePath(partialRuntimeState(row).wire, mapPath)
+  return isPlainObject(value) ? Object.keys(value) : []
+}
+
 function readOverridePath(wire: PartialRuntimeSettingsOverride | undefined, path: string): unknown {
   const shape = overridePathShape(path)
   const segments = shape ? wireSegments(shape) : undefined
@@ -1136,6 +1230,21 @@ function layerPathValue(state: PartialRuntimeState, path: string, lower: () => u
     // A listed jvm_sharing leaf leaving shared JVMs drops the per-JVM count below it
     // (applyJavaVuserOverrideField / applyJavaVuserRuntimeOverride).
     if (path === 'java_vuser.vusers_per_jvm' && javaVuserLeafClearsPerJVM(state)) return { supplies: true, value: undefined }
+    // A map the row edits key by key (`kafka.properties.KEY`): its listed keys are
+    // laid over the map below, a key listed with no value removing it, as the
+    // backend applies map-key override paths.
+    const keyFields = state.fields.filter(field => field.startsWith(`${path}.`))
+    if (keyFields.length > 0 && overridePathShape(path)?.kind === 'map') {
+      const below = lower()
+      const out: Record<string, unknown> = isPlainObject(below) ? cloneRuntimeValue(below) : {}
+      for (const field of keyFields) {
+        const key = field.slice(path.length + 1)
+        const value = readOverridePath(state.wire, field)
+        if (value === undefined) delete out[key]
+        else out[key] = cloneRuntimeValue(value)
+      }
+      return { supplies: true, value: Object.keys(out).length === 0 && !isPlainObject(below) ? undefined : out }
+    }
     return { supplies: false }
   }
   const overlay = (field: string) => field === 'java_vuser' || (field === 'env' && nonEmptyRecord(state.wire.env))
@@ -1219,6 +1328,10 @@ export function legacyRuntimeOverrideFields(o?: PartialRuntimeSettingsOverride):
     if ((web.network_profiles?.length ?? 0) > 0) fields.push('web_runtime.network_profiles')
   }
   if (present(o.browser_emulation)) fields.push('browser_emulation')
+  // presentRuntimeProtocolSections: each section the row carries, whole.
+  for (const section of RUNTIME_PROTOCOL_OVERRIDE_SECTIONS) {
+    if (present(o[section])) fields.push(section)
+  }
   if (present(o.browser_config)) {
     fields.push('browser')
   } else if (o.browser) {
@@ -1238,6 +1351,10 @@ export function legacyRuntimeOverrideFields(o?: PartialRuntimeSettingsOverride):
     if (java.skip_parameter_evaluation !== undefined && java.skip_parameter_evaluation !== null) fields.push('java_vuser.skip_parameter_evaluation')
     if (java.jvm_sharing) fields.push('java_vuser.jvm_sharing')
     if (java.vusers_per_jvm) fields.push('java_vuser.vusers_per_jvm')
+    if (java.startup_timeout_ms) fields.push('java_vuser.startup_timeout_ms')
+    if (java.action_timeout_ms) fields.push('java_vuser.action_timeout_ms')
+    if (java.param_left_brace) fields.push('java_vuser.param_left_brace')
+    if (java.param_right_brace) fields.push('java_vuser.param_right_brace')
   }
   if (nonEmptyRecord(o.env)) fields.push('env')
   if ((o.redaction_rules?.length ?? 0) > 0) fields.push('redaction_rules')
@@ -1326,6 +1443,7 @@ function canonicalPartialOverride(draft: ScenarioRuntimeSettingsDraft | PartialR
   copy('http', source.http)
   copy('web_runtime', source.web_runtime)
   copy('soap', source.soap)
+  for (const section of RUNTIME_PROTOCOL_OVERRIDE_SECTIONS) copy(section, source[section])
   copy('browser_emulation', source.browser_emulation)
   copy('java_vuser', source.java_vuser)
   copy('env', source.env)

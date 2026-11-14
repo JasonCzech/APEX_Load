@@ -13,6 +13,7 @@ import type {
   ScriptResultsConfig,
   SOAPConfig,
 } from './scripts'
+import type { JsonRequestBody } from './generated/openapi'
 
 export interface RedactionRule {
   name?: string
@@ -36,7 +37,46 @@ export type RuntimeJavaVuserSettings = Pick<
   | 'skip_parameter_evaluation'
   | 'jvm_sharing'
   | 'vusers_per_jvm'
+  | 'startup_timeout_ms'
+  | 'action_timeout_ms'
+  | 'param_left_brace'
+  | 'param_right_brace'
 >
+
+/** The API's RuntimeSettingsOverride as the generated OpenAPI contract describes it. */
+type GeneratedRuntimeSettingsOverride = NonNullable<JsonRequestBody<'handleUpdateScenario'>['runtime_settings']>
+type GeneratedRuntimeSection<K extends keyof GeneratedRuntimeSettingsOverride> = NonNullable<GeneratedRuntimeSettingsOverride[K]>
+
+/**
+ * The native protocol override sections (pkg/api runtimeProtocolOverrideSections),
+ * each the dsl section ScriptConfig holds under the same key. Without
+ * override_fields a section replaces the script's whole section (v1); with
+ * override_fields its leaves are addressable (`kafka.sasl_mechanism`,
+ * `kafka.properties.KEY`). Taken from the generated OpenAPI contract so a Go
+ * field change reaches these types.
+ */
+export type RuntimeKafkaSettings = GeneratedRuntimeSection<'kafka'>
+export type RuntimeJMSSettings = GeneratedRuntimeSection<'jms'>
+export type RuntimeEventHubsSettings = GeneratedRuntimeSection<'eventhubs'>
+export type RuntimeGRPCSettings = GeneratedRuntimeSection<'grpc'>
+export type RuntimeDatabaseSettings = GeneratedRuntimeSection<'database'>
+export type RuntimeNetworkSettings = GeneratedRuntimeSection<'network'>
+export type RuntimeAppiumSettings = GeneratedRuntimeSection<'appium'>
+export type RuntimeJavaHTTPSettings = GeneratedRuntimeSection<'java_http'>
+
+export interface RuntimeProtocolOverrideSections {
+  kafka?: RuntimeKafkaSettings
+  jms?: RuntimeJMSSettings
+  eventhubs?: RuntimeEventHubsSettings
+  grpc?: RuntimeGRPCSettings
+  database?: RuntimeDatabaseSettings
+  network?: RuntimeNetworkSettings
+  appium?: RuntimeAppiumSettings
+  java_http?: RuntimeJavaHTTPSettings
+}
+
+/** The protocol section keys, in the backend's order. */
+export type RuntimeProtocolSectionKey = keyof RuntimeProtocolOverrideSections
 
 /**
  * `null` on a runtime section is a run-only TOMBSTONE, never a wire value. A per-group run
@@ -92,13 +132,14 @@ export interface RuntimeSettingsOverride {
  * such as `http.request_timeout_ms`, `env.KEY`, `java_vuser.FIELD`, and map or
  * list fields as whole leaves). A row with a non-empty list applies only those
  * paths onto the inherited config; a row without one keeps the exact v1
- * whole-section semantics. `soap` is the SOAP override section.
+ * whole-section semantics. `soap` is the SOAP override section, and the native
+ * protocol sections (RuntimeProtocolOverrideSections) sit beside it.
  *
  * These live beside RuntimeSettingsOverride rather than on it because the
  * Command Center dialog's field-coverage guard (groupRuntimeSettingsModel)
  * enumerates RuntimeSettingsOverride keys as replace-style editable fields.
  */
-export interface RuntimeOverrideFieldsExtension {
+export interface RuntimeOverrideFieldsExtension extends RuntimeProtocolOverrideSections {
   override_fields?: string[]
   soap?: SOAPConfig
 }
@@ -131,7 +172,7 @@ export interface RuntimeSettingsReview {
   warnings?: string[]
 }
 
-export interface ScenarioRuntimeSettingsDraft {
+export interface ScenarioRuntimeSettingsDraft extends RuntimeProtocolOverrideSections {
   results?: ScriptResultsConfig
   iterations?: number
   pacing?: PacingConfig

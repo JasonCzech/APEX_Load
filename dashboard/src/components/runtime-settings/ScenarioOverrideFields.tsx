@@ -184,6 +184,47 @@ export function MaskedTextOverrideInput({ label, value, inheritPlaceholder, onCh
   )
 }
 
+export interface ClearableTextOverrideInputProps {
+  label: string
+  /** This layer's value: undefined inherits, "" is an explicit override with no value. */
+  value: string | undefined
+  /** Whether a lower layer supplies a value this field would inherit. */
+  inheritsValue: boolean
+  inheritPlaceholder?: string
+  multiline?: boolean
+  /** undefined returns to inherited, "" overrides with no value. */
+  onChange: (next: string | undefined) => void
+}
+
+/**
+ * A plain text (or textarea) override with three states: inherit, a typed
+ * value, or "Override with no value", which lists the path with no value so
+ * the field runs empty instead of with what a lower layer sets. Erasing typed
+ * text returns to the state before typing (the clear, or inherit).
+ */
+export function ClearableTextOverrideInput({ label, value, inheritsValue, inheritPlaceholder, multiline, onChange }: ClearableTextOverrideInputProps) {
+  const cleared = value === ''
+  const emitFor = useValueBeforeTyping(value)
+  const common = {
+    className: 'settings-input',
+    'aria-label': label,
+    value: value ?? '',
+    placeholder: cleared ? 'No value (overrides inherited)' : inheritPlaceholder,
+    onChange: (event: { target: { value: string } }) => onChange(emitFor(event.target.value)),
+  }
+  return (
+    <label>
+      <span>{label}</span>
+      {multiline ? <textarea rows={4} {...common} /> : <input {...common} />}
+      {inheritsValue && value === undefined && (
+        <button type="button" className="link-button runtime-override-secret-clear" onClick={() => onChange('')}>
+          Override with no value
+        </button>
+      )}
+    </label>
+  )
+}
+
 export interface RuntimeOverridePanelListProps {
   entries: ReadonlyArray<{ path: string; value: unknown }>
   provenance: RuntimeValueProvenance
