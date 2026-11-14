@@ -8,6 +8,7 @@ import {
  fetchImportRuntimeFields,
  importRuntimeFields,
  mergeImportRuntimeFields,
+ preferredRuntimeCategory,
  readSetting,
  resetRegisteredImportRuntimeFields,
  resolveCanonicalRuntimeGroup,
@@ -319,7 +320,14 @@ describe('importRuntimeSettingsModel', () => {
   expect(readSetting(objectScript, 'config.log.extended_options')).toBeUndefined()
  })
 
- it('merges remote fields from GET /api/v1/scripts/import/settings/fields while skipping secrets and non-scalars', async () => {
+ it('keeps the database driver narrowed to the drivers the runtime registers when the served list widens it', () => {
+  const merged = mergeImportRuntimeFields([
+   { path: 'config.database.driver', category: 'Database', type: 'select', options: ['sqlite', 'sqlite3', 'postgres', 'mysql', 'odbc', 'oracle'] },
+  ])
+  expect(merged.find(field => field.path === 'config.database.driver')?.options).toEqual(['sqlite', 'postgres'])
+ })
+
+ it('merges remote fields from GET /api/v1/scripts/import/settings/fields, offering secrets as Credentials references and skipping non-scalars', async () => {
   const merged = mergeImportRuntimeFields([
    {
     path: 'config.http.tls.min_version',
@@ -342,6 +350,14 @@ describe('importRuntimeSettingsModel', () => {
     type: 'key_value_map',
    },
    {
+    path: 'config.http.custom_future_secret',
+    category: 'HTTP',
+    group: 'Security, proxy & auth',
+    label: 'Custom future secret',
+    type: 'string',
+    secret: true,
+   },
+   {
     path: 'config.http.custom_future_timeout_ms',
     category: 'HTTP',
     group: 'Transport & connections',
@@ -353,7 +369,11 @@ describe('importRuntimeSettingsModel', () => {
   ])
 
   expect(merged.find(field => field.path === 'config.http.tls.min_version')?.options).toEqual(['1.2', '1.3'])
-  expect(merged.find(field => field.path === 'config.http.auth.password')).toBeUndefined()
+  // A secret field is script-sourced on import: it stays editable, and a new
+  // value must be a Credentials reference.
+  expect(merged.find(field => field.path === 'config.http.auth.password')).toMatchObject({ type: 'text', credentialReference: true })
+  expect(merged.find(field => field.path === 'config.http.custom_future_secret')).toMatchObject({ type: 'text', credentialReference: true })
+  expect(merged.find(field => field.path === 'config.http.custom_future_secret')).not.toHaveProperty('secret')
   expect(merged.find(field => field.path === 'config.soap.namespaces')).toBeUndefined()
   const futureField = merged.find(field => field.path === 'config.http.custom_future_timeout_ms')
   expect(futureField).toMatchObject({
@@ -435,4 +455,78 @@ describe('import runtime settings contract', () => {
     const blank = importRuntimeFields.filter(field => field.options?.some(option => option.trim() === '')).map(field => field.path)
     expect(blank).toEqual([])
   })
+})
+
+describe('remaining protocol families', () => {
+ const draft = (protocol: string, config: ScriptDefinition['config'] = {} as ScriptDefinition['config']): ScriptDefinition => ({ name: 'Imported', version: '1.0', protocol, config, actions: [] })
+
+ it('offers a protocol family setting unset only for that protocol, and a configured one for any', () => {
+  expect(settingIsRelevant(draft('http'), 'config.grpc.timeout_ms')).toBe(false)
+  expect(settingIsRelevant(draft('grpc'), 'config.grpc.timeout_ms')).toBe(true)
+  expect(settingIsRelevant(draft('http'), 'config.grpc.timeout_ms', true)).toBe(true)
+  for (const [path, protocol] of [['config.eventhubs.namespace', 'eventhubs'], ['config.database.max_rows', 'database'], ['config.network.port', 'network'], ['config.appium.server_url', 'appium'], ['config.java_http.accept', 'java_http'], ['config.java_vuser.classpath', 'java_vuser'], ['config.jms.message_vpn', 'jms-solace']]) {
+   expect(settingIsRelevant(draft(protocol), path), path).toBe(true)
+   expect(settingIsRelevant(draft('kafka'), path), path).toBe(false)
+  }
+  expect(settingIsRelevant(draft('jms-ibmmq'), 'config.observability.trace_carrier')).toBe(true)
+  expect(settingIsRelevant(draft('eventhubs'), 'config.observability.trace_carrier')).toBe(true)
+  expect(settingIsRelevant(draft('http'), 'config.observability.trace_carrier')).toBe(false)
+ })
+
+ it('lists the unset settings of the script protocol family under its own category', () => {
+  const rows = runtimeSettingRows(draft('database'))['Additional APEX settings']
+  expect(rows.filter(row => row.category === 'Database').map(row => row.path)).toEqual(expect.arrayContaining(['config.database.driver', 'config.database.dsn', 'config.database.max_rows']))
+  expect(rows.find(row => row.path === 'config.database.dsn')?.field?.credentialReference).toBe(true)
+  // The runtime registers only the pgx and sqlite drivers (pkg/protocol/database).
+  expect(rows.find(row => row.path === 'config.database.driver')?.field?.options).toEqual(['sqlite', 'postgres'])
+  expect(rows.some(row => row.path?.startsWith('config.kafka.') || row.path?.startsWith('config.grpc.'))).toBe(false)
+ })
+
+ it('keeps an imported setting of another family visible, as Java imports carry LoadRunner web settings', () => {
+  const rows = runtimeSettingRows(draft('java_vuser', { http: { connect_timeout_ms: 120000 }, java_vuser: { classpath: ['lib/a.jar'] } } as ScriptDefinition['config']))['Additional APEX settings']
+  expect(rows.find(row => row.path === 'config.http.connect_timeout_ms')?.field).toBeDefined()
+  expect(rows.find(row => row.path === 'config.java_vuser.classpath')).toMatchObject({ category: 'Java VUser', field: { type: 'lines' } })
+ })
+
+ it('opens a review on the protocol family category', () => {
+  expect(preferredRuntimeCategory('jms-ibmmq')).toBe('JMS')
+  expect(preferredRuntimeCategory('eventhubs')).toBe('Event Hubs')
+  expect(preferredRuntimeCategory('java_vuser')).toBe('Java VUser')
+  expect(preferredRuntimeCategory('grpc')).toBe('gRPC')
+  expect(preferredRuntimeCategory('java_http')).toBe('HTTP')
+  expect(preferredRuntimeCategory('http')).toBe('HTTP')
+  expect(preferredRuntimeCategory(undefined)).toBe('HTTP')
+ })
+})
+
+describe('proxy and authentication secret rows', () => {
+ it('gives the new secret rows only their own source keys, not every proxy or basic-auth key', () => {
+  const script: ScriptDefinition = {
+   ...makeScript('http', { base_url: 'https://api.example.test', http: { proxy_mode: 'custom', proxy: { url: 'http://proxy.example.test:8080' } } } as ScriptDefinition['config']),
+   metadata: { import: { preserved: {
+    runtime_files: { 'default.cfg': {
+     Proxy: { ProxyUseProxy: '1', ProxyServer: 'proxy.example.test:8080', ProxyBypass: 'localhost', ProxyUserName: 'proxy-user', ProxyPassword: 'proxy-pass', ProxyPasswordIsEncrypted: '0' },
+     Authentication: { UserName: 'basic-user', Password: 'basic-pass' },
+    } },
+    runtime_setting_dispositions: { 'default.cfg': {
+     Proxy: Object.fromEntries(['ProxyUseProxy', 'ProxyServer', 'ProxyBypass', 'ProxyUserName', 'ProxyPassword', 'ProxyPasswordIsEncrypted'].map(key => [key, { status: 'mapped', parity_id: 'proxy', fields: ['config.http.proxy_mode', 'config.http.proxy'] }])),
+     Authentication: Object.fromEntries(['UserName', 'Password'].map(key => [key, { status: 'mapped', parity_id: 'authentication', fields: ['config.http.auth'] }])),
+    } },
+    runtime_settings_parity: [
+     { id: 'proxy', area: 'Proxy', concept: 'Proxy', status: 'executed', fields: ['config.http.proxy_mode', 'config.http.proxy'] },
+     { id: 'authentication', area: 'Authentication', concept: 'Basic authentication credentials', status: 'executed', fields: ['config.http.auth'] },
+    ],
+   } } },
+  } as ScriptDefinition
+  const rows = Object.values(runtimeSettingRows(script)).flat()
+  const row = (path: string) => rows.find(r => r.path === path)
+  const proxyPassword = row('config.http.proxy.password')
+  expect(proxyPassword?.imported).toContain('ProxyPassword:')
+  for (const key of ['ProxyServer', 'ProxyUseProxy', 'ProxyBypass', 'ProxyUserName']) expect(proxyPassword?.imported).not.toContain(`${key}:`)
+  expect(proxyPassword?.importedSummary).not.toContain('proxy.example.test')
+  for (const token of rows.filter(r => r.path === 'config.http.auth.token')) expect(token.imported).not.toMatch(/UserName:|Password:/)
+  const authPassword = row('config.http.auth.password')
+  expect(authPassword?.imported).toContain('Password: basic-pass')
+  expect(authPassword?.imported).not.toContain('UserName:')
+ })
 })

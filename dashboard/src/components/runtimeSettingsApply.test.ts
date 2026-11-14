@@ -325,3 +325,91 @@ describe('v1 empty scenario sections in the inherited baseline', () => {
     expect(effective?.pacing).toEqual({})
   })
 })
+
+describe('native protocol sections (Phase 4)', () => {
+  const draft = (row: Record<string, unknown>) => runtimeDraftFromOverride(row as never) as ScenarioRuntimeSettingsDraft
+
+  it('lets a v1 group section replace the script section whole (applyRuntimeProtocolSections)', () => {
+    const script = { base_url: '', kafka: { topic: 'orders', acks: 'all', brokers: ['b1:9092'] } }
+    const result = materializeRuntimeSettingsForApply(undefined, script, undefined, draft({ kafka: { topic: 'payments' } }))
+    expect(result?.kafka).toEqual({ topic: 'payments' })
+  })
+
+  it('lays a listed leaf over the script section, and never allocates an absent nested block', () => {
+    const script = { base_url: '', kafka: { topic: 'orders', acks: 'all' } }
+    let group = setOverrideField(undefined, 'kafka.acks', 'leader')
+    // A listed leaf with no value under a block no layer has (no OAuth).
+    group = setOverrideField(group, 'kafka.oauth.client_id', undefined)
+    const result = materializeRuntimeSettingsForApply(undefined, script, undefined, group)
+    expect(result?.kafka).toEqual({ topic: 'orders', acks: 'leader' })
+  })
+
+  it('overlays the Java Env timeouts and delimiters field by field', () => {
+    const script = { base_url: '', java_vuser: { startup_timeout_ms: 1000, action_timeout_ms: 2000, classpath: ['a.jar'] } }
+    const result = materializeRuntimeSettingsForApply(undefined, script, draft({ java_vuser: { action_timeout_ms: 9000, param_left_brace: '<', param_right_brace: '>' } }))
+    expect(result?.java_vuser).toEqual({ startup_timeout_ms: 1000, action_timeout_ms: 9000, classpath: ['a.jar'], param_left_brace: '<', param_right_brace: '>' })
+  })
+
+  it('drops a protocol section the target protocol does not run', () => {
+    const source = draft({ kafka: { topic: 'orders' }, jms: { destination: 'q' } })
+    const forJMS = copyRuntimeSettingsForProtocol(source, 'jms-solace')
+    expect(forJMS.kafka).toBeUndefined()
+    expect(forJMS.jms).toEqual({ destination: 'q' })
+  })
+
+  describe('apply to groups', () => {
+    const scripts = [
+      { id: 'src', protocol: 'kafka', script: { config: { base_url: '', kafka: { topic: 'orders', sasl_mechanism: 'plain', sasl_username: 'svc', sasl_password: '{{secret.SRC_PW}}' } } } },
+      { id: 'tgt', protocol: 'kafka', script: { config: { base_url: '', kafka: { topic: 'old' } } } },
+      { id: 'jms', protocol: 'jms-solace', script: { config: { base_url: '' } } },
+    ] as unknown as StoredScript[]
+
+    it('copies the section without the source credentials, keeping the target own ones', () => {
+      const target = setOverrideField(undefined, 'kafka.sasl_password', '[REDACTED]')
+      const groups = [{ script_id: 'src' }, { script_id: 'tgt', runtimeSettings: target }, { script_id: 'tgt' }]
+      const next = applyEffectiveRuntimeSettingsToGroups(groups, scripts, undefined, undefined, 0, [1, 2])
+      const own = next[1].runtimeSettings!
+      expect(own.kafka?.topic).toBe('orders')
+      expect(own.kafka?.sasl_mechanism).toBe('plain')
+      // The target's own stored password is kept (masked, for the server to reconcile).
+      expect(own.kafka?.sasl_password).toBe('[REDACTED]')
+      // The source's identity beside an active credential is never copied.
+      expect(own.kafka?.sasl_username).toBeUndefined()
+      expect(own.override_fields).not.toContain('kafka.sasl_username')
+      const bare = next[2].runtimeSettings!
+      expect(bare.kafka?.sasl_password).toBeUndefined()
+      expect(bare.override_fields).not.toContain('kafka.sasl_password')
+      expect(bare.override_fields).not.toContain('kafka')
+      expect(bare.override_fields).toContain('kafka.topic')
+    })
+
+    it('clears the target-only map keys when a credential key is left out of a copied map (overrideFieldPathsExcludingValue)', () => {
+      const jaas = 'org.apache.kafka.common.security.plain.PlainLoginModule required username="u" password="x";'
+      const mapScripts = [
+        { id: 'src', protocol: 'kafka', script: { config: { base_url: '', kafka: { topic: 'orders', properties: { 'sasl.jaas.config': jaas, 'linger.extra': '5' } } } } },
+        { id: 'tgt', protocol: 'kafka', script: { config: { base_url: '', kafka: { properties: { 'client.rack': 'r1' } } } } },
+      ] as unknown as StoredScript[]
+      const prior = setOverrideField(undefined, 'kafka.properties.prior.key', 'p')
+      const next = applyEffectiveRuntimeSettingsToGroups([{ script_id: 'src' }, { script_id: 'tgt', runtimeSettings: prior }], mapScripts, undefined, undefined, 0, [1])
+      const row = next[1].runtimeSettings!
+      const fields = row.override_fields ?? []
+      expect(fields).toEqual(expect.arrayContaining(['kafka.properties.linger.extra', 'kafka.properties.client.rack', 'kafka.properties.prior.key']))
+      expect(fields).not.toContain('kafka.properties.sasl.jaas.config')
+      expect(fields).not.toContain('kafka.properties')
+      expect(row.kafka?.properties).toEqual({ 'linger.extra': '5' })
+    })
+
+    it('leaves out the section for a target that runs another protocol', () => {
+      const next = applyEffectiveRuntimeSettingsToGroups([{ script_id: 'src' }, { script_id: 'jms' }], scripts, undefined, undefined, 0, [1])
+      expect(next[1].runtimeSettings?.kafka).toBeUndefined()
+    })
+
+    it('reports and skips a target when a copied broker list carries credentials', () => {
+      const source = draft({ kafka: { brokers: ['sasl://user:pw@b1:9093', 'b2:9092'] } })
+      const groups = [{ script_id: 'src', runtimeSettings: source }, { script_id: 'tgt' }]
+      const { groups: next, report } = applyEffectiveRuntimeSettingsToGroupsWithReport(groups, scripts, undefined, undefined, 0, [1])
+      expect(report.uncopyableCredentialTargets).toEqual([{ target: 1, paths: ['kafka.brokers'] }])
+      expect(next[1]).toBe(groups[1])
+    })
+  })
+})

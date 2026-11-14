@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest'
 
 import {
   RUNTIME_OVERRIDE_SCHEMA,
+  RUNTIME_PROTOCOL_OVERRIDE_SECTIONS,
+  isRuntimeProtocolSectionApplicable,
   applyRuntimeOverrideDiff,
   applyRuntimeOverrideEdit,
   effectiveRuntimeValue,
@@ -470,7 +472,7 @@ describe('partial runtime overrides (override_fields)', () => {
         return child ? `${field}:${child}` : field
       }).join(' ')
     }
-    const sections = ['base_url', 'results', 'websocket', 'pacing', 'think_time', 'error_handling', 'log', 'run_logic', 'http', 'web_runtime', 'soap', 'browser', 'browser_emulation']
+    const sections = ['base_url', 'results', 'websocket', 'pacing', 'think_time', 'error_handling', 'log', 'run_logic', 'http', 'web_runtime', 'soap', 'browser', 'browser_emulation', 'kafka', 'jms', 'eventhubs', 'grpc', 'database', 'network', 'appium', 'java_http']
     const root = sections.map(section => {
       const child = kind(defs.ScriptConfig.properties![section])
       if (child && child !== '*') walk(child)
@@ -846,5 +848,148 @@ describe('v1 null section tombstones beside their alias', () => {
     expect(runtimeOverrideFieldPaths(stored)).toEqual([path])
     expect(resolveRuntimeRowsValue(path, [stored])).toEqual({ index: 0, value })
     expect(overrideFieldValue(stored, path)).toEqual(value)
+  })
+})
+
+describe('native protocol sections (Phase 4)', () => {
+  it('lists the backend sections in its order', async () => {
+    // @ts-expect-error Vitest runs in Node, but the dashboard app tsconfig intentionally omits Node types.
+    const { readFileSync } = await import('node:fs')
+    const cwd = (globalThis as typeof globalThis & { process: { cwd: () => string } }).process.cwd()
+    const source = readFileSync(`${cwd}/../pkg/api/runtime_protocol_sections.go`, 'utf8') as string
+    const match = /var runtimeProtocolOverrideSections = \[\]string\{([^}]*)\}/.exec(source)
+    expect(match).not.toBeNull()
+    const goSections = Array.from(match![1].matchAll(/"([a-z_]+)"/g), entry => entry[1])
+    expect([...RUNTIME_PROTOCOL_OVERRIDE_SECTIONS]).toEqual(goSections)
+  })
+
+  it('applies a section only to its own protocol family (runtimeProtocolFieldApplies)', () => {
+    expect(isRuntimeProtocolSectionApplicable('kafka', 'kafka')).toBe(true)
+    expect(isRuntimeProtocolSectionApplicable('jms', 'jms-solace')).toBe(true)
+    expect(isRuntimeProtocolSectionApplicable('jms', ' JMS-IBMMQ ')).toBe(true)
+    expect(isRuntimeProtocolSectionApplicable('java_http', 'java_http')).toBe(true)
+    expect(isRuntimeProtocolSectionApplicable('kafka', 'http')).toBe(false)
+    expect(isRuntimeProtocolSectionApplicable('grpc', undefined)).toBe(false)
+  })
+
+  it('normalizes protocol leaf, nested, map-key and java_vuser paths as the API does', () => {
+    const cases: Array<[string, string | undefined]> = [
+      ['kafka', 'kafka'],
+      ['config.kafka.SASL_Mechanism', 'kafka.sasl_mechanism'],
+      ['kafka.oauth.client_secret', 'kafka.oauth.client_secret'],
+      ['kafka.producer.linger_ms', 'kafka.producer.linger_ms'],
+      // A map key keeps its case and dots.
+      ['kafka.properties.sasl.jaas.config', 'kafka.properties.sasl.jaas.config'],
+      ['appium.capabilities.browserstack.key', 'appium.capabilities.browserstack.key'],
+      ['jms.tls.ca_cert_secret', 'jms.tls.ca_cert_secret'],
+      ['eventhubs.owner_level', 'eventhubs.owner_level'],
+      ['java_http.request_mapping.a', 'java_http.request_mapping.a'],
+      // Lists are whole leaves.
+      ['kafka.brokers.0', undefined],
+      ['kafka.nope', undefined],
+      ['java_vuser.startup_timeout_ms', 'java_vuser.startup_timeout_ms'],
+      ['java_vuser.param_left_brace', 'java_vuser.param_left_brace'],
+      ['websocket.reconnect', 'websocket.reconnect'],
+    ]
+    for (const [raw, canonical] of cases) {
+      expect([raw, normalizeRuntimeOverrideFieldPath(raw)]).toEqual([raw, canonical])
+    }
+  })
+
+  it('lists each protocol section a v1 row carries whole, and the new java_vuser leaves', () => {
+    expect(legacyRuntimeOverrideFields({
+      kafka: { topic: 'orders' },
+      grpc: {},
+      java_vuser: { startup_timeout_ms: 5000, action_timeout_ms: 0, param_left_brace: '<', param_right_brace: '>' },
+    })).toEqual(['kafka', 'grpc', 'java_vuser.startup_timeout_ms', 'java_vuser.param_left_brace', 'java_vuser.param_right_brace'])
+  })
+
+  it('round-trips a v1 protocol row unchanged, and converts it on first edit without changing what it applies', () => {
+    const stored = runtimeDraftFromOverride({ kafka: { topic: 'orders', sasl_password: '[REDACTED]', properties: { 'client.rack': 'a' } } })!
+    expect(isRuntimeDraftEmpty(stored)).toBe(false)
+    expect(legacyRuntimeOverridePayload(stored)).toEqual({ kafka: { topic: 'orders', sasl_password: '[REDACTED]', properties: { 'client.rack': 'a' } } })
+    const edited = setOverrideField(stored, 'kafka.topic', 'payments')
+    // The whole section stays listed (it replaced the script's section whole),
+    // the masked password is sent back for the server to reconcile.
+    expect(partialRuntimeOverrideFromDraft(edited)).toEqual({
+      kafka: { topic: 'payments', sasl_password: '[REDACTED]', properties: { 'client.rack': 'a' } },
+      override_fields: ['kafka'],
+    })
+    // Resetting one leaf splits the listed section into its remaining leaves.
+    const reset = resetOverrideField(edited, 'kafka.topic')
+    expect(runtimeOverrideFieldPaths(reset)).not.toContain('kafka')
+    expect(runtimeOverrideFieldPaths(reset)).toContain('kafka.sasl_password')
+    expect(runtimeOverrideFieldPaths(reset)).toContain('kafka.properties')
+    expect(runtimeOverrideFieldPaths(reset)).not.toContain('kafka.topic')
+  })
+
+  it('writes one protocol leaf or map key per edit, never the whole section', () => {
+    let draft = setOverrideField(undefined, 'jms.destination_type', 'topic')
+    draft = setOverrideField(draft, 'jms.properties.vpn.region', 'eu')
+    expect(partialRuntimeOverrideFromDraft(draft)).toEqual({
+      jms: { destination_type: 'topic', properties: { 'vpn.region': 'eu' } },
+      override_fields: ['jms.destination_type', 'jms.properties.vpn.region'],
+    })
+    // A listed map key with no value removes the inherited key.
+    const removed = setOverrideField(undefined, 'grpc.metadata.x-tenant', undefined)
+    expect(partialRuntimeOverrideFromDraft(removed)).toEqual({ override_fields: ['grpc.metadata.x-tenant'] })
+    expect(overlayRuntimeOverrideSection({ metadata: { 'x-tenant': 'a', keep: 'b' } }, removed, 'grpc')).toEqual({ metadata: { keep: 'b' } })
+  })
+
+  it('keeps lower-layer keys cleared when resetting one key of a map listed whole', () => {
+    // A group row lists grpc.metadata whole with {a}, which clears the key b the
+    // script supplies. Resetting a must not bring b back (backend
+    // overrideFieldPathsExcludingValue also lists the target layers' keys).
+    const script = { base_url: '', grpc: { metadata: { b: '2' } } }
+    const group = runtimeDraftFromOverride({ grpc: { metadata: { a: '1' } }, override_fields: ['grpc.metadata'] })
+    expect(effectiveRuntimeValue('grpc.metadata', { group, script }).value).toEqual({ a: '1' })
+    const reset = resetOverrideField(group, 'grpc.metadata.a', { lowerMapKeys: () => ['b'] })
+    expect(runtimeOverrideFieldPaths(reset)).toEqual(['grpc.metadata.b'])
+    expect(effectiveRuntimeValue('grpc.metadata', { group: reset, script }).value ?? {}).toEqual({})
+    // A whole section listed splits the same way down to the map.
+    const section = runtimeDraftFromOverride({ grpc: { metadata: { a: '1' }, timeout_ms: 10 }, override_fields: ['grpc'] })
+    const sectionReset = resetOverrideField(section, 'grpc.metadata.a', { lowerMapKeys: path => (path === 'grpc.metadata' ? ['b'] : []) })
+    expect(runtimeOverrideFieldPaths(sectionReset)).toContain('grpc.metadata.b')
+    expect(runtimeOverrideFieldPaths(sectionReset)).not.toContain('grpc.metadata.a')
+  })
+
+  it('resolves a map edited key by key at any layer, each layer laid over the ones below', () => {
+    const script = { base_url: '', kafka: { properties: { b: '2', c: '3' } } }
+    const scenario = setOverrideField(setOverrideField(undefined, 'kafka.properties.a', '1'), 'kafka.properties.c', undefined)
+    expect(effectiveRuntimeValue('kafka.properties', { scenario, script })).toEqual({ value: { a: '1', b: '2' }, provenance: 'scenario_default' })
+    const group = setOverrideField(undefined, 'kafka.properties.d.e', '4')
+    expect(effectiveRuntimeValue('kafka.properties', { group, scenario, script })).toEqual({ value: { a: '1', b: '2', 'd.e': '4' }, provenance: 'group_override' })
+    // The run-level stack (resolveRuntimeRowsValue) applies the same overlay.
+    expect(resolveRuntimeRowsValue('kafka.properties', [group, scenario])).toEqual({ index: 0, value: { a: '1', 'd.e': '4' } })
+    // A row that lists the whole map still replaces it.
+    const whole = setOverrideField(undefined, 'kafka.properties', { z: '9' })
+    expect(effectiveRuntimeValue('kafka.properties', { group: whole, scenario, script }).value).toEqual({ z: '9' })
+  })
+
+  it('resolves a protocol leaf through group, scenario, script and engine', () => {
+    const group = setOverrideField(undefined, 'database.max_rows', 50)
+    const scenario = setOverrideField(undefined, 'database.query_timeout_ms', 900)
+    const script = { base_url: '', database: { driver: 'sqlite', max_rows: 10, query_timeout_ms: 100 } }
+    expect(effectiveRuntimeValue('database.max_rows', { group, scenario, script })).toEqual({ value: 50, provenance: 'group_override' })
+    expect(effectiveRuntimeValue('database.query_timeout_ms', { group, scenario, script })).toEqual({ value: 900, provenance: 'scenario_default' })
+    expect(effectiveRuntimeValue('database.driver', { group, scenario, script })).toEqual({ value: 'sqlite', provenance: 'script' })
+  })
+
+  it('projects only the non-zero protocol sections of a script config', () => {
+    const projected = runtimeOverrideFromScriptConfig({
+      base_url: '',
+      kafka: { topic: 'orders' },
+      grpc: { use_reflection: false },
+      java_vuser: { startup_timeout_ms: 1000, param_left_brace: '<<', param_right_brace: '>>' },
+    })
+    expect(projected?.kafka).toEqual({ topic: 'orders' })
+    expect(projected && 'grpc' in projected).toBe(false)
+    expect(projected?.java_vuser).toMatchObject({ startup_timeout_ms: 1000, param_left_brace: '<<', param_right_brace: '>>' })
+  })
+
+  it('upgrades a v1 java_vuser row by listing the new leaves it sets', () => {
+    const stored = runtimeDraftFromOverride({ java_vuser: { action_timeout_ms: 9000 } })!
+    expect(upgradeRuntimeDraftToPartial(stored).override_fields).toEqual(['java_vuser.action_timeout_ms'])
+    expect(overrideFromRuntimeDraft(stored)).toEqual({ java_vuser: { action_timeout_ms: 9000 } })
   })
 })

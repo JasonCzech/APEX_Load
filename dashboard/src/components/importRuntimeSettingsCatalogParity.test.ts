@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import catalogSource from '../../../pkg/dsl/config_catalog.go?raw'
+import javaHTTPValidationSource from '../../../pkg/dsl/catalog_java_http_validation.go?raw'
 import contractFields from '../../../pkg/api/import_settings_fields.json'
 import {
  CANONICAL_RUNTIME_GROUP_IDS,
+ IMPORT_CLEAR_ONLY_PATHS,
+ IMPORT_NARROWED_SELECT_PATHS,
  importRuntimeFields,
  mergeImportRuntimeFields,
  resolveCanonicalRuntimeGroup,
@@ -48,7 +51,15 @@ const catalog = parseCatalog(catalogSource)
 const byPath = new Map(catalog.map(entry => [entry.path, entry]))
 const httpOrSoapImport = catalog.filter(entry => entry.scopes.includes('import') && entry.protocols.some(protocol => ['*', 'http', 'soap'].includes(protocol)))
 const editableScalar = (entry: CatalogEntry) => !entry.secret && !['key_value_map', 'object_list', 'object'].includes(entry.type)
+// The remaining protocol families the import editor covers. A catalog secret
+// field is offered too, as a Credentials reference.
+const PROTOCOL_FAMILIES = ['kafka', 'jms', 'eventhubs', 'grpc', 'websocket', 'database', 'network', 'appium', 'java_http', 'java_vuser', 'browser']
+const protocolImport = catalog.filter(entry => entry.scopes.includes('import') && entry.protocols.some(protocol => PROTOCOL_FAMILIES.some(family => protocol === family || (family === 'jms' && protocol.startsWith('jms')))))
+const editableField = (entry: CatalogEntry) => !['key_value_map', 'object_list', 'object'].includes(entry.type)
 const contractByPath = new Map((contractFields as Array<{ path: string; options?: string[] }>).map(field => [field.path, field]))
+// Settings DSL validation rejects whenever they hold a value: the editor offers
+// them clear-only (a stored value can be removed), never as typed entry.
+const validationRejectedPaths = Array.from(javaHTTPValidationSource.matchAll(/"(config\.java_http\.[a-z_]+) is not supported by embedded java_http"/g), match => match[1]).sort()
 const resolvedGroupId = (path: string) => CANONICAL_RUNTIME_GROUP_IDS[resolveCanonicalRuntimeGroup('HTTP', path)]
 
 // Fixed values DSL validation accepts (pkg/dsl/validate.go validateWebRuntime*)
@@ -61,6 +72,8 @@ const DSL_ENUMS_FOR_CATALOG_STRINGS: Record<string, string[]> = {
  // Browser identity selects come from the emulation catalog; the import contract lists them as text.
  'config.browser_emulation.browser_type': ['chrome', 'edge', 'firefox', 'safari', 'ie'],
  'config.browser_emulation.platform': ['windows', 'macos', 'linux', 'android', 'ios'],
+ // pkg/dsl/catalog_kafka_validation.go accepts only client_credentials for an explicit OAuth block.
+ 'config.kafka.oauth.mode': ['client_credentials'],
 }
 
 describe('offline import runtime catalog parity with pkg/dsl/config_catalog.go', () => {
@@ -73,6 +86,38 @@ describe('offline import runtime catalog parity with pkg/dsl/config_catalog.go',
  it('offers every editable import-scope HTTP and SOAP catalog field', () => {
   const offered = new Set(importRuntimeFields.map(field => field.path))
   expect(httpOrSoapImport.filter(editableScalar).map(entry => entry.path).filter(path => !offered.has(path))).toEqual([])
+ })
+
+ it('offers every editable import-scope field of the remaining protocol families, secrets as Credentials references', () => {
+  const offered = new Map(importRuntimeFields.map(field => [field.path, field]))
+  expect(protocolImport.filter(editableField).map(entry => entry.path).filter(path => !offered.has(path))).toEqual([])
+  const secretFields = [...httpOrSoapImport, ...protocolImport].filter(entry => entry.secret && editableField(entry))
+  expect(secretFields.length).toBeGreaterThan(10)
+  expect(secretFields.filter(entry => !offered.get(entry.path)?.credentialReference).map(entry => entry.path)).toEqual([])
+  // Only a catalog secret (or the proxy username, which the import refuses as
+  // a typed literal) takes a reference; every other field accepts typed values.
+  expect(importRuntimeFields.filter(field => field.credentialReference && !byPath.get(field.path)?.secret).map(field => field.path)).toEqual(['config.http.proxy.username'])
+ })
+
+ it('offers settings that validation always rejects only as clear-only, offline and after the served list merges', () => {
+  expect(validationRejectedPaths).toContain('config.java_http.object_schema')
+  const editableRejected = validationRejectedPaths.filter(path => protocolImport.some(entry => entry.path === path && editableField(entry)))
+  expect(editableRejected).toEqual(['config.java_http.object_schema'])
+  expect([...IMPORT_CLEAR_ONLY_PATHS].sort()).toEqual(editableRejected)
+  const served = protocolImport.filter(editableField).map(entry => ({ path: entry.path, type: entry.type, group: entry.group, options: entry.options, protocols: entry.protocols, secret: entry.secret }))
+  for (const fields of [importRuntimeFields, mergeImportRuntimeFields(served), mergeImportRuntimeFields(served, [])]) {
+   const offered = new Map(fields.map(field => [field.path, field]))
+   expect(editableRejected.filter(path => offered.get(path)?.clearOnly !== true)).toEqual([])
+   expect(fields.filter(field => field.clearOnly).map(field => field.path).sort()).toEqual(editableRejected)
+  }
+ })
+
+ it('files each protocol family setting under its catalog group', () => {
+  const mismatches = importRuntimeFields
+   .filter(field => protocolImport.includes(byPath.get(field.path)!))
+   .filter(field => field.groupId !== byPath.get(field.path)!.group)
+   .map(field => `${field.path}: ${field.groupId} != ${byPath.get(field.path)!.group}`)
+  expect(mismatches).toEqual([])
  })
 
  it('files each HTTP and SOAP setting under the catalog group, offline and for rows without a field', () => {
@@ -102,8 +147,7 @@ describe('offline import runtime catalog parity with pkg/dsl/config_catalog.go',
    const rejected = (field.options || []).filter(option => !accepted.includes(option))
    if (rejected.length) problems.push(`${field.path}: rejected ${rejected.join(', ')}`)
    const missing = accepted.filter(option => !(field.options || []).includes(option))
-   const narrowedTls = field.path === 'config.http.tls.min_version' || field.path === 'config.http.tls.max_version'
-   if (missing.length && !narrowedTls) problems.push(`${field.path}: missing ${missing.join(', ')}`)
+   if (missing.length && !IMPORT_NARROWED_SELECT_PATHS.has(field.path)) problems.push(`${field.path}: missing ${missing.join(', ')}`)
   }
   expect(problems).toEqual([])
  })
@@ -136,6 +180,7 @@ describe('offline import runtime catalog parity with pkg/dsl/config_catalog.go',
    { path: 'config.http.user_agent', category: 'HTTP', group: 'target_identity', type: 'text' },
    { path: 'config.run_logic.termination_mode', category: 'Run logic', group: 'run_logic_pacing', type: 'select', options: ['', 'duration', 'iterations'] },
    { path: 'config.web_runtime.streaming.mode', category: 'HTTP', group: 'protocol_behavior_session', type: 'text' },
+   { path: 'config.kafka.oauth.mode', category: 'Kafka', group: 'security_proxy_auth', type: 'text' },
    { path: 'config.soap.namespaces', category: 'SOAP', group: 'protocol_behavior_session', type: 'object' },
   ]
   const merged = mergeImportRuntimeFields(served)
@@ -144,6 +189,7 @@ describe('offline import runtime catalog parity with pkg/dsl/config_catalog.go',
   expect(merged.find(field => field.path === 'config.run_logic.termination_mode')?.options).toEqual(['duration', 'iterations'])
   // A served string keeps the offline select of DSL-validated values.
   expect(merged.find(field => field.path === 'config.web_runtime.streaming.mode')).toMatchObject({ type: 'select', options: ['adaptive', 'fixed'] })
+  expect(merged.find(field => field.path === 'config.kafka.oauth.mode')).toMatchObject({ type: 'select', options: ['client_credentials'] })
   expect(merged.find(field => field.path === 'config.soap.namespaces')).toBeUndefined()
  })
 })

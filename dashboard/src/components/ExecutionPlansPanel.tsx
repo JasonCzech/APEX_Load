@@ -25,7 +25,7 @@ import type { ScriptConfig } from '../types/scripts'
 import RuntimeSettingsGroupEditor from './RuntimeSettingsGroupEditor'
 import { buildRuntimeSettingsDraft } from './scenarioDraftUtils'
 import { buildRuntimeSettingsPayload } from './scenarioPayloadUtils'
-import { isPartialRuntimeDraft, legacyRuntimeOverrideFields, runtimeOverrideFieldPaths, sameRuntimeValue } from './runtimeSettingsModel'
+import { PLAN_ENTRY_RUNTIME_PROTOCOLS, isPartialRuntimeDraft, legacyRuntimeOverrideFields, runtimeOverrideFieldPaths, sameRuntimeValue } from './runtimeSettingsModel'
 import type { ExecutionPlanListItem, ExecutionPlanOverlap, ExecutionPlanOverlapPolicy, ExecutionPlanRunEntry, ExecutionPlanRunEntryView, ExecutionPlanRunView } from '../types/executionPlans'
 import {
   OVERLAP_POLICY_OPTIONS,
@@ -56,10 +56,6 @@ import { liveBindingSummary } from './scenarioDataBindingModel'
 import RowActions from './ux/RowActions'
 import { scenarioNameCounts, scenarioNameKey } from './scenarioNames'
 import { planEntryRuntimeSecretError } from './executionPlanRuntimeSecrets'
-
-/** Every protocol family with protocol-gated runtime sections: a plan entry's
- *  overrides apply to every group of the scenario it runs. */
-const PLAN_ENTRY_RUNTIME_PROTOCOLS = ['http', 'browser', 'java_vuser', 'websocket', 'soap']
 
 /** The paths an entry's stored row overrides, for its badge. */
 function planEntryOverridePaths(overrides?: PartialRuntimeSettingsOverride): string[] {

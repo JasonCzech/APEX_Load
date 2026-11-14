@@ -817,7 +817,7 @@ describe('ScriptRuntimeSettingsView Event Hubs settings', () => {
   it('renders the Event Hubs section for an imported capture script', () => {
     renderEventHubs()
     expect(container.textContent).toContain('Event Hubs Runtime')
-    expect(container.textContent).toContain('Observer Start Position')
+    expect(container.textContent).toContain('Observer start position')
     const eventHub = Array.from(container.querySelectorAll<HTMLInputElement>('input'))
       .find(input => input.closest('label')?.textContent?.includes('Event Hub'))
     expect(eventHub?.value).toBe('orders')
@@ -1125,7 +1125,7 @@ describe('ScriptRuntimeSettingsView extracted protocol sections', () => {
     })
   })
 
-  it('edits a Java HTTP request mapping without dropping the rest of the java_http block', () => {
+  it('edits a Java HTTP response mapping without dropping the rest of the java_http block', () => {
     const script: ScriptDefinition = {
       name: 'Java over HTTP',
       version: '1.0.0',
@@ -1135,7 +1135,7 @@ describe('ScriptRuntimeSettingsView extracted protocol sections', () => {
         java_http: {
           codec: 'java_serialized_object_base64',
           helper_mode: 'embedded',
-          request_mapping: { userId: 'payload.user' },
+          response_mapping: { 'payload.user': 'userId' },
         },
       },
       actions: [],
@@ -1143,16 +1143,107 @@ describe('ScriptRuntimeSettingsView extracted protocol sections', () => {
     const onUpdateField = renderView(script, 'java_http')
 
     expect(sectionHeader('Java HTTP Settings').querySelector('[data-runtime-section-icon="java_http"]')).not.toBeNull()
-    const mappingInputs = Array.from(container.querySelectorAll<HTMLInputElement>('.pair-row input'))
-    const valueInput = mappingInputs.find(input => input.value === 'payload.user')
-    expect(valueInput).toBeTruthy()
-    typeInto(valueInput!, 'payload.account.user')
+    const valueInput = container.querySelector<HTMLInputElement>('[data-catalog-path="config.java_http.response_mapping"] input[aria-label="Response mapping value 1"]')
+    expect(valueInput?.value).toBe('userId')
+    typeInto(valueInput!, 'accountUserId')
 
     expect(onUpdateField).toHaveBeenCalledWith('config.java_http', {
       codec: 'java_serialized_object_base64',
       helper_mode: 'embedded',
-      request_mapping: { userId: 'payload.account.user' },
+      response_mapping: { 'payload.user': 'accountUserId' },
     })
+  })
+
+  it('refuses a Java HTTP response mapping rename onto an existing key and keeps focus on the row', () => {
+    let current: ScriptDefinition = {
+      name: 'Java over HTTP',
+      version: '1.0.0',
+      protocol: 'java_http',
+      config: {
+        base_url: 'https://java.example.test',
+        java_http: { codec: 'java_serialized_object_base64', response_mapping: { ab: 'x', a: 'y' } },
+      },
+      actions: [],
+    }
+    const onUpdateField = vi.fn((path: string, value: unknown) => {
+      if (path === 'config.java_http') {
+        current = { ...current, config: { ...current.config, java_http: value as ScriptDefinition['config']['java_http'] } }
+        renderView(current, 'java_http', onUpdateField)
+      }
+    })
+    renderView(current, 'java_http', onUpdateField)
+    const group = () => container.querySelector('[data-catalog-path="config.java_http.response_mapping"]')!
+    const key = (row: number) => group().querySelector<HTMLInputElement>(`input[aria-label="Response mapping key ${row}"]`)!
+    expect(key(1).value).toBe('ab')
+    expect(key(2).value).toBe('a')
+    act(() => key(2).focus())
+    typeInto(key(2), 'ab')
+    expect(onUpdateField).not.toHaveBeenCalled()
+    expect(current.config.java_http?.response_mapping).toEqual({ ab: 'x', a: 'y' })
+    expect(group().querySelector('[role="alert"]')?.textContent).toContain('ab is already defined')
+    expect(document.activeElement).toBe(key(2))
+    // A valid rename keeps the same row focused and leaves the other entry alone.
+    typeInto(key(2), 'abc')
+    expect(current.config.java_http).toEqual({ codec: 'java_serialized_object_base64', response_mapping: { ab: 'x', abc: 'y' } })
+    expect(document.activeElement).toBe(key(2))
+    expect(key(2).value).toBe('abc')
+    // Removing the last entries drops the key instead of storing an empty map.
+    act(() => group().querySelector<HTMLButtonElement>('button[aria-label="Remove Response mapping entry ab"]')!.click())
+    act(() => group().querySelector<HTMLButtonElement>('button[aria-label="Remove Response mapping entry abc"]')!.click())
+    expect(current.config.java_http).toEqual({ codec: 'java_serialized_object_base64' })
+  })
+
+  it('shows only the Java HTTP fields the embedded validator accepts and lets a rejected stored value be removed', () => {
+    const script: ScriptDefinition = {
+      name: 'Java over HTTP',
+      version: '1.0.0',
+      protocol: 'java_http',
+      config: {
+        base_url: 'https://java.example.test',
+        java_http: {
+          codec: 'java_serialized_object_base64',
+          helper_mode: 'sidecar',
+          object_schema: 'com.example.AuthRequest',
+          request_mapping: { userId: 'payload.user' },
+          extractor_type: 'regex',
+        },
+      },
+      actions: [],
+    }
+    const onUpdateField = renderView(script, 'java_http')
+
+    const helper = container.querySelector<HTMLSelectElement>('[data-catalog-path="config.java_http.helper_mode"] select')!
+    // sidecar is shown as the stored value it is, never offered as a choice.
+    expect(helper.value).toBe('sidecar')
+    expect(Array.from(helper.options).map(option => option.value)).toEqual(['embedded', 'sidecar'])
+    expect(helper.options[1].textContent).toContain('not supported')
+    // No editors for the rejected fields: only removable notices.
+    expect(Array.from(container.querySelectorAll('label')).some(label => label.textContent?.includes('Object Schema'))).toBe(false)
+    expect(Array.from(container.querySelectorAll('[data-unsupported-stored-value]')).map(node => node.getAttribute('data-unsupported-stored-value'))).toEqual([
+      'config.java_http.object_schema',
+      'config.java_http.extractor_type',
+      'config.java_http.request_mapping',
+    ])
+    const removeRequestMapping = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Remove request mapping')!
+    act(() => removeRequestMapping.click())
+    expect(onUpdateField).toHaveBeenLastCalledWith('config.java_http', {
+      codec: 'java_serialized_object_base64',
+      helper_mode: 'sidecar',
+      object_schema: 'com.example.AuthRequest',
+      extractor_type: 'regex',
+    })
+  })
+
+  it('shows an unset Java HTTP codec as unset and preserve binary as off', () => {
+    const script: ScriptDefinition = {
+      name: 'Java over HTTP', version: '1.0.0', protocol: 'java_http', actions: [],
+      config: { base_url: 'https://java.example.test', java_http: {} },
+    }
+    renderView(script, 'java_http')
+    const codec = container.querySelector<HTMLSelectElement>('[data-catalog-path="config.java_http.codec"] select')!
+    expect(codec.value).toBe('')
+    expect(codec.options[0].textContent).toContain('required')
+    expect(container.querySelector<HTMLInputElement>('[data-catalog-path="config.java_http.preserve_binary_result"] input')!.checked).toBe(false)
   })
 
   it('edits the Web HTTP/HTML source IP pool and shows the proxy summary in the header', () => {

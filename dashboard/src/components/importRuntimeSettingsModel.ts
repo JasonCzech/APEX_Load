@@ -106,6 +106,11 @@ export type ImportRuntimeField = {
  triState?: boolean
  /** The import POST refuses a typed literal here; a new value must be a Credentials reference. */
  credentialReference?: boolean
+ /**
+  * Validation rejects any value here, so the editor shows a stored value
+  * with a remove action and offers no entry (IMPORT_CLEAR_ONLY_PATHS).
+  */
+ clearOnly?: boolean
 }
 
 export type RemoteImportRuntimeField = {
@@ -172,6 +177,10 @@ const ADDITIONAL_SETTING_EFFECTS: Record<string, string> = {
  'config.http.tls.client_key_file': 'Uses this PEM private key for mutual TLS client authentication.',
  'config.http.tls.ca_cert_file': 'Trusts server certificates signed by this custom CA bundle.',
  'config.http.proxy.username': 'Authenticates to the outbound HTTP proxy with this username.',
+ 'config.http.proxy.password': 'Authenticates to the outbound HTTP proxy with this password. A new value must be a Credentials reference.',
+ 'config.http.auth.password': 'Supplies the default password for HTTP authentication challenges. A new value must be a Credentials reference.',
+ 'config.http.auth.token': 'Sends this bearer token for HTTP bearer authentication. A new value must be a Credentials reference.',
+ 'config.soap.ws_security.username_token.password': 'Injects this password into the SOAP WS-Security UsernameToken header. A new value must be a Credentials reference.',
  'config.http.proxy.no_proxy': 'Bypasses the configured proxy for matching hostnames, domains, or CIDRs.',
  'config.http.auth.type': 'Selects the default HTTP authentication scheme applied to challenged requests.',
  'config.http.auth.username': 'Supplies the default username for HTTP authentication challenges.',
@@ -427,12 +436,16 @@ const EXPANDED_HTTP_AND_SOAP_FIELDS: Array<Omit<ImportRuntimeField, 'group' | 'g
  { category: 'HTTP', path: 'config.http.proxy.url', label: 'Proxy URL', type: 'text', protocols: HTTP_FAMILY_PROTOCOLS },
  { category: 'HTTP', path: 'config.http.proxy.pac_url', label: 'PAC URL (bounded evaluator)', type: 'text', protocols: HTTP_FAMILY_PROTOCOLS },
  { category: 'HTTP', path: 'config.http.proxy.username', label: 'Proxy username', type: 'text', credentialReference: true, protocols: HTTP_FAMILY_PROTOCOLS },
+ { category: 'HTTP', path: 'config.http.proxy.password', label: 'Proxy password', type: 'text', credentialReference: true, protocols: HTTP_FAMILY_PROTOCOLS },
  { category: 'HTTP', path: 'config.http.proxy.no_proxy', label: 'Proxy bypass hosts (NO_PROXY)', type: 'lines', protocols: HTTP_FAMILY_PROTOCOLS },
  { category: 'HTTP', path: 'config.http.auth.type', label: 'HTTP authentication scheme', type: 'select', options: ['basic', 'bearer', 'digest', 'ntlm', 'negotiate', 'negotiate_any'], protocols: HTTP_FAMILY_PROTOCOLS },
  { category: 'HTTP', path: 'config.http.auth.username', label: 'HTTP auth username', type: 'text', protocols: HTTP_FAMILY_PROTOCOLS },
+ { category: 'HTTP', path: 'config.http.auth.password', label: 'HTTP auth password', type: 'text', credentialReference: true, protocols: HTTP_FAMILY_PROTOCOLS },
+ { category: 'HTTP', path: 'config.http.auth.token', label: 'Bearer token', type: 'text', credentialReference: true, protocols: HTTP_FAMILY_PROTOCOLS },
  { category: 'HTTP', path: 'config.http.auth.domain', label: 'NTLM / Windows domain', type: 'text', protocols: HTTP_FAMILY_PROTOCOLS },
  { category: 'HTTP', path: 'config.http.auth.hosts', label: 'Authenticated hosts', type: 'lines', protocols: HTTP_FAMILY_PROTOCOLS },
  { category: 'SOAP', path: 'config.soap.ws_security.username_token.username', label: 'WS-Security username', type: 'text', protocols: ['soap'] },
+ { category: 'SOAP', path: 'config.soap.ws_security.username_token.password', label: 'WS-Security password', type: 'text', credentialReference: true, protocols: ['soap'] },
  { category: 'SOAP', path: 'config.soap.ws_security.username_token.password_type', label: 'WS-Security password type', type: 'select', options: ['text', 'digest'], protocols: ['soap'] },
  { category: 'SOAP', path: 'config.soap.ws_security.username_token.nonce', label: 'Include WS-Security nonce', type: 'boolean', protocols: ['soap'] },
  { category: 'SOAP', path: 'config.soap.ws_security.username_token.created', label: 'Include WS-Security created timestamp', type: 'boolean', protocols: ['soap'] },
@@ -515,6 +528,234 @@ const EXPANDED_HTTP_AND_SOAP_FIELDS: Array<Omit<ImportRuntimeField, 'group' | 'g
  { category: 'Diagnostics', path: 'config.results.protocol_mix.min_samples', label: 'Minimum protocol mix samples', type: 'number', protocols: HTTP_FAMILY_PROTOCOLS },
 ]
 
+// The editable import-scope fields of the remaining protocol families
+// (pkg/dsl/config_catalog.go), with the options the import POST accepts. They
+// stand in for the served list until it arrives; the parity test checks them
+// against the catalog. A catalog secret field takes a Credentials reference
+// only when a new value is typed; the imported value stays as it is.
+const PROTOCOL_FIELDS: Array<Omit<ImportRuntimeField, 'groupId' | 'subgroup'>> = [
+ // Kafka
+ { category: 'Kafka', group: 'Target & identity', path: 'config.kafka.brokers', label: 'Brokers (one per line)', type: 'lines', protocols: ['kafka'] },
+ { category: 'Kafka', group: 'Protocol behavior & session', path: 'config.kafka.mock', label: 'Mock broker', type: 'boolean', protocols: ['kafka'] },
+ { category: 'Kafka', group: 'Protocol behavior & session', path: 'config.kafka.auto_offset_reset', label: 'Offset reset', type: 'select', options: ['earliest', 'latest'], protocols: ['kafka'] },
+ { category: 'Kafka', group: 'Protocol behavior & session', path: 'config.kafka.serialization', label: 'Serialization', type: 'select', options: ['json_schema', 'avro'], protocols: ['kafka'] },
+ { category: 'Kafka', group: 'Target & identity', path: 'config.kafka.schema_registry_url', label: 'Schema registry URL', type: 'text', protocols: ['kafka'] },
+ { category: 'Kafka', group: 'Protocol behavior & session', path: 'config.kafka.schema_id', label: 'Schema ID', type: 'number', protocols: ['kafka'] },
+ { category: 'Kafka', group: 'Protocol behavior & session', path: 'config.kafka.subject', label: 'Subject', type: 'text', protocols: ['kafka'] },
+ { category: 'Kafka', group: 'Protocol behavior & session', path: 'config.kafka.profile', label: 'Kafka broker profile', type: 'select', options: ['eventhubs'], protocols: ['kafka'] },
+ { category: 'Kafka', group: 'Target & identity', path: 'config.kafka.client_id', label: 'Kafka client ID', type: 'text', protocols: ['kafka'] },
+ { category: 'Kafka', group: 'Target & identity', path: 'config.kafka.topic', label: 'Default Kafka topic', type: 'text', protocols: ['kafka'] },
+ { category: 'Kafka', group: 'Protocol behavior & session', path: 'config.kafka.consumer_group', label: 'Consumer group ID', type: 'text', protocols: ['kafka'] },
+ { category: 'Kafka', group: 'Protocol behavior & session', path: 'config.kafka.consumer_transactions', label: 'Transactional consumer-producer commits', type: 'boolean', protocols: ['kafka'] },
+ { category: 'Kafka', group: 'Protocol behavior & session', path: 'config.kafka.isolation_level', label: 'Consumer transaction isolation level', type: 'select', options: ['read_uncommitted', 'read_committed'], protocols: ['kafka'] },
+ { category: 'Kafka', group: 'Protocol behavior & session', path: 'config.kafka.acks', label: 'Producer acknowledgement level', type: 'select', options: ['none', 'leader', 'all'], protocols: ['kafka'] },
+ { category: 'Kafka', group: 'Protocol behavior & session', path: 'config.kafka.idempotence', label: 'Idempotent producer mode', type: 'select', options: ['enabled', 'disabled'], protocols: ['kafka'] },
+ { category: 'Kafka', group: 'Protocol behavior & session', path: 'config.kafka.transactional_id', label: 'Producer transactional ID', type: 'text', protocols: ['kafka'] },
+ { category: 'Kafka', group: 'Transport & connections', path: 'config.kafka.compression', label: 'Record batch compression', type: 'select', options: ['none', 'gzip', 'snappy', 'lz4', 'zstd'], protocols: ['kafka'] },
+ { category: 'Kafka', group: 'Protocol behavior & session', path: 'config.kafka.partition_strategy', label: 'Partition routing strategy', type: 'select', options: ['key-hash', 'round-robin', 'explicit'], protocols: ['kafka'] },
+ { category: 'Kafka', group: 'Protocol behavior & session', path: 'config.kafka.partitions', label: 'Mock topic partition count', type: 'number', protocols: ['kafka'] },
+ { category: 'Kafka', group: 'Transport & connections', path: 'config.kafka.timeout_ms', label: 'Kafka operation timeout (ms)', type: 'number', protocols: ['kafka'] },
+ { category: 'Kafka', group: 'Transport & connections', path: 'config.kafka.max_message_bytes', label: 'Maximum record size (bytes)', type: 'number', protocols: ['kafka'] },
+ { category: 'Kafka', group: 'Transport & connections', path: 'config.kafka.producer.retries', label: 'Producer delivery retries', type: 'number', protocols: ['kafka'] },
+ { category: 'Kafka', group: 'Transport & connections', path: 'config.kafka.producer.linger_ms', label: 'Producer batch linger delay (ms)', type: 'number', protocols: ['kafka'] },
+ { category: 'Kafka', group: 'Transport & connections', path: 'config.kafka.producer.batch_bytes', label: 'Producer batch size (bytes)', type: 'number', protocols: ['kafka'] },
+ { category: 'Kafka', group: 'Transport & connections', path: 'config.kafka.producer.buffer_bytes', label: 'Producer memory buffer (bytes)', type: 'number', protocols: ['kafka'] },
+ { category: 'Kafka', group: 'Transport & connections', path: 'config.kafka.producer.admission_timeout_ms', label: 'Buffer admission timeout (ms)', type: 'number', protocols: ['kafka'] },
+ { category: 'Kafka', group: 'Transport & connections', path: 'config.kafka.producer.delivery_timeout_ms', label: 'End-to-end delivery timeout (ms)', type: 'number', protocols: ['kafka'] },
+ { category: 'Kafka', group: 'Transport & connections', path: 'config.kafka.producer.request_timeout_ms', label: 'Broker request timeout (ms)', type: 'number', protocols: ['kafka'] },
+ { category: 'Kafka', group: 'Transport & connections', path: 'config.kafka.producer.max_in_flight_requests', label: 'Maximum in-flight requests per connection', type: 'number', protocols: ['kafka'] },
+ { category: 'Kafka', group: 'Security, proxy & auth', path: 'config.kafka.security_protocol', label: 'Kafka security protocol', type: 'select', options: ['plaintext', 'ssl', 'sasl_plaintext', 'sasl_ssl'], protocols: ['kafka'] },
+ { category: 'Kafka', group: 'Security, proxy & auth', path: 'config.kafka.sasl_mechanism', label: 'SASL authentication mechanism', type: 'select', options: ['plain', 'scram-sha-256', 'scram-sha-512', 'oauthbearer'], protocols: ['kafka'] },
+ { category: 'Kafka', group: 'Security, proxy & auth', path: 'config.kafka.sasl_username', label: 'SASL username', type: 'text', protocols: ['kafka'] },
+ { category: 'Kafka', group: 'Security, proxy & auth', path: 'config.kafka.sasl_password', label: 'SASL password', type: 'text', credentialReference: true, protocols: ['kafka'] },
+ { category: 'Kafka', group: 'Security, proxy & auth', path: 'config.kafka.sasl_password_secret', label: 'SASL password secret name', type: 'text', protocols: ['kafka'] },
+ { category: 'Kafka', group: 'Security, proxy & auth', path: 'config.kafka.oauth_scope', label: 'Managed identity OAuth scope', type: 'text', protocols: ['kafka'] },
+ { category: 'Kafka', group: 'Security, proxy & auth', path: 'config.kafka.oauth.mode', label: 'Kafka OAuth mode', type: 'select', options: ['client_credentials'], protocols: ['kafka'] },
+ { category: 'Kafka', group: 'Security, proxy & auth', path: 'config.kafka.oauth.token_url', label: 'OAuth token endpoint URL', type: 'text', protocols: ['kafka'] },
+ { category: 'Kafka', group: 'Security, proxy & auth', path: 'config.kafka.oauth.client_id', label: 'OAuth client ID', type: 'text', protocols: ['kafka'] },
+ { category: 'Kafka', group: 'Security, proxy & auth', path: 'config.kafka.oauth.client_secret', label: 'OAuth client secret', type: 'text', credentialReference: true, protocols: ['kafka'] },
+ { category: 'Kafka', group: 'Security, proxy & auth', path: 'config.kafka.oauth.client_secret_ref', label: 'OAuth client secret name', type: 'text', protocols: ['kafka'] },
+ { category: 'Kafka', group: 'Security, proxy & auth', path: 'config.kafka.oauth.scope', label: 'OAuth token scope', type: 'text', protocols: ['kafka'] },
+ { category: 'Kafka', group: 'Security, proxy & auth', path: 'config.kafka.oauth.authentication_method', label: 'OAuth token authentication method', type: 'select', options: ['client_secret_basic', 'client_secret_post', 'kafka_3_3_1_basic'], protocols: ['kafka'] },
+ { category: 'Kafka', group: 'Security, proxy & auth', path: 'config.kafka.tls.min_version', label: 'Kafka minimum TLS version', type: 'select', options: ['1.2', '1.3'], protocols: ['kafka'] },
+ { category: 'Kafka', group: 'Security, proxy & auth', path: 'config.kafka.tls.max_version', label: 'Kafka maximum TLS version', type: 'select', options: ['1.2', '1.3'], protocols: ['kafka'] },
+ { category: 'Kafka', group: 'Security, proxy & auth', path: 'config.kafka.tls.insecure_skip_verify', label: 'Skip Kafka TLS certificate verification', type: 'boolean', protocols: ['kafka'] },
+ { category: 'Kafka', group: 'Security, proxy & auth', path: 'config.kafka.tls.client_cert_file', label: 'Kafka client certificate file', type: 'text', protocols: ['kafka'] },
+ { category: 'Kafka', group: 'Security, proxy & auth', path: 'config.kafka.tls.client_key_file', label: 'Kafka client private key file', type: 'text', protocols: ['kafka'] },
+ { category: 'Kafka', group: 'Security, proxy & auth', path: 'config.kafka.tls.ca_cert_file', label: 'Kafka CA certificate file', type: 'text', protocols: ['kafka'] },
+ { category: 'Kafka', group: 'Protocol behavior & session', path: 'config.kafka.schema', label: 'Inline schema definition', type: 'text', protocols: ['kafka'] },
+ // Diagnostics
+ { category: 'Diagnostics', group: 'Errors, logging & diagnostics', path: 'config.observability.trace_carrier', label: 'Messaging trace context carrier', type: 'select', options: ['none', 'w3c'], protocols: ['kafka', 'jms', 'eventhubs'] },
+ // JMS
+ { category: 'JMS', group: 'Target & identity', path: 'config.jms.broker_url', label: 'Broker URL', type: 'text', protocols: ['jms'] },
+ { category: 'JMS', group: 'Protocol behavior & session', path: 'config.jms.destination_type', label: 'Destination type', type: 'select', options: ['queue', 'topic'], protocols: ['jms'] },
+ { category: 'JMS', group: 'Protocol behavior & session', path: 'config.jms.subscription', label: 'Subscription', type: 'text', protocols: ['jms'] },
+ { category: 'JMS', group: 'Transport & connections', path: 'config.jms.timeout_ms', label: 'Timeout (ms)', type: 'number', protocols: ['jms'] },
+ { category: 'JMS', group: 'Protocol behavior & session', path: 'config.jms.mock', label: 'Mock broker', type: 'boolean', protocols: ['jms'] },
+ { category: 'JMS', group: 'Target & identity', path: 'config.jms.provider', label: 'JMS broker provider', type: 'select', options: ['solace', 'servicebus', 'ibmmq'], protocols: ['jms'] },
+ { category: 'JMS', group: 'Target & identity', path: 'config.jms.message_vpn', label: 'Solace message VPN', type: 'text', protocols: ['jms'] },
+ { category: 'JMS', group: 'Security, proxy & auth', path: 'config.jms.username', label: 'JMS broker username', type: 'text', protocols: ['jms'] },
+ { category: 'JMS', group: 'Security, proxy & auth', path: 'config.jms.password', label: 'JMS broker password', type: 'text', credentialReference: true, protocols: ['jms'] },
+ { category: 'JMS', group: 'Target & identity', path: 'config.jms.client_id', label: 'JMS durable client ID', type: 'text', protocols: ['jms'] },
+ { category: 'JMS', group: 'Target & identity', path: 'config.jms.destination', label: 'Default JMS destination', type: 'text', protocols: ['jms'] },
+ { category: 'JMS', group: 'Protocol behavior & session', path: 'config.jms.reply_to', label: 'Default JMSReplyTo destination', type: 'text', protocols: ['jms'] },
+ { category: 'JMS', group: 'Protocol behavior & session', path: 'config.jms.acknowledgement', label: 'Session acknowledgement mode', type: 'select', options: ['auto', 'dups_ok', 'client', 'transacted'], protocols: ['jms'] },
+ { category: 'JMS', group: 'Protocol behavior & session', path: 'config.jms.delivery_mode', label: 'Message delivery mode', type: 'select', options: ['persistent', 'non_persistent'], protocols: ['jms'] },
+ { category: 'JMS', group: 'Security, proxy & auth', path: 'config.jms.tls.ca_cert_secret', label: 'JMS CA certificate secret', type: 'text', protocols: ['jms'] },
+ { category: 'JMS', group: 'Security, proxy & auth', path: 'config.jms.tls.trust_store_ref', label: 'JMS trust store reference', type: 'text', protocols: ['jms'] },
+ { category: 'JMS', group: 'Security, proxy & auth', path: 'config.jms.tls.insecure_skip_verify', label: 'Skip JMS TLS certificate verification', type: 'boolean', protocols: ['jms'] },
+ // Event Hubs
+ { category: 'Event Hubs', group: 'Target & identity', path: 'config.eventhubs.namespace', label: 'Event Hubs namespace', type: 'text', protocols: ['eventhubs'] },
+ { category: 'Event Hubs', group: 'Target & identity', path: 'config.eventhubs.event_hub', label: 'Event Hub name', type: 'text', protocols: ['eventhubs'] },
+ { category: 'Event Hubs', group: 'Security, proxy & auth', path: 'config.eventhubs.auth_type', label: 'Event Hubs authentication mode', type: 'select', options: ['connection_string', 'aad'], protocols: ['eventhubs'] },
+ { category: 'Event Hubs', group: 'Security, proxy & auth', path: 'config.eventhubs.connection_string', label: 'Event Hubs SAS connection string', type: 'text', credentialReference: true, protocols: ['eventhubs'] },
+ { category: 'Event Hubs', group: 'Security, proxy & auth', path: 'config.eventhubs.connection_string_secret', label: 'Connection string secret name', type: 'text', protocols: ['eventhubs'] },
+ { category: 'Event Hubs', group: 'Protocol behavior & session', path: 'config.eventhubs.consumer_group', label: 'Event Hubs consumer group', type: 'text', protocols: ['eventhubs'] },
+ { category: 'Event Hubs', group: 'Protocol behavior & session', path: 'config.eventhubs.consumer_mode', label: 'Consumer execution mode', type: 'select', options: ['observer', 'processor', 'exclusive'], protocols: ['eventhubs'] },
+ { category: 'Event Hubs', group: 'Protocol behavior & session', path: 'config.eventhubs.checkpoint_container_url', label: 'Checkpoint Blob container URL', type: 'text', protocols: ['eventhubs'] },
+ { category: 'Event Hubs', group: 'Transport & connections', path: 'config.eventhubs.processor_max_partitions', label: 'Maximum processor partitions', type: 'number', protocols: ['eventhubs'] },
+ { category: 'Event Hubs', group: 'Protocol behavior & session', path: 'config.eventhubs.owner_level', label: 'Exclusive consumer owner level', type: 'number', protocols: ['eventhubs'] },
+ { category: 'Event Hubs', group: 'Errors, logging & diagnostics', path: 'config.eventhubs.observe_partition_tail', label: 'Observe partition tail lag', type: 'boolean', protocols: ['eventhubs'] },
+ { category: 'Event Hubs', group: 'Errors, logging & diagnostics', path: 'config.eventhubs.tail_poll_interval_ms', label: 'Partition tail poll interval (ms)', type: 'number', protocols: ['eventhubs'] },
+ { category: 'Event Hubs', group: 'Protocol behavior & session', path: 'config.eventhubs.partition_key', label: 'Default partition routing key', type: 'text', protocols: ['eventhubs'] },
+ { category: 'Event Hubs', group: 'Protocol behavior & session', path: 'config.eventhubs.partition_id', label: 'Default explicit partition ID', type: 'text', protocols: ['eventhubs'] },
+ { category: 'Event Hubs', group: 'Protocol behavior & session', path: 'config.eventhubs.start_position', label: 'Observer start position', type: 'select', options: ['latest', 'earliest'], protocols: ['eventhubs'] },
+ { category: 'Event Hubs', group: 'Transport & connections', path: 'config.eventhubs.timeout_ms', label: 'Event Hubs operation timeout (ms)', type: 'number', protocols: ['eventhubs'] },
+ { category: 'Event Hubs', group: 'Protocol behavior & session', path: 'config.eventhubs.mock', label: 'Use in-memory mock Event Hub', type: 'boolean', protocols: ['eventhubs'] },
+ // gRPC
+ { category: 'gRPC', group: 'Protocol behavior & session', path: 'config.grpc.proto_files', label: 'Protobuf descriptor files', type: 'lines', protocols: ['grpc'] },
+ { category: 'gRPC', group: 'Protocol behavior & session', path: 'config.grpc.use_reflection', label: 'Use gRPC server reflection', type: 'boolean', protocols: ['grpc'] },
+ { category: 'gRPC', group: 'Security, proxy & auth', path: 'config.grpc.plain_text', label: 'Use plaintext h2c connection', type: 'boolean', protocols: ['grpc'] },
+ { category: 'gRPC', group: 'Transport & connections', path: 'config.grpc.max_recv_msg_size', label: 'Maximum receive message size (bytes)', type: 'number', protocols: ['grpc'] },
+ { category: 'gRPC', group: 'Transport & connections', path: 'config.grpc.timeout_ms', label: 'Default RPC timeout (ms)', type: 'number', protocols: ['grpc'] },
+ { category: 'gRPC', group: 'Target & identity', path: 'config.grpc.authority', label: 'HTTP/2 :authority override', type: 'text', protocols: ['grpc'] },
+ // WebSocket
+ { category: 'WebSocket', group: 'Protocol behavior & session', path: 'config.websocket.callback_interval_ms', label: 'Callback dispatch interval (ms)', type: 'number', protocols: ['websocket'] },
+ { category: 'WebSocket', group: 'Transport & connections', path: 'config.websocket.read_timeout_ms', label: 'WebSocket read timeout (ms)', type: 'number', protocols: ['websocket'] },
+ { category: 'WebSocket', group: 'Transport & connections', path: 'config.websocket.write_timeout_ms', label: 'WebSocket write timeout (ms)', type: 'number', protocols: ['websocket'] },
+ { category: 'WebSocket', group: 'Transport & connections', path: 'config.websocket.max_message_size', label: 'Maximum WebSocket message size (bytes)', type: 'number', protocols: ['websocket'] },
+ { category: 'WebSocket', group: 'Protocol behavior & session', path: 'config.websocket.subprotocol', label: 'WebSocket subprotocol', type: 'text', protocols: ['websocket'] },
+ { category: 'WebSocket', group: 'Target & identity', path: 'config.websocket.origin', label: 'WebSocket Origin header', type: 'text', protocols: ['websocket'] },
+ { category: 'WebSocket', group: 'Transport & connections', path: 'config.websocket.compression', label: 'Enable per-message deflate compression', type: 'boolean', protocols: ['websocket'] },
+ { category: 'WebSocket', group: 'Transport & connections', path: 'config.websocket.reconnect', label: 'Reconnect on unexpected close', type: 'boolean', protocols: ['websocket'] },
+ // Database
+ { category: 'Database', group: 'Target & identity', path: 'config.database.driver', label: 'Database driver', type: 'select', options: ['sqlite', 'postgres'], protocols: ['database'] },
+ { category: 'Database', group: 'Security, proxy & auth', path: 'config.database.dsn', label: 'Database connection string (DSN)', type: 'text', credentialReference: true, protocols: ['database'] },
+ { category: 'Database', group: 'Security, proxy & auth', path: 'config.database.dsn_secret', label: 'DSN project secret name', type: 'text', protocols: ['database'] },
+ { category: 'Database', group: 'Transport & connections', path: 'config.database.max_open_conns', label: 'Maximum open database connections', type: 'number', protocols: ['database'] },
+ { category: 'Database', group: 'Transport & connections', path: 'config.database.max_idle_conns', label: 'Maximum idle database connections', type: 'number', protocols: ['database'] },
+ { category: 'Database', group: 'Transport & connections', path: 'config.database.conn_max_lifetime_ms', label: 'Connection maximum lifetime (ms)', type: 'number', protocols: ['database'] },
+ { category: 'Database', group: 'Transport & connections', path: 'config.database.query_timeout_ms', label: 'Query execution timeout (ms)', type: 'number', protocols: ['database'] },
+ { category: 'Database', group: 'Protocol behavior & session', path: 'config.database.max_rows', label: 'Maximum rows fetched per query', type: 'number', protocols: ['database'] },
+ { category: 'Database', group: 'Protocol behavior & session', path: 'config.database.read_only', label: 'Read-only session mode', type: 'boolean', protocols: ['database'] },
+ { category: 'Database', group: 'Protocol behavior & session', path: 'config.database.rollback_on_teardown', label: 'Rollback uncommitted transactions on teardown', type: 'boolean', protocols: ['database'] },
+ // Network
+ { category: 'Network', group: 'Target & identity', path: 'config.network.subprotocol', label: 'Network subprotocol', type: 'select', options: ['dns', 'tcp', 'udp', 'ftp', 'smtp', 'pop3', 'imap', 'ldap'], protocols: ['network'] },
+ { category: 'Network', group: 'Target & identity', path: 'config.network.host', label: 'Target host', type: 'text', protocols: ['network'] },
+ { category: 'Network', group: 'Target & identity', path: 'config.network.port', label: 'Target port', type: 'number', protocols: ['network'] },
+ { category: 'Network', group: 'Target & identity', path: 'config.network.address', label: 'Target host:port address', type: 'text', protocols: ['network'] },
+ { category: 'Network', group: 'Transport & connections', path: 'config.network.timeout_ms', label: 'Network operation timeout (ms)', type: 'number', protocols: ['network'] },
+ { category: 'Network', group: 'Security, proxy & auth', path: 'config.network.tls', label: 'Enable TLS encryption', type: 'boolean', protocols: ['network'] },
+ { category: 'Network', group: 'Security, proxy & auth', path: 'config.network.username', label: 'Network username or bind DN', type: 'text', protocols: ['network'] },
+ { category: 'Network', group: 'Security, proxy & auth', path: 'config.network.password', label: 'Network password', type: 'text', credentialReference: true, protocols: ['network'] },
+ { category: 'Network', group: 'Protocol behavior & session', path: 'config.network.from', label: 'SMTP sender address', type: 'text', protocols: ['network'] },
+ { category: 'Network', group: 'Protocol behavior & session', path: 'config.network.to', label: 'SMTP recipient addresses', type: 'lines', protocols: ['network'] },
+ { category: 'Network', group: 'Protocol behavior & session', path: 'config.network.base_dn', label: 'LDAP base DN', type: 'text', protocols: ['network'] },
+ // Appium
+ { category: 'Appium', group: 'Target & identity', path: 'config.appium.server_url', label: 'Appium WebDriver server URL', type: 'text', protocols: ['appium'] },
+ { category: 'Appium', group: 'Transport & connections', path: 'config.appium.session_timeout_ms', label: 'Session provisioning timeout (ms)', type: 'number', protocols: ['appium'] },
+ { category: 'Appium', group: 'Transport & connections', path: 'config.appium.element_timeout_ms', label: 'Element wait timeout (ms)', type: 'number', protocols: ['appium'] },
+ // Java HTTP
+ { category: 'Java HTTP', group: 'Protocol behavior & session', path: 'config.java_http.codec', label: 'Java payload codec', type: 'select', options: ['java_serialized_object_base64'], protocols: ['java_http'] },
+ { category: 'Java HTTP', group: 'Protocol behavior & session', path: 'config.java_http.helper_mode', label: 'Java serializer helper mode', type: 'select', options: ['embedded'], protocols: ['java_http'] },
+ { category: 'Java HTTP', group: 'Protocol behavior & session', path: 'config.java_http.content_type', label: 'Default Content-Type header', type: 'text', protocols: ['java_http'] },
+ { category: 'Java HTTP', group: 'Protocol behavior & session', path: 'config.java_http.accept', label: 'Default Accept header', type: 'text', protocols: ['java_http'] },
+ { category: 'Java HTTP', group: 'Protocol behavior & session', path: 'config.java_http.body_encoding', label: 'Request body encoding', type: 'select', options: ['base64'], protocols: ['java_http'] },
+ { category: 'Java HTTP', group: 'Protocol behavior & session', path: 'config.java_http.object_schema', label: 'Java object class or schema', type: 'text', protocols: ['java_http'] },
+ { category: 'Java HTTP', group: 'Protocol behavior & session', path: 'config.java_http.preserve_binary_result', label: 'Preserve binary response payload', type: 'boolean', protocols: ['java_http'] },
+ // Java VUser
+ { category: 'Java VUser', group: 'Protocol behavior & session', path: 'config.java_vuser.enabled', label: 'Enable Java VUser execution', type: 'boolean', protocols: ['java_vuser'] },
+ { category: 'Java VUser', group: 'Protocol behavior & session', path: 'config.java_vuser.runner_command', label: 'Runner command', type: 'text', protocols: ['java_vuser'] },
+ { category: 'Java VUser', group: 'Protocol behavior & session', path: 'config.java_vuser.harness_jar', label: 'Harness JAR path', type: 'text', protocols: ['java_vuser'] },
+ { category: 'Java VUser', group: 'Protocol behavior & session', path: 'config.java_vuser.classpath', label: 'JVM classpath entries', type: 'lines', protocols: ['java_vuser'] },
+ { category: 'Java VUser', group: 'Protocol behavior & session', path: 'config.java_vuser.work_dir', label: 'Working directory', type: 'text', protocols: ['java_vuser'] },
+ { category: 'Java VUser', group: 'Transport & connections', path: 'config.java_vuser.max_processes', label: 'Maximum JVM processes', type: 'number', protocols: ['java_vuser'] },
+ { category: 'Java VUser', group: 'Transport & connections', path: 'config.java_vuser.startup_timeout_ms', label: 'JVM startup timeout (ms)', type: 'number', protocols: ['java_vuser'] },
+ { category: 'Java VUser', group: 'Transport & connections', path: 'config.java_vuser.action_timeout_ms', label: 'Java action timeout (ms)', type: 'number', protocols: ['java_vuser'] },
+ { category: 'Java VUser', group: 'Protocol behavior & session', path: 'config.java_vuser.jdk_selection', label: 'JDK selection mode', type: 'select', options: ['internal', 'specified'], protocols: ['java_vuser'] },
+ { category: 'Java VUser', group: 'Protocol behavior & session', path: 'config.java_vuser.jdk_home', label: 'Specified JDK home path', type: 'text', protocols: ['java_vuser'] },
+ { category: 'Java VUser', group: 'Protocol behavior & session', path: 'config.java_vuser.additional_vm_parameters', label: 'Additional JVM arguments', type: 'lines', protocols: ['java_vuser'] },
+ { category: 'Java VUser', group: 'Protocol behavior & session', path: 'config.java_vuser.use_xbootclasspath', label: 'Prepend classpath to -Xbootclasspath', type: 'boolean', protocols: ['java_vuser'] },
+ { category: 'Java VUser', group: 'Protocol behavior & session', path: 'config.java_vuser.dedicated_class_loader', label: 'Use dedicated class loader per VUser', type: 'boolean', protocols: ['java_vuser'] },
+ { category: 'Java VUser', group: 'Protocol behavior & session', path: 'config.java_vuser.skip_parameter_evaluation', label: 'Skip automatic parameter evaluation', type: 'boolean', protocols: ['java_vuser'] },
+ { category: 'Java VUser', group: 'Protocol behavior & session', path: 'config.java_vuser.param_left_brace', label: 'Parameter left delimiter', type: 'text', protocols: ['java_vuser'] },
+ { category: 'Java VUser', group: 'Protocol behavior & session', path: 'config.java_vuser.param_right_brace', label: 'Parameter right delimiter', type: 'text', protocols: ['java_vuser'] },
+ { category: 'Java VUser', group: 'Transport & connections', path: 'config.java_vuser.jvm_sharing', label: 'JVM sharing mode', type: 'select', options: ['dedicated', 'shared', 'threads'], protocols: ['java_vuser'] },
+ { category: 'Java VUser', group: 'Transport & connections', path: 'config.java_vuser.vusers_per_jvm', label: 'VUsers per shared JVM', type: 'number', protocols: ['java_vuser'] },
+ // Browser
+ { category: 'Browser', group: 'Target & identity', path: 'config.browser.system_language', label: 'Emulated system language', type: 'text', protocols: ['browser'] },
+ { category: 'Browser', group: 'Target & identity', path: 'config.browser.available_screen_width', label: 'Available screen width', type: 'number', protocols: ['browser'] },
+ { category: 'Browser', group: 'Target & identity', path: 'config.browser.available_screen_height', label: 'Available screen height', type: 'number', protocols: ['browser'] },
+ { category: 'Browser', group: 'Target & identity', path: 'config.browser.engine', label: 'Browser engine', type: 'select', options: ['chromium', 'webkit'], protocols: ['browser'] },
+ { category: 'Browser', group: 'Protocol behavior & session', path: 'config.browser.headless', label: 'Run browser headless', type: 'boolean', protocols: ['browser'] },
+ { category: 'Browser', group: 'Protocol behavior & session', path: 'config.browser.slow_mo_ms', label: 'Slow-motion step delay (ms)', type: 'number', protocols: ['browser'] },
+ { category: 'Browser', group: 'Target & identity', path: 'config.browser.user_agent', label: 'Browser User-Agent override', type: 'text', protocols: ['browser'] },
+ { category: 'Browser', group: 'Target & identity', path: 'config.browser.locale', label: 'Browser locale', type: 'text', protocols: ['browser'] },
+ { category: 'Browser', group: 'Target & identity', path: 'config.browser.timezone', label: 'Browser timezone', type: 'text', protocols: ['browser'] },
+ { category: 'Browser', group: 'Target & identity', path: 'config.browser.device_profile', label: 'Emulated device profile', type: 'text', protocols: ['browser'] },
+ { category: 'Browser', group: 'Target & identity', path: 'config.browser.touch_mode', label: 'Enable touch input emulation', type: 'boolean', protocols: ['browser'] },
+ { category: 'Browser', group: 'Target & identity', path: 'config.browser.orientation', label: 'Screen orientation', type: 'select', options: ['portrait', 'landscape'], protocols: ['browser'] },
+ { category: 'Browser', group: 'Target & identity', path: 'config.browser.viewport.width', label: 'Viewport width', type: 'number', protocols: ['browser'] },
+ { category: 'Browser', group: 'Target & identity', path: 'config.browser.viewport.height', label: 'Viewport height', type: 'number', protocols: ['browser'] },
+ { category: 'Browser', group: 'Target & identity', path: 'config.browser.geolocation.latitude', label: 'Geolocation latitude', type: 'signed', protocols: ['browser'] },
+ { category: 'Browser', group: 'Target & identity', path: 'config.browser.geolocation.longitude', label: 'Geolocation longitude', type: 'signed', protocols: ['browser'] },
+ { category: 'Browser', group: 'Target & identity', path: 'config.browser.geolocation.accuracy', label: 'Geolocation accuracy', type: 'number', protocols: ['browser'] },
+ { category: 'Browser', group: 'Transport & connections', path: 'config.browser.quic', label: 'Browser QUIC policy', type: 'select', options: ['auto', 'off'], protocols: ['browser'] },
+ { category: 'Browser', group: 'Errors, logging & diagnostics', path: 'config.browser.traceparent', label: 'Inject browser W3C traceparent', type: 'boolean', protocols: ['browser'] },
+ { category: 'Browser', group: 'Errors, logging & diagnostics', path: 'config.browser.client_metrics', label: 'Collect web vitals client metrics', type: 'boolean', protocols: ['browser'] },
+ { category: 'Browser', group: 'Errors, logging & diagnostics', path: 'config.browser.capture_document_metrics', label: 'Capture document navigation metrics', type: 'boolean', protocols: ['browser'] },
+ { category: 'Browser', group: 'Errors, logging & diagnostics', path: 'config.browser.capture_interactions', label: 'Capture interaction evidence', type: 'boolean', protocols: ['browser'] },
+ { category: 'Browser', group: 'Errors, logging & diagnostics', path: 'config.browser.experience_canary', label: 'Enable experience canary diagnostics', type: 'boolean', protocols: ['browser'] },
+ { category: 'Browser', group: 'Errors, logging & diagnostics', path: 'config.browser.ept_calibration', label: 'Enable Salesforce EPT calibration', type: 'boolean', protocols: ['browser'] },
+ { category: 'Browser', group: 'Errors, logging & diagnostics', path: 'config.browser.har_capture', label: 'HAR network capture mode', type: 'select', options: ['off', 'on_error', 'on_sla_breach', 'manual', 'always'], protocols: ['browser'] },
+ { category: 'Browser', group: 'Errors, logging & diagnostics', path: 'config.browser.har_capture_policy', label: 'HAR payload retention policy', type: 'select', options: ['headers_only', 'redacted', 'full'], protocols: ['browser'] },
+ { category: 'Browser', group: 'Errors, logging & diagnostics', path: 'config.browser.har_sla_threshold_ms', label: 'HAR SLA breach threshold (ms)', type: 'number', protocols: ['browser'] },
+ { category: 'Browser', group: 'Errors, logging & diagnostics', path: 'config.browser.har_artifact_dir', label: 'HAR artifact directory', type: 'text', protocols: ['browser'] },
+ { category: 'Browser', group: 'Errors, logging & diagnostics', path: 'config.browser.capture_screenshots', label: 'Screenshot capture policy', type: 'select', options: ['off', 'on_error', 'always'], protocols: ['browser'] },
+ { category: 'Browser', group: 'Protocol behavior & session', path: 'config.browser.cache_enabled', label: 'Enable browser cache', type: 'boolean', protocols: ['browser'] },
+ { category: 'Browser', group: 'Protocol behavior & session', path: 'config.browser.cache_content_urls', label: 'Cache HTML content URLs', type: 'boolean', protocols: ['browser'] },
+ { category: 'Browser', group: 'Protocol behavior & session', path: 'config.browser.check_newer_versions', label: 'Revalidate cached pages every visit', type: 'boolean', protocols: ['browser'] },
+ { category: 'Browser', group: 'Protocol behavior & session', path: 'config.browser.new_user_per_iteration', label: 'New browser context each iteration', type: 'boolean', protocols: ['browser'] },
+ { category: 'Browser', group: 'Protocol behavior & session', path: 'config.browser.download_resources', label: 'Sub-resource download policy', type: 'select', options: ['all', 'recorded', 'none'], protocols: ['browser'] },
+ { category: 'Browser', group: 'Security, proxy & auth', path: 'config.browser.storage_state', label: 'Pre-authenticated storage state secret', type: 'text', credentialReference: true, protocols: ['browser'] },
+ { category: 'Browser', group: 'Security, proxy & auth', path: 'config.browser.http_credentials.username', label: 'Browser HTTP auth username', type: 'text', protocols: ['browser'] },
+ { category: 'Browser', group: 'Security, proxy & auth', path: 'config.browser.http_credentials.password', label: 'Browser HTTP auth password', type: 'text', credentialReference: true, protocols: ['browser'] },
+ { category: 'Browser', group: 'Security, proxy & auth', path: 'config.browser.http_credentials.origin', label: 'Browser HTTP auth origin', type: 'text', protocols: ['browser'] },
+ { category: 'Browser', group: 'Security, proxy & auth', path: 'config.browser.http_credentials.send', label: 'Browser HTTP auth send mode', type: 'select', options: ['unauthorized', 'always'], protocols: ['browser'] },
+ { category: 'Browser', group: 'Security, proxy & auth', path: 'config.browser.proxy.server', label: 'Browser proxy server URL', type: 'text', protocols: ['browser'] },
+ { category: 'Browser', group: 'Security, proxy & auth', path: 'config.browser.proxy.bypass', label: 'Browser proxy bypass list', type: 'text', protocols: ['browser'] },
+ { category: 'Browser', group: 'Security, proxy & auth', path: 'config.browser.proxy.username', label: 'Browser proxy username', type: 'text', protocols: ['browser'] },
+ { category: 'Browser', group: 'Security, proxy & auth', path: 'config.browser.proxy.password', label: 'Browser proxy password', type: 'text', credentialReference: true, protocols: ['browser'] },
+ { category: 'Browser', group: 'Security, proxy & auth', path: 'config.browser.review_policy.allow_reviewed_javascript', label: 'Allow reviewed custom JavaScript', type: 'boolean', protocols: ['browser'] },
+ { category: 'Browser', group: 'Security, proxy & auth', path: 'config.browser.review_policy.allow_review_required', label: 'Allow review-gated browser steps', type: 'boolean', protocols: ['browser'] },
+ { category: 'Browser', group: 'Security, proxy & auth', path: 'config.browser.session.strategy', label: 'Observer session sign-in strategy', type: 'select', options: ['storage_state_pool', 'salesforce_jwt', 'login_steps'], protocols: ['browser'] },
+ { category: 'Browser', group: 'Security, proxy & auth', path: 'config.browser.session.preflight_url', label: 'Session preflight check URL', type: 'text', protocols: ['browser'] },
+ { category: 'Browser', group: 'Run logic & pacing', path: 'config.browser.session.start_gap_ms', label: 'Observer sign-in start gap (ms)', type: 'number', protocols: ['browser'] },
+ { category: 'Browser', group: 'Security, proxy & auth', path: 'config.browser.session.jwt.login_url', label: 'Salesforce JWT login URL', type: 'text', protocols: ['browser'] },
+ { category: 'Browser', group: 'Security, proxy & auth', path: 'config.browser.session.jwt.client_id', label: 'Salesforce connected app client ID', type: 'text', protocols: ['browser'] },
+ { category: 'Browser', group: 'Security, proxy & auth', path: 'config.browser.session.jwt.private_key', label: 'Salesforce JWT private key secret', type: 'text', credentialReference: true, protocols: ['browser'] },
+ { category: 'Browser', group: 'Security, proxy & auth', path: 'config.browser.session.jwt.audience', label: 'Salesforce JWT audience URL', type: 'text', protocols: ['browser'] },
+ { category: 'Browser', group: 'Security, proxy & auth', path: 'config.browser.session.jwt.start_url', label: 'Salesforce frontdoor landing path', type: 'text', protocols: ['browser'] },
+]
+
+// Settings DSL validation rejects whenever they hold a value
+// (pkg/dsl/catalog_java_http_validation.go: "is not supported by embedded
+// java_http"). The served catalog still lists them in import scope, so they
+// stay clear-only after a merge: a stored value can be removed, not typed.
+export const IMPORT_CLEAR_ONLY_PATHS: ReadonlySet<string> = new Set([
+ 'config.java_http.object_schema',
+])
+
 function buildStaticCatalog(): ImportRuntimeField[] {
  const byPath = new Map<string, ImportRuntimeField>()
  for (const entry of fieldSchema as Array<{ category: string; path: string; label: string; type: string; options?: string[] }>) {
@@ -525,6 +766,18 @@ function buildStaticCatalog(): ImportRuntimeField[] {
   const normalized = withCanonicalMetadata(entry)
   const existing = byPath.get(normalized.path)
   byPath.set(normalized.path, existing ? { ...existing, ...normalized } : normalized)
+ }
+ for (const entry of PROTOCOL_FIELDS) {
+  const normalized = withCanonicalMetadata(entry)
+  if (!runtimeSettingEffects[normalized.path]) {
+   runtimeSettingEffects[normalized.path] = `Configures ${normalized.label.toLowerCase()} (${normalized.path.replace(/^config\./, '')}) during replay.`
+  }
+  const existing = byPath.get(normalized.path)
+  byPath.set(normalized.path, existing ? { ...existing, ...normalized } : normalized)
+ }
+ for (const path of IMPORT_CLEAR_ONLY_PATHS) {
+  const field = byPath.get(path)
+  if (field) byPath.set(path, { ...field, clearOnly: true })
  }
  return [...byPath.values()]
 }
@@ -557,6 +810,15 @@ function normalizeRemoteFieldType(type?: string): string {
 // "" as unset, so a listed blank option would only render a second blank row.
 const selectableOptions = (options?: string[]) => options?.filter(option => option.trim() !== '')
 
+// Selects whose offline option list is deliberately narrower than the served
+// catalog list. An imported value outside the list still shows via
+// preservedOption and resubmits unchanged; it just cannot be newly chosen.
+export const IMPORT_NARROWED_SELECT_PATHS: ReadonlySet<string> = new Set([
+ 'config.http.tls.min_version',
+ 'config.http.tls.max_version',
+ 'config.database.driver',
+])
+
 export function mergeImportRuntimeFields(
  remoteFields?: RemoteImportRuntimeField[] | null,
  baseFields: ImportRuntimeField[] = importRuntimeFields,
@@ -564,16 +826,20 @@ export function mergeImportRuntimeFields(
  if (!remoteFields?.length) return baseFields
  const byPath = new Map<string, ImportRuntimeField>(baseFields.map(field => [field.path, { ...field }]))
  for (const remote of remoteFields) {
-  if (!remote?.path || remote.secret) continue
+  // A secret field stays editable: its imported value is script-sourced and
+  // resubmits unchanged, and the import POST takes a new value only as a
+  // Credentials reference ({{secret.*}}), so it is offered as one.
+  if (!remote?.path) continue
   if (remote.type && ['key_value_map', 'object_list', 'object'].includes(remote.type)) continue
   const existing = byPath.get(remote.path)
   const remoteOptions = selectableOptions(remote.options)
   if (existing) {
    // The server validates a select against exactly the options it serves, so
    // they replace the offline list instead of widening it. TLS stays narrowed
-   // to the versions the guided migration supports.
-   const keepRestrictedTlsOptions = remote.path === 'config.http.tls.min_version' || remote.path === 'config.http.tls.max_version'
-   const mergedOptions = keepRestrictedTlsOptions || !remoteOptions?.length ? existing.options : remoteOptions
+   // to the versions the guided migration supports, and the database driver to
+   // the drivers the runtime registers (pkg/protocol/database: pgx and sqlite).
+   const keepRestrictedOptions = IMPORT_NARROWED_SELECT_PATHS.has(remote.path)
+   const mergedOptions = keepRestrictedOptions || !remoteOptions?.length ? existing.options : remoteOptions
    const remoteGroup = remote.group || remote.group_id
    const resolvedGroup = remoteGroup ? resolveCanonicalRuntimeGroup(remoteGroup, remote.path) : existing.group
    byPath.set(remote.path, {
@@ -583,6 +849,8 @@ export function mergeImportRuntimeFields(
     options: mergedOptions,
     protocols: existing.protocols || remote.protocols,
     triState: existing.triState ?? remote.tri_state,
+    credentialReference: existing.credentialReference || remote.secret || undefined,
+    clearOnly: existing.clearOnly || IMPORT_CLEAR_ONLY_PATHS.has(remote.path) || undefined,
    })
    continue
   }
@@ -603,8 +871,9 @@ export function mergeImportRuntimeFields(
    type: normalizeRemoteFieldType(remote.type),
    options: remoteOptions,
    protocols: remote.protocols,
-   secret: remote.secret,
    triState: remote.tri_state,
+   credentialReference: remote.secret || undefined,
+   clearOnly: IMPORT_CLEAR_ONLY_PATHS.has(remote.path) || undefined,
   })
  }
  return [...byPath.values()]
@@ -753,6 +1022,13 @@ const sourceAliases: Record<string, string[]> = {
  'config.http.proxy.pac_url': ['ProxyAutoConfigScriptURL', 'ProxyPACURL'],
  'config.http.proxy.username': ['ProxyUserName', 'ProxyUsername'],
  'config.http.proxy.no_proxy': ['ProxyNoLocal', 'ProxyBypass', 'NoProxy'],
+ // Secret rows take only their own keys, never the parent proxy/auth
+ // concept's whole key set. The enterprise-archive importer reads the proxy
+ // password from ProxyPassword or Password in the proxy section, and the basic
+ // auth password from [Authentication] Password; no RTS key carries a bearer token.
+ 'config.http.proxy.password': ['ProxyPassword', 'Password', 'ProxyPasswordIsEncrypted'],
+ 'config.http.auth.password': ['Password'],
+ 'config.http.auth.token': [],
  'config.http.version': ['HTTPVersion', 'HTTPVer', 'EnableHTTP2', 'HTTP2Enabled'],
  'config.http.connect_timeout_ms': ['ConnectTimeout'],
  'config.http.request_timeout_ms': ['ReceiveTimeout', 'StepDownloadTimeout'],
@@ -900,6 +1176,7 @@ export function runtimeSettingRows(
   ...(script.protocol === 'websocket' ? ['WebSocket'] : []),
   ...(script.protocol === 'kafka' ? ['Kafka'] : []),
   ...(script.protocol?.startsWith('jms') ? ['JMS'] : []),
+  ...(PROTOCOL_CATEGORIES[script.protocol] ? [PROTOCOL_CATEGORIES[script.protocol]] : []),
  ]
  const current = activeFields.filter(f => {
   if (known.has(f.path)) return false
@@ -949,16 +1226,51 @@ export function browserEmulationOverrideNote(script: ScriptDefinition, path: str
  return undefined
 }
 
+// The runtime category of each protocol family's own settings section.
+const PROTOCOL_CATEGORIES: Record<string, string> = {
+ kafka: 'Kafka',
+ eventhubs: 'Event Hubs',
+ grpc: 'gRPC',
+ websocket: 'WebSocket',
+ database: 'Database',
+ network: 'Network',
+ appium: 'Appium',
+ java_http: 'Java HTTP',
+ java_vuser: 'Java VUser',
+ browser: 'Browser',
+}
+
+/** The runtime category a review of this protocol opens on when nothing needs a decision. */
+export function preferredRuntimeCategory(protocol?: string): string {
+ if (protocol?.startsWith('jms')) return 'JMS'
+ return (protocol && protocol !== 'java_http' && PROTOCOL_CATEGORIES[protocol]) || 'HTTP'
+}
+
+// Protocol-specific sections an unconfigured setting is offered for. A
+// configured value is always shown, whatever the protocol.
+const PROTOCOL_SECTION_PREFIXES: Array<[string, (protocol: string) => boolean]> = [
+ ['config.browser.', protocol => protocol === 'browser'],
+ ['config.websocket.', protocol => protocol === 'websocket'],
+ ['config.kafka.', protocol => protocol === 'kafka'],
+ ['config.jms.', protocol => protocol.startsWith('jms')],
+ ['config.eventhubs.', protocol => protocol === 'eventhubs'],
+ ['config.grpc.', protocol => protocol === 'grpc'],
+ ['config.database.', protocol => protocol === 'database'],
+ ['config.network.', protocol => protocol === 'network'],
+ ['config.appium.', protocol => protocol === 'appium'],
+ ['config.java_http.', protocol => protocol === 'java_http'],
+ ['config.java_vuser.', protocol => protocol === 'java_vuser'],
+ ['config.observability.trace_carrier', protocol => protocol === 'kafka' || protocol === 'eventhubs' || protocol.startsWith('jms')],
+]
+
 export function settingIsRelevant(script: ScriptDefinition, path: string, isConfigured = false): boolean {
  if (path.startsWith('config.soap.') && script.protocol !== 'soap') return false
  const nativeReplayPolicies = ['http_errors_as_warnings', 'fail_noncritical_resources', 'resource_timeout_as_warning', 'legacy_html_checks', 'dns_cache', 'challenge_delay_ms']
  if (nativeReplayPolicies.some(key => path === `config.http.${key}`) && !['http', 'http/1.1', 'http/2', 'http/3', 'soap', 'java_http'].includes(script.protocol)) return false
  if (!isConfigured) {
   if ((path.startsWith('config.http.') || path.startsWith('config.browser_emulation.') || path.startsWith('config.web_runtime.')) && !HTTP_FAMILY_PROTOCOLS.includes(script.protocol)) return false
-  if (path.startsWith('config.browser.') && script.protocol !== 'browser') return false
-  if (path.startsWith('config.websocket.') && script.protocol !== 'websocket') return false
-  if (path.startsWith('config.kafka.') && script.protocol !== 'kafka') return false
-  if (path.startsWith('config.jms.') && !script.protocol?.startsWith('jms')) return false
+  const section = PROTOCOL_SECTION_PREFIXES.find(([prefix]) => path.startsWith(prefix))
+  if (section && !section[1](script.protocol || '')) return false
  }
  // Runtime spellings: stored "TPS" is tps pacing, "Normal" is gaussian think time,
  // " Gamma " is the gamma arrival process (as Author and the engine read it).

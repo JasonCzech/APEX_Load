@@ -5,6 +5,7 @@ import { CategoryActions, SettingValue, formatSettingValue, isSettingModified, u
 import {
  CANONICAL_RUNTIME_GROUPS,
  PROVENANCE_FILTERS,
+ preferredRuntimeCategory,
  readSetting,
  resolveCanonicalRuntimeGroup,
  resolveRuntimeSubgroup,
@@ -46,7 +47,7 @@ function RuntimeSettingsWorkspace({
  // Open on what needs a decision, across every category, when anything does;
  // otherwise on the protocol's settings with the not-applicable ones folded away.
  const [decisionsFirst] = useState(() => (runtimeSettingRows(script)['Requires decision'] || []).length > 0)
- const [selected, setSelected] = useState(() => decisionsFirst ? 'All categories' : script.protocol?.startsWith('jms') ? 'JMS' : script.protocol === 'kafka' ? 'Kafka' : 'HTTP')
+ const [selected, setSelected] = useState(() => decisionsFirst ? 'All categories' : preferredRuntimeCategory(script.protocol))
  const [selectedCanonicalGroup, setSelectedCanonicalGroup] = useState<'All groups' | CanonicalRuntimeGroup>('All groups')
  const [provenanceFilter, setProvenanceFilter] = useState<'custom' | ProvenanceFilterOption>('custom')
  const [hiddenStatuses, setHiddenStatuses] = useState<string[]>(() => decisionsFirst ? ['Mapped for replay', 'Additional APEX settings', 'Preserved only', 'Not applicable'] : ['Not applicable'])
@@ -94,7 +95,7 @@ function RuntimeSettingsWorkspace({
  const categories = [...new Set(orderedGroups.flatMap(([name, rows]) => rows.filter(row => showUnconfigured || isVisibleByDefault(name, row)).map(row => row.category)))].sort()
  const enabledGroups = orderedGroups.filter(([name]) => !hiddenStatuses.includes(name))
  const enabledAllCategories = [...new Set(enabledGroups.flatMap(([, rows]) => rows.map(row => row.category)))].sort()
- const preferred = script.protocol?.startsWith('jms') ? 'JMS' : script.protocol === 'kafka' ? 'Kafka' : 'HTTP'
+ const preferred = preferredRuntimeCategory(script.protocol)
  const active = selected === 'All categories' || categories.includes(selected) || enabledAllCategories.includes(selected)
   ? selected
   : categories.includes(preferred) || enabledAllCategories.includes(preferred)
@@ -149,7 +150,7 @@ function RuntimeSettingsWorkspace({
  function table(rows: RuntimeSettingRow[], group: string) {
   return <div className="lr-table-wrap"><table className="import-settings-table import-runtime-table" data-table-pagination="off"><thead><tr><th>Setting</th><th>Imported value</th><th>Current draft value</th><th>Details</th></tr></thead>{[...new Set(rows.map(row => row.category))].map(category => <tbody key={category}>
    <tr className="import-category"><th colSpan={4} scope="rowgroup"><strong>{category}</strong><small>{group === 'Additional APEX settings' ? 'Draft settings without a reported source mapping.' : `${group}. Original source evidence remains unchanged when you edit the draft.`}</small></th></tr>
-   {rows.filter(row => row.category === category).map(row => <tr key={row.id} data-canonical-group={row.group} data-canonical-subgroup={row.subgroup}><th scope="row"><span className="import-runtime-setting-name">{row.label}</span>{row.path && <code className="import-runtime-setting-path" aria-hidden="true">{row.path.replace(/^config\./, '')}</code>}</th><td className="import-setting-value">{row.importedSummary || row.imported}</td><td>{row.path ? row.field ? <SettingValue category={category} path={row.path} label={`${category}: ${row.label}`} value={readSetting(script, row.path)} readOnly={!!onReviewTLSMigration && ['config.http.tls.min_version', 'config.http.tls.max_version'].includes(row.path)} type={row.field.type} options={row.field.options} credentialReference={row.field.credentialReference} /> : formatSettingValue(readSetting(script, row.path)) : group === 'Not applicable' ? 'Not applicable' : group === 'Mapped for replay' ? 'Used by importer' : group === 'Preserved only' ? 'Preserved only' : 'No exact mapping'}</td><td><div className="import-runtime-inline-details"><p>{row.note || '—'}</p>{row.importedSummary && row.importedSummary !== row.imported && <p className="import-setting-value">Source detail: {row.imported}</p>}</div></td></tr>)}
+   {rows.filter(row => row.category === category).map(row => <tr key={row.id} data-canonical-group={row.group} data-canonical-subgroup={row.subgroup}><th scope="row"><span className="import-runtime-setting-name">{row.label}</span>{row.path && <code className="import-runtime-setting-path" aria-hidden="true">{row.path.replace(/^config\./, '')}</code>}</th><td className="import-setting-value">{row.importedSummary || row.imported}</td><td>{row.path ? row.field ? <SettingValue category={category} path={row.path} label={`${category}: ${row.label}`} value={readSetting(script, row.path)} readOnly={!!onReviewTLSMigration && ['config.http.tls.min_version', 'config.http.tls.max_version'].includes(row.path)} type={row.field.type} options={row.field.options} credentialReference={row.field.credentialReference} clearOnly={row.field.clearOnly} /> : formatSettingValue(readSetting(script, row.path)) : group === 'Not applicable' ? 'Not applicable' : group === 'Mapped for replay' ? 'Used by importer' : group === 'Preserved only' ? 'Preserved only' : 'No exact mapping'}</td><td><div className="import-runtime-inline-details"><p>{row.note || '—'}</p>{row.importedSummary && row.importedSummary !== row.imported && <p className="import-setting-value">Source detail: {row.imported}</p>}</div></td></tr>)}
   </tbody>)}</table></div>
  }
  return <div className="import-runtime-workspace"><ImportReviewSectionHeader title="Runtime settings" description="Compare source and draft values. Applying changes refreshes checks; replay still needs verification." />

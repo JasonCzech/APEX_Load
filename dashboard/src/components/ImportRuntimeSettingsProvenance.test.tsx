@@ -207,3 +207,69 @@ describe('credential reference fields', () => {
   expect(input.closest('label')?.textContent).toContain('{{secret.PROXY_USER}}')
  })
 })
+
+describe('remaining protocol families', () => {
+ const messagingDraft = (protocol: string, config: ScriptDefinition['config']): ScriptDefinition => ({ name: 'Imported', version: '1.0', protocol, config, actions: [], metadata: { import: { source: 'jmeter' } } })
+ const pressed = () => buttons('.import-category-nav button').find(item => item.getAttribute('aria-pressed') === 'true')?.textContent?.replace(/\d+$/, '')
+ const selectValue = (label: string, value: string) => {
+  const select = container.querySelector<HTMLSelectElement>(`[aria-label="${label}"]`)!
+  select.value = value
+  select.dispatchEvent(new Event('change', { bubbles: true }))
+ }
+
+ it('edits imported Kafka settings offline and resubmits only what changed, keeping the imported SASL password', async () => {
+  mocks.request.mockImplementation((endpoint: string) => endpoint.startsWith(FIELDS_ENDPOINT) ? Promise.reject(new Error('offline')) : Promise.resolve(undefined))
+  const draft = messagingDraft('kafka', { base_url: '', kafka: { brokers: ['broker-1:9093'], topic: 'orders', security_protocol: 'sasl_ssl', sasl_mechanism: 'plain', sasl_username: '$ConnectionString', sasl_password: 'imported-script-value', producer: { linger_ms: 5 } } } as ScriptDefinition['config'])
+  await act(async () => root.render(<Host initial={draft} />))
+  expect(pressed()).toBe('Kafka')
+  expect(content()).toContain('Producer batch linger delay (ms)')
+  await act(async () => button('Edit Kafka').click())
+  const password = container.querySelector<HTMLInputElement>('[aria-label="Kafka: SASL password"]')!
+  expect(password.value).toBe('imported-script-value')
+  expect(password.closest('label')?.textContent).toContain('{{secret.NAME}}')
+  // Only the values the import POST accepts are offered.
+  expect(Array.from(container.querySelector<HTMLSelectElement>('[aria-label="Kafka: Kafka security protocol"]')!.options).map(option => option.value)).toEqual(['', 'plaintext', 'ssl', 'sasl_plaintext', 'sasl_ssl'])
+  await act(async () => setInput('Kafka: Producer batch linger delay (ms)', '10'))
+  await act(async () => setInput('Kafka: Default Kafka topic', 'orders-v2'))
+  mocks.request.mockImplementation((endpoint: string) => Promise.resolve(endpoint === '/scripts/import/settings' ? { script: draft, findings: [], readiness: {}, secret_binding_requirements: [], validation_issues: [] } : undefined))
+  await act(async () => button('Apply Kafka').click())
+  const body = JSON.parse(postCalls()[0][1].body)
+  expect(body.category).toBe('Kafka')
+  expect(body.changes).toEqual([{ path: 'config.kafka.producer.linger_ms', value: 10 }, { path: 'config.kafka.topic', value: 'orders-v2' }])
+ })
+
+ it('opens an Event Hubs import on its own settings and offers the served secret as a Credentials reference', async () => {
+  mocks.request.mockImplementation((endpoint: string) => Promise.resolve(endpoint.startsWith(FIELDS_ENDPOINT) ? { groups: [], fields: [
+   { path: 'config.eventhubs.connection_string', category: 'Event Hubs', group: 'target_identity', label: 'Event Hubs SAS connection string', type: 'text', secret: true },
+   { path: 'config.eventhubs.consumer_mode', category: 'Event Hubs', group: 'protocol_behavior_session', label: 'Consumer execution mode', type: 'select', options: ['observer', 'processor'] },
+  ] } : undefined))
+  const draft = messagingDraft('eventhubs', { eventhubs: { namespace: 'ns.servicebus.windows.net', event_hub: 'orders', auth_type: 'connection_string', connection_string: 'Endpoint=sb://ns/;SharedAccessKeyName=send;SharedAccessKey=imported' } } as ScriptDefinition['config'])
+  await act(async () => root.render(<Host initial={draft} />))
+  expect(mocks.request).toHaveBeenCalledWith(`${FIELDS_ENDPOINT}?protocol=eventhubs`)
+  expect(pressed()).toBe('Event Hubs')
+  await act(async () => button('Edit Event Hubs').click())
+  const connection = container.querySelector<HTMLInputElement>('[aria-label="Event Hubs: Event Hubs SAS connection string"]')!
+  expect(connection.value).toContain('SharedAccessKeyName=send')
+  expect(connection.closest('label')?.textContent).toContain('{{secret.NAME}}')
+  await act(async () => { const reveal = Array.from(container.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')).find(input => input.parentElement?.textContent?.includes('unconfigured APEX settings')); reveal?.click() })
+  expect(Array.from(container.querySelector<HTMLSelectElement>('[aria-label="Event Hubs: Consumer execution mode"]')!.options).map(option => option.value)).toEqual(['', 'observer', 'processor'])
+  // Other families' unset settings stay out of an Event Hubs review.
+  expect(container.querySelector('[aria-label^="Kafka:"]')).toBeNull()
+  await act(async () => selectValue('Event Hubs: Consumer execution mode', 'processor'))
+  mocks.request.mockImplementation((endpoint: string) => Promise.resolve(endpoint === '/scripts/import/settings' ? { script: draft, findings: [], readiness: {}, secret_binding_requirements: [], validation_issues: [] } : undefined))
+  await act(async () => button('Apply Event Hubs').click())
+  expect(JSON.parse(postCalls()[0][1].body)).toMatchObject({ category: 'Event Hubs', changes: [{ path: 'config.eventhubs.consumer_mode', value: 'processor' }] })
+ })
+
+ it('files Java over HTTP settings under Java HTTP, the category the import POST accepts', async () => {
+  mocks.request.mockImplementation((endpoint: string) => endpoint.startsWith(FIELDS_ENDPOINT) ? Promise.reject(new Error('offline')) : Promise.resolve(undefined))
+  const draft = messagingDraft('java_http', { base_url: 'https://example.test', java_http: { content_type: 'application/x-java-serialized-object' } } as ScriptDefinition['config'])
+  await act(async () => root.render(<Host initial={draft} />))
+  await act(async () => buttons('.import-category-nav button').find(item => item.textContent?.startsWith('Java HTTP'))!.click())
+  await act(async () => button('Edit Java HTTP').click())
+  await act(async () => setInput('Java HTTP: Default Accept header', 'application/json'))
+  mocks.request.mockImplementation((endpoint: string) => Promise.resolve(endpoint === '/scripts/import/settings' ? { script: draft, findings: [], readiness: {}, secret_binding_requirements: [], validation_issues: [] } : undefined))
+  await act(async () => button('Apply Java HTTP').click())
+  expect(JSON.parse(postCalls()[0][1].body)).toMatchObject({ category: 'Java HTTP', changes: [{ path: 'config.java_http.accept', value: 'application/json' }] })
+ })
+})

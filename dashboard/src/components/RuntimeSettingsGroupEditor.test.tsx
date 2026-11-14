@@ -215,10 +215,10 @@ describe('RuntimeSettingsGroupEditor', () => {
     expect(tabLabels()).toContain('HTTP Transport')
     expect(tabLabels()).toContain('Web/HTTP')
 
-    render(2) // grpc — protocol-specific tabs hidden
+    render(2) // grpc — HTTP tabs hidden, its own gRPC tab shown
     expect(tabLabels()).not.toContain('HTTP Transport')
     expect(tabLabels()).not.toContain('Web/HTTP')
-    expect(tabLabels()).toEqual(['Summary', 'Target & identity', 'Think Time', 'Iteration Pacing', 'Run Logic', 'Error Handling'])
+    expect(tabLabels()).toEqual(['Summary', 'Target & identity', 'Think Time', 'Iteration Pacing', 'Run Logic', 'Error Handling', 'gRPC'])
   })
 
   it('renders the browser device editor under HTTP Transport → Browser emulation for a browser group', () => {
@@ -2247,8 +2247,8 @@ describe('RuntimeSettingsGroupEditor', () => {
       )
     })
     render()
-    clickTab('Error Handling')
-    const callback = findLabeledControl<HTMLInputElement>('WebSocket callback interval (ms)', 'input')
+    clickTab('WebSocket')
+    const callback = findLabeledControl<HTMLInputElement>('Callback dispatch interval (ms)', 'input')
     act(() => setInputValue(callback, '250'))
     let last = onChange.mock.calls[onChange.mock.calls.length - 1]?.[1] as ScenarioRuntimeSettingsDraft
     expect(buildRuntimeSettingsPayload(last)).toEqual({ websocket: { callback_interval_ms: 250 }, override_fields: ['websocket.callback_interval_ms'] })

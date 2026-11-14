@@ -30,6 +30,10 @@ import {
   SoapRuntimeSection,
   WebRuntimeCompatibilitySection,
 } from './ScriptRuntimeSettingsProtocolSections'
+import { KafkaRuntimeSection } from './KafkaRuntimeSection'
+import { BrowserAccessFields } from './BrowserAccessFields'
+import { CheckboxField, CredentialField, IntegerField, KeyValueMapField, LineListField, SelectField, TextField } from './RuntimeConfigFieldControls'
+import { databaseDSNPlaceholder, javaVuserParamBraceIssue, selectOptionsWithStored } from './protocolRuntimeOptions'
 import {
   BROWSER_DEVICE_PROFILES,
   formatBrowserDeviceProfileLabel,
@@ -407,6 +411,7 @@ export function ScriptRuntimeSettingsView({
     javaHttp: isJavaHttpScript,
     javaVuser: isJavaVuserScript,
     jms: isJmsScript,
+    kafka: isKafkaScript,
     network: isNetworkScript,
     appium: isAppiumScript,
     soap: isSoapScript,
@@ -684,37 +689,30 @@ export function ScriptRuntimeSettingsView({
           )}
           {isDatabaseScript && (
             <>
-              <label>
+              <label data-catalog-path="config.database.driver">
                 <span>Driver</span>
-                <select value={script.config.database?.driver || 'sqlite'} onChange={e => updateField('config.database.driver', e.target.value)}>
-                  <option value="sqlite">SQLite</option>
+                {/* Driver is required: an unset driver shows as unset, never as a
+                    driver the script does not store. */}
+                <select aria-label="Database driver" value={script.config.database?.driver || ''} onChange={e => updateField('config.database.driver', e.target.value || undefined)}>
+                  {!script.config.database?.driver && <option value="">Choose a driver (required)</option>}
+                  {selectOptionsWithStored('config.database.driver', script.config.database?.driver).map(option => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
+                  ))}
                 </select>
               </label>
-              <label>
+              <label data-catalog-path="config.database.dsn_secret">
                 <span>DSN Secret</span>
-                <input value={script.config.database?.dsn_secret || ''} onChange={e => updateField('config.database.dsn_secret', e.target.value)} placeholder="DB_DSN" />
+                <input value={script.config.database?.dsn_secret || ''} onChange={e => updateField('config.database.dsn_secret', e.target.value)} placeholder="DB_DSN" autoComplete="off" spellCheck={false} />
+                {script.config.database?.dsn_secret?.trim() && <small className="field-hint" data-secret-reference-note>Project secret {script.config.database.dsn_secret.trim()} is resolved at run time.</small>}
               </label>
-              <label className="full-width">
-                <span>DSN / Fixture</span>
-                <input value={script.config.database?.dsn || ''} onChange={e => updateField('config.database.dsn', e.target.value)} placeholder=":memory: or file:testdb?mode=memory&cache=shared" />
-              </label>
+              <CredentialField fullWidth label="DSN / Fixture" path="config.database.dsn" value={script.config.database?.dsn}
+                onChange={value => updateField('config.database.dsn', value)} placeholder={databaseDSNPlaceholder(script.config.database?.driver)} />
             </>
           )}
           {isNetworkScript && (
             <>
-              <label>
-                <span>Subprotocol</span>
-                <select value={script.config.network?.subprotocol || 'tcp'} onChange={e => updateField('config.network.subprotocol', e.target.value)}>
-                  <option value="dns">DNS</option>
-                  <option value="tcp">TCP / Winsock</option>
-                  <option value="udp">UDP / Winsock</option>
-                  <option value="ftp">FTP</option>
-                  <option value="smtp">SMTP</option>
-                  <option value="pop3">POP3</option>
-                  <option value="imap">IMAP</option>
-                  <option value="ldap">LDAP</option>
-                </select>
-              </label>
+              <SelectField label="Subprotocol" path="config.network.subprotocol" value={script.config.network?.subprotocol} defaultValue="tcp"
+                onChange={value => updateField('config.network.subprotocol', value)} />
               <label>
                 <span>Host</span>
                 <input value={script.config.network?.host || ''} onChange={e => updateField('config.network.host', e.target.value)} placeholder="localhost" />
@@ -1701,16 +1699,16 @@ export function ScriptRuntimeSettingsView({
               <label><span>Username</span>
                 <input value={script.config.jms?.username || ''}
                   onChange={e => updateField('config.jms', { ...script.config.jms, provider: jmsProvider || script.config.jms?.provider, username: e.target.value })} /></label>
-              <label><span>Password</span>
-                <input type="password" value={script.config.jms?.password || ''}
-                  onChange={e => updateField('config.jms', { ...script.config.jms, provider: jmsProvider || script.config.jms?.provider, password: e.target.value })} /></label>
+              <CredentialField label="Password" path="config.jms.password" value={script.config.jms?.password}
+                onChange={value => updateField('config.jms', { ...script.config.jms, provider: jmsProvider || script.config.jms?.provider, password: value })} />
               <label className="checkbox-label">
-                <input type="checkbox" checked={script.config.jms?.mock ?? true}
+                {/* The JMS adapter treats an unset mock as off (real broker). */}
+                <input type="checkbox" checked={script.config.jms?.mock ?? false}
                   onChange={e => updateField('config.jms', { ...script.config.jms, provider: jmsProvider || script.config.jms?.provider, mock: e.target.checked })} />
                 <span>Use local mock broker for replay</span>
               </label>
               <label><span>TLS CA Certificate Secret</span>
-                <input value={script.config.jms?.tls?.ca_cert_secret || ''} placeholder="jms-broker-ca"
+                <input autoComplete="off" spellCheck={false} value={script.config.jms?.tls?.ca_cert_secret || ''} placeholder="jms-broker-ca"
                   onChange={e => updateField('config.jms', { ...script.config.jms, provider: jmsProvider || script.config.jms?.provider, tls: { ...script.config.jms?.tls, ca_cert_secret: e.target.value } })} /></label>
               <label><span>TLS Trust Store Reference</span>
                 <input value={script.config.jms?.tls?.trust_store_ref || ''} placeholder="truststore.jks"
@@ -1728,12 +1726,8 @@ export function ScriptRuntimeSettingsView({
               <label><span>Destination</span>
                 <input value={script.config.jms?.destination || ''} placeholder="orders.in"
                   onChange={e => updateField('config.jms', { ...script.config.jms, provider: jmsProvider || script.config.jms?.provider, destination: e.target.value })} /></label>
-              <label><span>Destination Type</span>
-                <select value={script.config.jms?.destination_type || 'queue'}
-                  onChange={e => updateField('config.jms', { ...script.config.jms, provider: jmsProvider || script.config.jms?.provider, destination_type: e.target.value })}>
-                  <option value="queue">Queue</option>
-                  <option value="topic">Topic</option>
-                </select></label>
+              <SelectField label="Destination type" path="config.jms.destination_type" value={script.config.jms?.destination_type} defaultValue="queue"
+                onChange={value => updateField('config.jms', { ...script.config.jms, provider: jmsProvider || script.config.jms?.provider, destination_type: value })} />
               <label><span>Reply To</span>
                 <input value={script.config.jms?.reply_to || ''} placeholder="orders.reply"
                   onChange={e => updateField('config.jms', { ...script.config.jms, provider: jmsProvider || script.config.jms?.provider, reply_to: e.target.value })} /></label>
@@ -1745,22 +1739,21 @@ export function ScriptRuntimeSettingsView({
               <label><span>Timeout (s)</span>
                 <SecondsFromMillisecondsInput valueMs={script.config.jms?.timeout_ms} fallbackMs={5000}
                   onChangeMs={value => updateField('config.jms', { ...script.config.jms, provider: jmsProvider || script.config.jms?.provider, timeout_ms: value ?? 0 })} /></label>
-              <label><span>Acknowledgement</span>
-                <select value={script.config.jms?.acknowledgement || 'auto'}
-                  onChange={e => updateField('config.jms', { ...script.config.jms, provider: jmsProvider || script.config.jms?.provider, acknowledgement: e.target.value })}>
-                  <option value="auto">Auto</option>
-                  <option value="dups_ok">Duplicates OK</option>
-                  <option value="client">Client (mock only)</option>
-                  <option value="transacted">Transacted (mock only)</option>
-                </select></label>
-              <label><span>Delivery Mode</span>
-                <select value={script.config.jms?.delivery_mode || 'persistent'}
-                  onChange={e => updateField('config.jms', { ...script.config.jms, provider: jmsProvider || script.config.jms?.provider, delivery_mode: e.target.value })}>
-                  <option value="persistent">Persistent</option>
-                  <option value="non_persistent">Non-persistent</option>
-                </select></label>
+              <SelectField label="Acknowledgement" path="config.jms.acknowledgement" value={script.config.jms?.acknowledgement} defaultValue="auto"
+                onChange={value => updateField('config.jms', { ...script.config.jms, provider: jmsProvider || script.config.jms?.provider, acknowledgement: value })} />
+              <SelectField label="Delivery mode" path="config.jms.delivery_mode" value={script.config.jms?.delivery_mode} defaultValue="persistent"
+                onChange={value => updateField('config.jms', { ...script.config.jms, provider: jmsProvider || script.config.jms?.provider, delivery_mode: value })} />
             </div>
           </div>
+          <KeyValueMapField
+            label="JMS connection properties"
+            path="config.jms.properties"
+            value={script.config.jms?.properties}
+            keyPlaceholder="Property name"
+            valuePlaceholder="Value"
+            addLabel="Add property"
+            onChange={properties => updateField('config.jms', { ...script.config.jms, provider: jmsProvider || script.config.jms?.provider, properties })}
+          />
           <div className="parameter-empty-state" style={{ marginTop: 12 }}>
             {jmsProvider === 'ibmmq'
               ? 'IBM MQ supports mock replay only; real-mode validation fails closed until a governed MQI adapter is present.'
@@ -1769,6 +1762,15 @@ export function ScriptRuntimeSettingsView({
         </div>
       )}
     </div>
+  )}
+
+  {isKafkaScript && (
+    <KafkaRuntimeSection
+      script={script}
+      sectionIsActive={runtimeSectionIsActive}
+      onSelectSection={selectRuntimeSettingsSection}
+      onUpdateField={updateField}
+    />
   )}
 
   {isEventHubsScript && (
@@ -1790,18 +1792,13 @@ export function ScriptRuntimeSettingsView({
               <label><span>Event Hub</span>
                 <input value={script.config.eventhubs?.event_hub || ''} placeholder="orders"
                   onChange={e => updateField('config.eventhubs', { ...script.config.eventhubs, event_hub: e.target.value })} /></label>
-              <label><span>Authentication</span>
-                <select value={script.config.eventhubs?.auth_type || 'connection_string'}
-                  onChange={e => updateField('config.eventhubs', { ...script.config.eventhubs, auth_type: e.target.value })}>
-                  <option value="connection_string">SAS connection string</option>
-                  <option value="aad">Azure AD (managed identity)</option>
-                </select></label>
-              <label><span>Connection String Secret</span>
+              <SelectField label="Authentication" path="config.eventhubs.auth_type" value={script.config.eventhubs?.auth_type} defaultValue="connection_string"
+                onChange={value => updateField('config.eventhubs', { ...script.config.eventhubs, auth_type: value })} />
+              <label><span>Connection string secret</span>
                 <input value={script.config.eventhubs?.connection_string_secret || ''} placeholder="eventhubs-primary"
                   onChange={e => updateField('config.eventhubs', { ...script.config.eventhubs, connection_string_secret: e.target.value })} /></label>
-              <label><span>Connection String</span>
-                <input type="password" value={script.config.eventhubs?.connection_string || ''}
-                  onChange={e => updateField('config.eventhubs', { ...script.config.eventhubs, connection_string: e.target.value })} /></label>
+              <CredentialField label="Connection string" path="config.eventhubs.connection_string" value={script.config.eventhubs?.connection_string}
+                onChange={value => updateField('config.eventhubs', { ...script.config.eventhubs, connection_string: value })} />
               <label className="checkbox-label">
                 <input type="checkbox" checked={script.config.eventhubs?.mock ?? false}
                   onChange={e => updateField('config.eventhubs', { ...script.config.eventhubs, mock: e.target.checked })} />
@@ -1821,16 +1818,43 @@ export function ScriptRuntimeSettingsView({
               <label><span>Consumer group</span>
                 <input value={script.config.eventhubs?.consumer_group || ''} placeholder="$Default"
                   onChange={e => updateField('config.eventhubs', { ...script.config.eventhubs, consumer_group: e.target.value })} /></label>
-              <label><span>Observer Start Position</span>
-                <select value={script.config.eventhubs?.start_position || 'latest'}
-                  onChange={e => updateField('config.eventhubs', { ...script.config.eventhubs, start_position: e.target.value })}>
-                  <option value="latest">Latest (tail)</option>
-                  <option value="earliest">Earliest (partition start)</option>
-                </select></label>
+              <SelectField label="Observer start position" path="config.eventhubs.start_position" value={script.config.eventhubs?.start_position} defaultValue="latest"
+                onChange={value => updateField('config.eventhubs', { ...script.config.eventhubs, start_position: value })} />
               <label><span>Timeout (s)</span>
                 <SecondsFromMillisecondsInput valueMs={script.config.eventhubs?.timeout_ms} fallbackMs={5000}
                   onChangeMs={value => updateField('config.eventhubs', { ...script.config.eventhubs, timeout_ms: value ?? 0 })} /></label>
             </div>
+          </div>
+          <div className="settings-sub-group" data-testid="eventhubs-consumer-fields">
+            <h5>Consumer processing</h5>
+            <div className="form-grid">
+              <SelectField label="Consumer mode" path="config.eventhubs.consumer_mode" value={script.config.eventhubs?.consumer_mode} defaultValue="observer"
+                onChange={value => updateField('config.eventhubs', { ...script.config.eventhubs, consumer_mode: value })} />
+              {(script.config.eventhubs?.consumer_mode === 'processor' || script.config.eventhubs?.checkpoint_container_url) && (
+                <TextField fullWidth label="Checkpoint Blob container URL" path="config.eventhubs.checkpoint_container_url" value={script.config.eventhubs?.checkpoint_container_url}
+                  placeholder="https://account.blob.core.windows.net/checkpoints"
+                  onChange={value => updateField('config.eventhubs', { ...script.config.eventhubs, checkpoint_container_url: value || undefined })} />
+              )}
+              {(script.config.eventhubs?.consumer_mode === 'processor' || script.config.eventhubs?.processor_max_partitions !== undefined) && (
+                <IntegerField label="Max processor partitions" path="config.eventhubs.processor_max_partitions" value={script.config.eventhubs?.processor_max_partitions} min={0} max={32} placeholder="32"
+                  onChange={value => updateField('config.eventhubs', { ...script.config.eventhubs, processor_max_partitions: value })} />
+              )}
+              {(script.config.eventhubs?.consumer_mode === 'exclusive' || (script.config.eventhubs?.owner_level !== undefined && script.config.eventhubs?.owner_level !== null)) && (
+                <IntegerField label="Exclusive owner level" path="config.eventhubs.owner_level" value={script.config.eventhubs?.owner_level} min={0}
+                  onChange={value => updateField('config.eventhubs', { ...script.config.eventhubs, owner_level: value })} />
+              )}
+              {/* Partition-tail settings are processor-only (catalog_eventhubs_validation.go); a stored value stays visible so it can be cleared. */}
+              {(script.config.eventhubs?.consumer_mode === 'processor' || Boolean(script.config.eventhubs?.tail_poll_interval_ms)) && (
+                <IntegerField label="Tail poll interval (ms)" path="config.eventhubs.tail_poll_interval_ms" value={script.config.eventhubs?.tail_poll_interval_ms} min={10000} max={300000} placeholder="10000"
+                  onChange={value => updateField('config.eventhubs', { ...script.config.eventhubs, tail_poll_interval_ms: value })} />
+              )}
+            </div>
+            {(script.config.eventhubs?.consumer_mode === 'processor' || Boolean(script.config.eventhubs?.observe_partition_tail)) && (
+              <div className="runtime-checkbox-list">
+                <CheckboxField label="Observe partition tail lag" path="config.eventhubs.observe_partition_tail" checked={Boolean(script.config.eventhubs?.observe_partition_tail)}
+                  onChange={value => updateField('config.eventhubs', { ...script.config.eventhubs, observe_partition_tail: value || undefined })} />
+              </div>
+            )}
           </div>
           <div className="parameter-empty-state" style={{ marginTop: 12 }}>
             Event Hubs real execution requires a build that includes the Azure adapter (-tags eventhubs_real); use mock replay for local shakeout.
@@ -1895,7 +1919,8 @@ export function ScriptRuntimeSettingsView({
         <div className="section-body">
           <div className="form-grid">
             <label className="checkbox-label">
-              <input type="checkbox" checked={script.config.grpc?.use_reflection ?? true}
+              {/* The gRPC adapter enables reflection only when use_reflection is true. */}
+              <input type="checkbox" checked={script.config.grpc?.use_reflection ?? false}
                 onChange={e => updateField('config.grpc', { ...script.config.grpc, use_reflection: e.target.checked })} />
               <span>Use reflection</span>
             </label>
@@ -1918,6 +1943,15 @@ export function ScriptRuntimeSettingsView({
                 onChange={e => updateField('config.grpc', { ...script.config.grpc, proto_files: e.target.value.split(',').map(value => value.trim()).filter(Boolean) })}
                 placeholder="contracts/orders.proto, contracts/common.proto" /></label>
           </div>
+          <KeyValueMapField
+            label="Default call metadata"
+            path="config.grpc.metadata"
+            value={script.config.grpc?.metadata}
+            keyPlaceholder="x-tenant-id"
+            valuePlaceholder="{{tenant_id}}"
+            addLabel="Add metadata"
+            onChange={metadata => updateField('config.grpc', { ...script.config.grpc, metadata })}
+          />
         </div>
       )}
     </div>
@@ -1940,19 +1974,22 @@ export function ScriptRuntimeSettingsView({
             <label><span>Max Rows</span>
               <input type="number" value={script.config.database?.max_rows || 100}
                 onChange={e => updateField('config.database', { ...script.config.database, max_rows: Number(e.target.value) })} /></label>
-            <label><span>Max Open Connections</span>
-              <input type="number" value={script.config.database?.max_open_conns || 1}
-                onChange={e => updateField('config.database', { ...script.config.database, max_open_conns: Number(e.target.value) })} /></label>
+            <IntegerField label="Max open connections" path="config.database.max_open_conns" value={script.config.database?.max_open_conns} min={0} placeholder="Unlimited"
+              onChange={value => updateField('config.database', { ...script.config.database, max_open_conns: value })} />
+            <label data-catalog-path="config.database.conn_max_lifetime_ms"><span>Connection max lifetime (s)</span>
+              <SecondsFromMillisecondsInput aria-label="Connection max lifetime" valueMs={script.config.database?.conn_max_lifetime_ms} emptyWhenUndefined placeholder="No limit"
+                onChangeMs={value => updateField('config.database', { ...script.config.database, conn_max_lifetime_ms: value || undefined })} /></label>
             <label><span>Max idle connections</span>
               <input type="number" value={script.config.database?.max_idle_conns || 0}
                 onChange={e => updateField('config.database', { ...script.config.database, max_idle_conns: Number(e.target.value) || undefined })} /></label>
             <label className="checkbox-label">
-              <input type="checkbox" checked={script.config.database?.read_only ?? true}
+              {/* Unset is off at run time (database_read_only is sent only when true). */}
+              <input type="checkbox" checked={script.config.database?.read_only ?? false}
                 onChange={e => updateField('config.database', { ...script.config.database, read_only: e.target.checked })} />
               <span>Read-only guard</span>
             </label>
             <label className="checkbox-label">
-              <input type="checkbox" checked={script.config.database?.rollback_on_teardown ?? true}
+              <input type="checkbox" checked={script.config.database?.rollback_on_teardown ?? false}
                 onChange={e => updateField('config.database', { ...script.config.database, rollback_on_teardown: e.target.checked })} />
               <span>Rollback open transaction on teardown</span>
             </label>
@@ -1987,13 +2024,21 @@ export function ScriptRuntimeSettingsView({
             <label><span>Username</span>
               <input value={script.config.network?.username || ''}
                 onChange={e => updateField('config.network', { ...script.config.network, username: e.target.value })} /></label>
-            <label><span>Password</span>
-              <input type="password" value={script.config.network?.password || ''}
-                onChange={e => updateField('config.network', { ...script.config.network, password: e.target.value })} /></label>
+            <CredentialField label="Password" path="config.network.password" value={script.config.network?.password}
+              onChange={value => updateField('config.network', { ...script.config.network, password: value })} />
             <label><span>LDAP Base DN</span>
               <input value={script.config.network?.base_dn || ''}
                 onChange={e => updateField('config.network', { ...script.config.network, base_dn: e.target.value })} placeholder="dc=example,dc=com" /></label>
           </div>
+          {((script.config.network?.subprotocol || '').trim().toLowerCase() === 'smtp' || Boolean(script.config.network?.from) || Boolean(script.config.network?.to?.length)) && <div className="settings-sub-group" data-testid="network-smtp-defaults">
+            <h5>SMTP defaults</h5>
+            <div className="form-grid">
+              <TextField label="Sender address (MAIL FROM)" path="config.network.from" value={script.config.network?.from} placeholder="loadtest@example.test"
+                onChange={value => updateField('config.network', { ...script.config.network, from: value || undefined })} />
+              <LineListField label="Recipient addresses (RCPT TO)" path="config.network.to" value={script.config.network?.to} placeholder={'ops@example.test\nqa@example.test'}
+                onChange={value => updateField('config.network', { ...script.config.network, to: value.length > 0 ? value : undefined })} />
+            </div>
+          </div>}
         </div>
       )}
     </div>
@@ -2513,6 +2558,7 @@ export function ScriptRuntimeSettingsView({
               Page timings and Web Vitals (TTFB, FCP, LCP, INP, CLS) fill Command Center&apos;s Browser groups panel and the run report&apos;s Browser tab. Interaction evidence records where each gesture landed, never typed values. Both are off by default and need generators that support browser evidence. A scenario or group that sets its own browser runtime settings replaces this script&apos;s, these two included; the run readiness review names any browser group left without page timings.
             </p>
           </div>
+          <BrowserAccessFields browser={script.config.browser} onChange={browser => updateField('config.browser', browser)} />
           {/* A browser proxy secret stays in the script with no proxy server
               set, ready for one; nothing needs it until then. */}
           {scriptInactiveProxyCredentialNotes(script, 'browser').map(note => <p key={note} className="new-test-inline-note" data-inactive-proxy-credential-note>{note}</p>)}
@@ -2752,6 +2798,20 @@ export function ScriptRuntimeSettingsView({
               />
             </label>
           </div>
+        </div>
+
+        <div className="settings-sub-group" data-testid="java-vuser-parameter-braces">
+          <h5>Parameter delimiters</h5>
+          <div className="form-grid">
+            <TextField label="Parameter left brace" path="config.java_vuser.param_left_brace" value={script.config.java_vuser?.param_left_brace} placeholder="{"
+              onChange={value => updateField('config.java_vuser.param_left_brace', value || undefined)} />
+            <TextField label="Parameter right brace" path="config.java_vuser.param_right_brace" value={script.config.java_vuser?.param_right_brace} placeholder="}"
+              onChange={value => updateField('config.java_vuser.param_right_brace', value || undefined)} />
+          </div>
+          {javaVuserParamBraceIssue(script.config.java_vuser?.param_left_brace, script.config.java_vuser?.param_right_brace) && (
+            <p className="field-error" role="alert">{javaVuserParamBraceIssue(script.config.java_vuser?.param_left_brace, script.config.java_vuser?.param_right_brace)}</p>
+          )}
+          <p className="form-hint">lr.eval_string resolves parameters between these delimiters; empty keeps {'{'} and {'}'}.</p>
         </div>
       </div>
     )}
