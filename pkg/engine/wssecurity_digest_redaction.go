@@ -21,7 +21,11 @@ import (
 // maskPlatformDerivedWSSecurityDigests therefore recomputes the digest from
 // every value the run's exact matcher withholds and masks the digest and its
 // nonce when one of them produced it. A digest of a script-literal password
-// stays visible, like the rest of what the script authored. When the matcher
+// stays visible, like the rest of what the script authored. A digest already
+// replaced by the redaction placeholder is left as is: the decision is by
+// origin, not shape, so the SOAP adapter withholds a secret-store digest's
+// nonce itself, and an authored "[REDACTED]" digest keeps its script-sourced
+// nonce. When the matcher
 // is too large to check, or the element is cut off, the digest is masked
 // (fail closed).
 
