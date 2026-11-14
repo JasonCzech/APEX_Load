@@ -106,6 +106,11 @@ export type ImportRuntimeField = {
  triState?: boolean
  /** The import POST refuses a typed literal here; a new value must be a Credentials reference. */
  credentialReference?: boolean
+ /**
+  * Validation rejects any value here, so the editor shows a stored value
+  * with a remove action and offers no entry (IMPORT_CLEAR_ONLY_PATHS).
+  */
+ clearOnly?: boolean
 }
 
 export type RemoteImportRuntimeField = {
@@ -634,7 +639,7 @@ const PROTOCOL_FIELDS: Array<Omit<ImportRuntimeField, 'groupId' | 'subgroup'>> =
  { category: 'WebSocket', group: 'Transport & connections', path: 'config.websocket.compression', label: 'Enable per-message deflate compression', type: 'boolean', protocols: ['websocket'] },
  { category: 'WebSocket', group: 'Transport & connections', path: 'config.websocket.reconnect', label: 'Reconnect on unexpected close', type: 'boolean', protocols: ['websocket'] },
  // Database
- { category: 'Database', group: 'Target & identity', path: 'config.database.driver', label: 'Database driver', type: 'select', options: ['postgres', 'mysql', 'oracle', 'odbc', 'sqlite', 'sqlite3'], protocols: ['database'] },
+ { category: 'Database', group: 'Target & identity', path: 'config.database.driver', label: 'Database driver', type: 'select', options: ['sqlite', 'postgres'], protocols: ['database'] },
  { category: 'Database', group: 'Security, proxy & auth', path: 'config.database.dsn', label: 'Database connection string (DSN)', type: 'text', credentialReference: true, protocols: ['database'] },
  { category: 'Database', group: 'Security, proxy & auth', path: 'config.database.dsn_secret', label: 'DSN project secret name', type: 'text', protocols: ['database'] },
  { category: 'Database', group: 'Transport & connections', path: 'config.database.max_open_conns', label: 'Maximum open database connections', type: 'number', protocols: ['database'] },
@@ -743,6 +748,14 @@ const PROTOCOL_FIELDS: Array<Omit<ImportRuntimeField, 'groupId' | 'subgroup'>> =
  { category: 'Browser', group: 'Security, proxy & auth', path: 'config.browser.session.jwt.start_url', label: 'Salesforce frontdoor landing path', type: 'text', protocols: ['browser'] },
 ]
 
+// Settings DSL validation rejects whenever they hold a value
+// (pkg/dsl/catalog_java_http_validation.go: "is not supported by embedded
+// java_http"). The served catalog still lists them in import scope, so they
+// stay clear-only after a merge: a stored value can be removed, not typed.
+export const IMPORT_CLEAR_ONLY_PATHS: ReadonlySet<string> = new Set([
+ 'config.java_http.object_schema',
+])
+
 function buildStaticCatalog(): ImportRuntimeField[] {
  const byPath = new Map<string, ImportRuntimeField>()
  for (const entry of fieldSchema as Array<{ category: string; path: string; label: string; type: string; options?: string[] }>) {
@@ -761,6 +774,10 @@ function buildStaticCatalog(): ImportRuntimeField[] {
   }
   const existing = byPath.get(normalized.path)
   byPath.set(normalized.path, existing ? { ...existing, ...normalized } : normalized)
+ }
+ for (const path of IMPORT_CLEAR_ONLY_PATHS) {
+  const field = byPath.get(path)
+  if (field) byPath.set(path, { ...field, clearOnly: true })
  }
  return [...byPath.values()]
 }
@@ -793,6 +810,15 @@ function normalizeRemoteFieldType(type?: string): string {
 // "" as unset, so a listed blank option would only render a second blank row.
 const selectableOptions = (options?: string[]) => options?.filter(option => option.trim() !== '')
 
+// Selects whose offline option list is deliberately narrower than the served
+// catalog list. An imported value outside the list still shows via
+// preservedOption and resubmits unchanged; it just cannot be newly chosen.
+export const IMPORT_NARROWED_SELECT_PATHS: ReadonlySet<string> = new Set([
+ 'config.http.tls.min_version',
+ 'config.http.tls.max_version',
+ 'config.database.driver',
+])
+
 export function mergeImportRuntimeFields(
  remoteFields?: RemoteImportRuntimeField[] | null,
  baseFields: ImportRuntimeField[] = importRuntimeFields,
@@ -810,9 +836,10 @@ export function mergeImportRuntimeFields(
   if (existing) {
    // The server validates a select against exactly the options it serves, so
    // they replace the offline list instead of widening it. TLS stays narrowed
-   // to the versions the guided migration supports.
-   const keepRestrictedTlsOptions = remote.path === 'config.http.tls.min_version' || remote.path === 'config.http.tls.max_version'
-   const mergedOptions = keepRestrictedTlsOptions || !remoteOptions?.length ? existing.options : remoteOptions
+   // to the versions the guided migration supports, and the database driver to
+   // the drivers the runtime registers (pkg/protocol/database: pgx and sqlite).
+   const keepRestrictedOptions = IMPORT_NARROWED_SELECT_PATHS.has(remote.path)
+   const mergedOptions = keepRestrictedOptions || !remoteOptions?.length ? existing.options : remoteOptions
    const remoteGroup = remote.group || remote.group_id
    const resolvedGroup = remoteGroup ? resolveCanonicalRuntimeGroup(remoteGroup, remote.path) : existing.group
    byPath.set(remote.path, {
@@ -823,6 +850,7 @@ export function mergeImportRuntimeFields(
     protocols: existing.protocols || remote.protocols,
     triState: existing.triState ?? remote.tri_state,
     credentialReference: existing.credentialReference || remote.secret || undefined,
+    clearOnly: existing.clearOnly || IMPORT_CLEAR_ONLY_PATHS.has(remote.path) || undefined,
    })
    continue
   }
@@ -845,6 +873,7 @@ export function mergeImportRuntimeFields(
    protocols: remote.protocols,
    triState: remote.tri_state,
    credentialReference: remote.secret || undefined,
+   clearOnly: IMPORT_CLEAR_ONLY_PATHS.has(remote.path) || undefined,
   })
  }
  return [...byPath.values()]

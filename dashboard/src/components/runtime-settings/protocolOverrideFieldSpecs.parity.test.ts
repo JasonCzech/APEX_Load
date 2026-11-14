@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { normalizeRuntimeOverrideFieldPath, RUNTIME_PROTOCOL_OVERRIDE_SECTIONS } from '../runtimeSettingsModel'
-import { PROTOCOL_OVERRIDE_ENGINE_DEFAULTS, PROTOCOL_OVERRIDE_VALIDATOR_OPTIONS, PROTOCOL_OVERRIDE_FIELD_SPECS, type ProtocolOverrideSpecSection } from './protocolOverrideFieldSpecs'
+import { KAFKA_EVENTHUBS_PROFILE_DEFAULTS, protocolOverrideProfileDefault, PROTOCOL_OVERRIDE_ENGINE_DEFAULTS, PROTOCOL_OVERRIDE_VALIDATOR_OPTIONS, PROTOCOL_OVERRIDE_FIELD_SPECS, type ProtocolOverrideSpecSection } from './protocolOverrideFieldSpecs'
 
 interface CatalogEntry {
   path: string
@@ -57,7 +57,11 @@ describe('protocol override field specs parity with pkg/dsl/config_catalog.go', 
       for (const entry of expected) {
         const spec = specs.find(candidate => candidate.path === entry.path)!
         expect([entry.path, spec.label]).toEqual([entry.path, entry.label])
-        if (RESTRICTED_OPTIONS[entry.path]) {
+        if (spec.unsupported) {
+          // The validator refuses every value: only the explicit none (or removal) is offered.
+          if (spec.kind === 'map') expect([entry.path, spec.removeOnly]).toEqual([entry.path, true])
+          else expect([entry.path, spec.kind, spec.options]).toEqual([entry.path, 'select', ['']])
+        } else if (RESTRICTED_OPTIONS[entry.path]) {
           expect(spec.options).toEqual(RESTRICTED_OPTIONS[entry.path])
           for (const option of spec.options ?? []) expect(entry.options).toContain(option)
         } else if (entry.options) {
@@ -100,6 +104,23 @@ describe('protocol override field specs parity with pkg/dsl/config_catalog.go', 
     }
   })
 
+  it('never offers a java_http value the embedded validator rejects', async () => {
+    // @ts-expect-error Vitest runs in Node, while the dashboard app intentionally omits Node types.
+    const { readFileSync } = await import('node:fs')
+    const validation = readRepoFile('pkg/dsl/catalog_java_http_validation.go', readFileSync)
+    const rejected = Array.from(validation.matchAll(/"config\.(java_http\.[a-z_]+) is not supported by embedded java_http"/g), match => match[1]).sort()
+    expect(rejected).toEqual(['java_http.extractor_type', 'java_http.object_schema', 'java_http.request_mapping'])
+    const unsupported = PROTOCOL_OVERRIDE_FIELD_SPECS.java_http.filter(spec => spec.unsupported).map(spec => spec.path).sort()
+    expect(unsupported).toEqual(rejected)
+    for (const spec of PROTOCOL_OVERRIDE_FIELD_SPECS.java_http.filter(candidate => candidate.unsupported)) {
+      if (spec.kind === 'map') expect(spec.removeOnly).toBe(true)
+      else expect([spec.path, spec.kind, spec.options]).toEqual([spec.path, 'select', ['']])
+    }
+    // helper_mode accepts only embedded (sidecar is refused for embedded java_http).
+    expect(validation).toMatch(/helper_mode/)
+    expect(PROTOCOL_OVERRIDE_FIELD_SPECS.java_http.find(spec => spec.path === 'java_http.helper_mode')?.options).not.toContain('sidecar')
+  })
+
   it('shows the engine default where it differs from the catalog default (grpc.use_reflection)', async () => {
     // @ts-expect-error Vitest runs in Node, while the dashboard app intentionally omits Node types.
     const { readFileSync } = await import('node:fs')
@@ -114,5 +135,64 @@ describe('protocol override field specs parity with pkg/dsl/config_catalog.go', 
     expect(PROTOCOL_OVERRIDE_ENGINE_DEFAULTS['grpc.use_reflection']).toBe(false)
     const spec = PROTOCOL_OVERRIDE_FIELD_SPECS.grpc.find(candidate => candidate.path === 'grpc.use_reflection')
     expect(spec?.defaultValue).toBe(false)
+  })
+
+  it('shows the engine fallback, not the catalog default, as the inherit placeholder', async () => {
+    // @ts-expect-error Vitest runs in Node, while the dashboard app intentionally omits Node types.
+    const { readFileSync } = await import('node:fs')
+    const jms = readRepoFile('pkg/protocol/jms/jms.go', readFileSync)
+    const eventhubs = readRepoFile('pkg/protocol/eventhubs/eventhubs.go', readFileSync)
+    const database = readRepoFile('pkg/protocol/database/database.go', readFileSync)
+    const grpc = readRepoFile('pkg/protocol/grpc/grpc.go', readFileSync)
+    const types = readRepoFile('pkg/dsl/types.go', readFileSync)
+    const kafka = readRepoFile('pkg/protocol/kafka/kafka.go', readFileSync)
+    expect(kafka).toMatch(/const defaultMockPartitions = 4\b/)
+    expect(kafka).toContain('boundedConfigInt(cfg, "kafka_partitions", defaultMockPartitions,')
+    expect(kafka).toContain('boundedConfigInt(cfg, "kafka_timeout_ms", int((5*time.Second)/time.Millisecond),')
+    expect(kafka).toMatch(/if k\.cfg\.Timeout <= 0 \{\s*k\.cfg\.Timeout = 5 \* time\.Second/)
+    expect(jms).toMatch(/if j\.cfg\.Timeout <= 0 \{\s*j\.cfg\.Timeout = 5 \* time\.Second/)
+    expect(eventhubs).toMatch(/defaultTimeout\s+= 5 \* time\.Second/)
+    expect(database).toMatch(/defaultDatabaseMaxRows\s+= 100\b/)
+    expect(grpc).toMatch(/if g\.maxRecvBytes <= 0 \{\s*g\.maxRecvBytes = dsl\.MaxGRPCStreamBytes/)
+    expect(types).toMatch(/MaxGRPCStreamBytes\s+= 8 << 20/)
+    // The pool limits apply only when set (> 0); unset leaves database/sql's own behaviour.
+    expect(database).toContain('if maxOpen := protocol.ConfigInt(config, "database_max_open_conns"); maxOpen > 0 {')
+    expect(database).toContain('if maxIdle := protocol.ConfigInt(config, "database_max_idle_conns"); maxIdle > 0 {')
+    expect(database).toContain('if lifetimeMS := protocol.ConfigInt(config, "database_conn_max_lifetime_ms"); lifetimeMS > 0 {')
+    const expected: Record<string, number | undefined> = {
+      'jms.timeout_ms': 5000,
+      'eventhubs.timeout_ms': 5000,
+      'kafka.timeout_ms': 5000,
+      'kafka.partitions': 4,
+      'database.max_rows': 100,
+      'grpc.max_recv_msg_size': 8 << 20,
+      'database.max_open_conns': undefined,
+      'database.max_idle_conns': undefined,
+      'database.conn_max_lifetime_ms': undefined,
+    }
+    const specs = Object.values(PROTOCOL_OVERRIDE_FIELD_SPECS).flat()
+    for (const [path, value] of Object.entries(expected)) {
+      expect([path, PROTOCOL_OVERRIDE_ENGINE_DEFAULTS[path]]).toEqual([path, value])
+      expect([path, specs.find(candidate => candidate.path === path)?.defaultValue]).toEqual([path, value])
+    }
+  })
+
+  it('shows the eventhubs Kafka profile defaults the engine fills in (pkg/protocol/kafka/kafka.go)', async () => {
+    // @ts-expect-error Vitest runs in Node, while the dashboard app intentionally omits Node types.
+    const { readFileSync } = await import('node:fs')
+    const kafka = readRepoFile('pkg/protocol/kafka/kafka.go', readFileSync)
+    const profileBlock = /if k\.cfg\.Profile == "eventhubs" \{([\s\S]*?)\n\t\}\n/.exec(kafka)?.[1] ?? ''
+    expect(profileBlock).toMatch(new RegExp(`if k\\.cfg\\.SecurityProtocol == "" \\{\\s*k\\.cfg\\.SecurityProtocol = "${KAFKA_EVENTHUBS_PROFILE_DEFAULTS.security_protocol}"`))
+    expect(profileBlock).toMatch(new RegExp(`if k\\.cfg\\.SASLMechanism == "" \\{\\s*k\\.cfg\\.SASLMechanism = "${KAFKA_EVENTHUBS_PROFILE_DEFAULTS.sasl_mechanism}"`))
+    expect(profileBlock).toContain(`if k.cfg.SASLMechanism == "${KAFKA_EVENTHUBS_PROFILE_DEFAULTS.sasl_mechanism}" && k.cfg.SASLUsername == "" {\n\t\t\tk.cfg.SASLUsername = "${KAFKA_EVENTHUBS_PROFILE_DEFAULTS.sasl_username}"`)
+    const eventhubs = (values: Record<string, unknown>) => (path: string) => values[path]
+    expect(protocolOverrideProfileDefault('kafka.security_protocol', eventhubs({ 'kafka.profile': 'eventhubs' }))).toBe('sasl_ssl')
+    expect(protocolOverrideProfileDefault('kafka.sasl_mechanism', eventhubs({ 'kafka.profile': 'eventhubs' }))).toBe('plain')
+    expect(protocolOverrideProfileDefault('kafka.sasl_username', eventhubs({ 'kafka.profile': 'eventhubs' }))).toBe('$ConnectionString')
+    expect(protocolOverrideProfileDefault('kafka.sasl_username', eventhubs({ 'kafka.profile': 'eventhubs', 'kafka.sasl_mechanism': 'oauthbearer' }))).toBeUndefined()
+    expect(protocolOverrideProfileDefault('kafka.security_protocol', eventhubs({}))).toBeUndefined()
+    // catalog_kafka_validation.go and kafka.go trim and lowercase the profile before comparing.
+    expect(kafka).toMatch(/Profile:\s+strings\.ToLower\(strings\.TrimSpace\(stringValue\(cfg, "kafka_profile"\)\)\)/)
+    expect(protocolOverrideProfileDefault('kafka.security_protocol', eventhubs({ 'kafka.profile': ' EventHubs ' }))).toBe('sasl_ssl')
   })
 })

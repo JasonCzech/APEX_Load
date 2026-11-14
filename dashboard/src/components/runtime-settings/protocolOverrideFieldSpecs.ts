@@ -53,6 +53,15 @@ export interface ProtocolOverrideFieldSpec {
    * resets keys the layers below supply and never adds or edits one.
    */
   removeOnly?: boolean
+  /** The note a removeOnly map shows in place of the generic-properties one. */
+  removeOnlyNote?: string
+  /**
+   * The validator refuses any value here (pkg/dsl/catalog_java_http_validation.go
+   * rejects these for embedded java_http), so the editor offers only Inherit and
+   * the explicit none for a scalar, and removal for a map: a stored value can be
+   * cleared but nothing new can be written.
+   */
+  unsupported?: boolean
   /**
    * How a map key is judged credential-named, so its value is typed hidden
    * (protocolCredentialLeaves): a setting name (properties), an HTTP-style
@@ -82,6 +91,18 @@ export const PROTOCOL_OVERRIDE_VALIDATOR_OPTIONS: Readonly<Record<string, readon
  */
 export const PROTOCOL_OVERRIDE_ENGINE_DEFAULTS: Readonly<Record<string, string | number | boolean>> = {
   'grpc.use_reflection': false,
+  // Runtime fallbacks when no layer sets the value (pkg/protocol/kafka/kafka.go
+  // 5 s timeout and defaultMockPartitions, pkg/protocol/jms/jms.go,
+  // pkg/protocol/eventhubs/eventhubs.go defaultTimeout, pkg/protocol/database
+  // defaultDatabaseMaxRows, pkg/protocol/grpc dsl.MaxGRPCStreamBytes). The
+  // database pool limits have no engine default: unset leaves them unlimited,
+  // so those specs carry no defaultValue and the placeholder reads Inherit.
+  'kafka.timeout_ms': 5000,
+  'kafka.partitions': 4,
+  'jms.timeout_ms': 5000,
+  'eventhubs.timeout_ms': 5000,
+  'database.max_rows': 100,
+  'grpc.max_recv_msg_size': 8388608,
 }
 
 export const PROTOCOL_OVERRIDE_FIELD_SPECS: Readonly<Record<ProtocolOverrideSpecSection, readonly ProtocolOverrideFieldSpec[]>> = {
@@ -99,8 +120,8 @@ export const PROTOCOL_OVERRIDE_FIELD_SPECS: Readonly<Record<ProtocolOverrideSpec
     { path: 'kafka.transactional_id', label: 'Producer transactional ID', kind: 'text', group: 'Kafka producer' },
     { path: 'kafka.compression', label: 'Record batch compression', kind: 'select', group: 'Kafka producer', options: ['none', 'gzip', 'snappy', 'lz4', 'zstd'], defaultValue: 'none' },
     { path: 'kafka.partition_strategy', label: 'Partition routing strategy', kind: 'select', group: 'Kafka producer', options: ['key-hash', 'round-robin', 'explicit'], defaultValue: 'key-hash' },
-    { path: 'kafka.partitions', label: 'Mock topic partition count', kind: 'number', group: 'Kafka', defaultValue: 1 },
-    { path: 'kafka.timeout_ms', label: 'Kafka operation timeout', kind: 'number', group: 'Kafka', defaultValue: 30000 },
+    { path: 'kafka.partitions', label: 'Mock topic partition count', kind: 'number', group: 'Kafka', defaultValue: PROTOCOL_OVERRIDE_ENGINE_DEFAULTS['kafka.partitions'] },
+    { path: 'kafka.timeout_ms', label: 'Kafka operation timeout', kind: 'number', group: 'Kafka', defaultValue: PROTOCOL_OVERRIDE_ENGINE_DEFAULTS['kafka.timeout_ms'] },
     { path: 'kafka.max_message_bytes', label: 'Maximum record size', kind: 'number', group: 'Kafka producer', defaultValue: 1048576 },
     { path: 'kafka.producer.retries', label: 'Producer delivery retries', kind: 'number', group: 'Kafka producer' },
     { path: 'kafka.producer.linger_ms', label: 'Producer batch linger delay', kind: 'number', group: 'Kafka producer' },
@@ -150,7 +171,7 @@ export const PROTOCOL_OVERRIDE_FIELD_SPECS: Readonly<Record<ProtocolOverrideSpec
     { path: 'jms.reply_to', label: 'Default JMSReplyTo destination', kind: 'text', group: 'JMS' },
     { path: 'jms.acknowledgement', label: 'Session acknowledgement mode', kind: 'select', group: 'JMS', options: ['auto', 'dups_ok', 'client', 'transacted'], defaultValue: 'auto' },
     { path: 'jms.delivery_mode', label: 'Message delivery mode', kind: 'select', group: 'JMS', options: ['persistent', 'non_persistent'], defaultValue: 'persistent' },
-    { path: 'jms.timeout_ms', label: 'JMS operation timeout', kind: 'number', group: 'JMS', defaultValue: 30000 },
+    { path: 'jms.timeout_ms', label: 'JMS operation timeout', kind: 'number', group: 'JMS', defaultValue: PROTOCOL_OVERRIDE_ENGINE_DEFAULTS['jms.timeout_ms'] },
     { path: 'jms.properties', label: 'JMS connection properties', kind: 'map', group: 'JMS', credentialKeys: 'setting' },
     { path: 'jms.tls.ca_cert_secret', label: 'JMS CA certificate secret', kind: 'secret_name', group: 'JMS TLS' },
     { path: 'jms.tls.trust_store_ref', label: 'JMS trust store reference', kind: 'text', group: 'JMS TLS' },
@@ -173,14 +194,14 @@ export const PROTOCOL_OVERRIDE_FIELD_SPECS: Readonly<Record<ProtocolOverrideSpec
     { path: 'eventhubs.partition_key', label: 'Default partition routing key', kind: 'text', group: 'Event Hubs' },
     { path: 'eventhubs.partition_id', label: 'Default explicit partition ID', kind: 'text', group: 'Event Hubs' },
     { path: 'eventhubs.start_position', label: 'Observer start position', kind: 'select', group: 'Event Hubs', options: ['latest', 'earliest'], defaultValue: 'latest' },
-    { path: 'eventhubs.timeout_ms', label: 'Event Hubs operation timeout', kind: 'number', group: 'Event Hubs', defaultValue: 30000 },
+    { path: 'eventhubs.timeout_ms', label: 'Event Hubs operation timeout', kind: 'number', group: 'Event Hubs', defaultValue: PROTOCOL_OVERRIDE_ENGINE_DEFAULTS['eventhubs.timeout_ms'] },
     { path: 'eventhubs.mock', label: 'Use in-memory mock Event Hub', kind: 'bool', group: 'Event Hubs' },
   ],
   grpc: [
     { path: 'grpc.proto_files', label: 'Protobuf descriptor files', kind: 'list', group: 'gRPC' },
     { path: 'grpc.use_reflection', label: 'Use gRPC server reflection', kind: 'bool', group: 'gRPC', defaultValue: PROTOCOL_OVERRIDE_ENGINE_DEFAULTS['grpc.use_reflection'] },
     { path: 'grpc.plain_text', label: 'Use plaintext h2c connection', kind: 'bool', group: 'gRPC' },
-    { path: 'grpc.max_recv_msg_size', label: 'Maximum receive message size', kind: 'number', group: 'gRPC', defaultValue: 4194304 },
+    { path: 'grpc.max_recv_msg_size', label: 'Maximum receive message size', kind: 'number', group: 'gRPC', defaultValue: PROTOCOL_OVERRIDE_ENGINE_DEFAULTS['grpc.max_recv_msg_size'] },
     { path: 'grpc.timeout_ms', label: 'Default RPC timeout', kind: 'number', group: 'gRPC', defaultValue: 30000 },
     { path: 'grpc.metadata', label: 'Default gRPC metadata', kind: 'map', group: 'gRPC', credentialKeys: 'header' },
     { path: 'grpc.authority', label: 'HTTP/2 :authority override', kind: 'text', group: 'gRPC' },
@@ -189,11 +210,11 @@ export const PROTOCOL_OVERRIDE_FIELD_SPECS: Readonly<Record<ProtocolOverrideSpec
     { path: 'database.driver', label: 'Database driver', kind: 'select', group: 'Database', options: ['sqlite', 'postgres'] },
     { path: 'database.dsn', label: 'Database connection string (DSN)', kind: 'secret', group: 'Database' },
     { path: 'database.dsn_secret', label: 'DSN project secret name', kind: 'secret_name', group: 'Database' },
-    { path: 'database.max_open_conns', label: 'Maximum open database connections', kind: 'number', group: 'Database', defaultValue: 25 },
-    { path: 'database.max_idle_conns', label: 'Maximum idle database connections', kind: 'number', group: 'Database', defaultValue: 10 },
-    { path: 'database.conn_max_lifetime_ms', label: 'Connection maximum lifetime', kind: 'number', group: 'Database', defaultValue: 300000 },
+    { path: 'database.max_open_conns', label: 'Maximum open database connections', kind: 'number', group: 'Database' },
+    { path: 'database.max_idle_conns', label: 'Maximum idle database connections', kind: 'number', group: 'Database' },
+    { path: 'database.conn_max_lifetime_ms', label: 'Connection maximum lifetime', kind: 'number', group: 'Database' },
     { path: 'database.query_timeout_ms', label: 'Query execution timeout', kind: 'number', group: 'Database', defaultValue: 30000 },
-    { path: 'database.max_rows', label: 'Maximum rows fetched per query', kind: 'number', group: 'Database', defaultValue: 1000 },
+    { path: 'database.max_rows', label: 'Maximum rows fetched per query', kind: 'number', group: 'Database', defaultValue: PROTOCOL_OVERRIDE_ENGINE_DEFAULTS['database.max_rows'] },
     { path: 'database.read_only', label: 'Read-only session mode', kind: 'bool', group: 'Database' },
     { path: 'database.rollback_on_teardown', label: 'Rollback uncommitted transactions on teardown', kind: 'bool', group: 'Database' },
   ],
@@ -222,10 +243,18 @@ export const PROTOCOL_OVERRIDE_FIELD_SPECS: Readonly<Record<ProtocolOverrideSpec
     { path: 'java_http.content_type', label: 'Default Content-Type header', kind: 'text', group: 'Java over HTTP', defaultValue: 'application/x-java-serialized-object' },
     { path: 'java_http.accept', label: 'Default Accept header', kind: 'text', group: 'Java over HTTP' },
     { path: 'java_http.body_encoding', label: 'Request body encoding', kind: 'select', group: 'Java over HTTP', options: ['base64'], defaultValue: 'base64' },
-    { path: 'java_http.object_schema', label: 'Java object class or schema', kind: 'text', group: 'Java over HTTP' },
-    { path: 'java_http.request_mapping', label: 'Request field mapping', kind: 'map', group: 'Java over HTTP' },
+    { path: 'java_http.object_schema', label: 'Java object class or schema', kind: 'select', group: 'Java over HTTP', options: [''], unsupported: true },
+    {
+      path: 'java_http.request_mapping',
+      label: 'Request field mapping',
+      kind: 'map',
+      group: 'Java over HTTP',
+      removeOnly: true,
+      unsupported: true,
+      removeOnlyNote: 'Embedded Java over HTTP does not support request mapping, so no entry can be added or edited here. This list only removes entries a lower layer supplies.',
+    },
     { path: 'java_http.response_mapping', label: 'Response field mapping', kind: 'map', group: 'Java over HTTP' },
-    { path: 'java_http.extractor_type', label: 'Default response extractor type', kind: 'select', group: 'Java over HTTP', options: ['regex', 'xpath', 'jsonpath', 'boundary'] },
+    { path: 'java_http.extractor_type', label: 'Default response extractor type', kind: 'select', group: 'Java over HTTP', options: [''], unsupported: true },
     { path: 'java_http.preserve_binary_result', label: 'Preserve binary response payload', kind: 'bool', group: 'Java over HTTP' },
   ],
   websocket: [
@@ -260,6 +289,9 @@ export const PROTOCOL_OVERRIDE_OPTION_LABELS: Readonly<Record<string, string>> =
   'jms.provider:solace': 'Solace',
   'jms.provider:servicebus': 'Azure Service Bus',
   'jms.provider:ibmmq': 'IBM MQ',
+  // Embedded java_http refuses any value here: the only override is clearing one below.
+  'java_http.object_schema:': 'Override with no value',
+  'java_http.extractor_type:': 'Override with no value',
 }
 
 /** The tab label for each section. */
@@ -274,6 +306,52 @@ export const PROTOCOL_OVERRIDE_TAB_LABELS: Readonly<Record<ProtocolOverrideSpecS
   java_http: 'Java over HTTP',
   websocket: 'WebSocket',
   java_vuser: 'Java Env',
+}
+
+/**
+ * What the eventhubs Kafka profile fills in for fields no layer sets, before
+ * connecting (pkg/protocol/kafka/kafka.go): SASL_SSL + PLAIN, and the literal
+ * username "$ConnectionString" while the mechanism is PLAIN. Author
+ * (KafkaRuntimeSection) and the override editor both show these; the parity
+ * test pins them against kafka.go.
+ */
+export const KAFKA_EVENTHUBS_PROFILE_DEFAULTS = {
+  security_protocol: 'sasl_ssl',
+  sasl_mechanism: 'plain',
+  sasl_username: '$ConnectionString',
+} as const
+
+/**
+ * The profile-dependent default the engine applies at `path` when no layer
+ * sets it, given the effective values (`effectiveAt`, resolved by the host
+ * through the shared runtime resolver). undefined means the spec's static
+ * defaultValue applies.
+ */
+/**
+ * Whether a kafka.profile value selects Azure Event Hubs. The validator
+ * (pkg/dsl/catalog_kafka_validation.go) and the engine (kafka.go) trim and
+ * lowercase the profile first, so " EventHubs" is the eventhubs profile too.
+ */
+export function isKafkaEventHubsProfile(profile: unknown): boolean {
+  return typeof profile === 'string' && profile.trim().toLowerCase() === 'eventhubs'
+}
+
+export function protocolOverrideProfileDefault(path: string, effectiveAt: (path: string) => unknown): string | undefined {
+  if (!isKafkaEventHubsProfile(effectiveAt('kafka.profile'))) return undefined
+  switch (path) {
+    case 'kafka.security_protocol':
+      return KAFKA_EVENTHUBS_PROFILE_DEFAULTS.security_protocol
+    case 'kafka.sasl_mechanism':
+      return KAFKA_EVENTHUBS_PROFILE_DEFAULTS.sasl_mechanism
+    case 'kafka.sasl_username': {
+      const mechanism = effectiveAt('kafka.sasl_mechanism')
+      return mechanism === undefined || mechanism === null || mechanism === '' || mechanism === KAFKA_EVENTHUBS_PROFILE_DEFAULTS.sasl_mechanism
+        ? KAFKA_EVENTHUBS_PROFILE_DEFAULTS.sasl_username
+        : undefined
+    }
+    default:
+      return undefined
+  }
 }
 
 /**

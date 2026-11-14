@@ -6,6 +6,7 @@ import type { EnterpriseArchiveFidelityReport, SecretBindingRequirement } from '
 import type { ImportFinding } from './importReviewIssues'
 import { CANONICAL_RUNTIME_GROUP_IDS, readSetting, resolveCanonicalRuntimeGroup, type CanonicalRuntimeGroup } from './importRuntimeSettingsModel'
 import { importRefusesRestoring } from './importSettingCredentialMaterial'
+import { parseLines } from './protocolRuntimeOptions'
 import { canonicalThinkTimeType, thinkTimeConfigForType } from './thinkTimeConfig'
 import './ImportSettingsTables.css'
 
@@ -224,10 +225,12 @@ export function CategoryActions({ category }: { category: string }) {
  </span>
 }
 
-export function SettingValue({ category, path, parameter, value, label, type = 'text', options, readOnly = false, credentialReference = false, fallbackValue }: {
+export function SettingValue({ category, path, parameter, value, label, type = 'text', options, readOnly = false, credentialReference = false, clearOnly = false, fallbackValue }: {
  category: string; path: string; parameter?: string; value: unknown; label: string; type?: string; options?: string[]; readOnly?: boolean
  /** A new value must be a Credentials reference; the imported value stays readable and editable. */
  credentialReference?: boolean
+ /** Validation rejects any value: a stored value can only be removed. */
+ clearOnly?: boolean
  /** Shown while the draft leaves the setting unset; never treated as the draft's value. */
  fallbackValue?: unknown
 }) {
@@ -245,14 +248,32 @@ export function SettingValue({ category, path, parameter, value, label, type = '
  const preservedOption = importedOption ?? currentOutOfCatalog
  const props = { 'aria-label': label, disabled: context?.disabled || context?.busy, 'aria-invalid': !!editor.errors[key] }
  return <label className="import-setting-input"><span className="sr-only">{label}</span>
-  {type === 'boolean' ? <select {...props} value={currentValue == null ? '' : String(currentValue)} onChange={e => change(e.target.value === '' ? null : e.target.value === 'true')}><option value="">Default</option><option value="true">Enabled</option><option value="false">Disabled</option></select>
+  {clearOnly ? <span className="import-setting-value">{formatSettingValue(currentValue)}</span>
+   : type === 'boolean' ? <select {...props} value={currentValue == null ? '' : String(currentValue)} onChange={e => change(e.target.value === '' ? null : e.target.value === 'true')}><option value="">Default</option><option value="true">Enabled</option><option value="false">Disabled</option></select>
    : type === 'select' ? <select {...props} value={String(currentValue ?? '')} onChange={e => change(importedOption !== null && e.target.value === importedOption ? undefined : (e.target.value || null))}><option value="">Default</option>{preservedOption ? <option value={preservedOption}>{preservedOption} (imported)</option> : null}{nonEmptyOptions?.map(option => <option key={option} value={option}>{option.replace(/_/g, ' ')}</option>)}</select>
-   : type === 'lines' ? <textarea {...props} rows={3} value={Array.isArray(currentValue) ? currentValue.join('\n') : ''} onChange={e => change(e.target.value.split('\n'))} />
+   : type === 'lines' ? <LinesSettingInput {...props} value={currentValue} onChange={change} />
    : <input {...props} type={type === 'number' || type === 'signed' ? 'number' : 'text'} min={type === 'number' ? 0 : undefined} step="any" value={String(currentValue ?? '')} placeholder="Default" onChange={e => change(e.target.value === '' ? null : type === 'number' || type === 'signed' ? Number(e.target.value) : e.target.value)} />}
   {credentialReference && <small className="import-settings-hint">{credentialReferenceHint(path)}</small>}
-  {!parameter && <SettingResetActions path={path} label={label} draftValue={value} currentValue={pendingValue} onChange={change} disabled={props.disabled} acceptedOptions={type === 'select' ? nonEmptyOptions : undefined} credentialReference={credentialReference} />}
+  {clearOnly && <small className="import-settings-hint">Embedded java_http does not support this setting, and validation rejects any value. A stored value can only be removed.</small>}
+  {!parameter && <SettingResetActions path={path} label={label} draftValue={value} currentValue={pendingValue} onChange={change} disabled={props.disabled} acceptedOptions={clearOnly ? [] : type === 'select' ? nonEmptyOptions : undefined} credentialReference={credentialReference} removeLabel={clearOnly ? 'Remove value' : undefined} />}
   {editor.errors[key] && <span role="alert">{editor.errors[key]}</span>}
  </label>
+}
+
+/**
+ * A list edited one entry per line. The change carries trimmed, non-blank
+ * entries (an all-blank list is unset), while the raw text, a trailing new
+ * line included, stays in the textarea until it loses focus.
+ */
+function LinesSettingInput({ value, onChange, ...props }: { value: unknown; onChange: (next: unknown) => void; 'aria-label': string; disabled?: boolean; 'aria-invalid': boolean }) {
+ const stored = Array.isArray(value) ? value.map(String).join('\n') : ''
+ const [draft, setDraft] = useState<string | null>(null)
+ const shown = draft !== null && parseLines(draft).join('\n') === stored ? draft : stored
+ return <textarea {...props} rows={3} value={shown} onBlur={() => setDraft(null)} onChange={e => {
+  setDraft(e.target.value)
+  const lines = parseLines(e.target.value)
+  onChange(lines.length ? lines : null)
+ }} />
 }
 
 /**
@@ -269,11 +290,13 @@ export function credentialReferenceHint(path: string): string {
 // issue the import refuses (config.base_url is empty), so they have no default.
 const SETTINGS_WITHOUT_DEFAULT = new Set(['config.base_url'])
 
-function SettingResetActions({ path, label, draftValue, currentValue, onChange, disabled, acceptedOptions, credentialReference = false }: {
+function SettingResetActions({ path, label, draftValue, currentValue, onChange, disabled, acceptedOptions, credentialReference = false, removeLabel }: {
  path: string; label: string; draftValue: unknown; currentValue: unknown; onChange: (next: unknown) => void; disabled?: boolean
  /** A select's accepted values; an imported value outside them cannot be sent back. */
  acceptedOptions?: string[]
  credentialReference?: boolean
+ /** Replaces "Reset to default" for a clear-only setting. */
+ removeLabel?: string
 }) {
  const context = useImportSettings()
  if (!context) return null
@@ -300,7 +323,7 @@ function SettingResetActions({ path, label, draftValue, currentValue, onChange, 
   {differsFromImported && importedRejected && <small className="import-settings-hint">The imported value {String(importedValue)} is not a supported option, so it cannot be restored.{path.startsWith('config.http.tls.') ? ' Legacy TLS versions stay migrated.' : ''}</small>}
   {differsFromImported && importedCredentialLost && <small className="import-settings-hint">The imported value cannot be restored here because the import refuses a typed credential. Use a Credentials reference instead.</small>}
   {canResetImported && <button type="button" className="btn btn-secondary btn-sm" disabled={disabled} aria-label={`Reset ${label} to imported value`} onClick={() => restore(importedValue)}>Reset to imported</button>}
-  {canResetDefault && <button type="button" className="btn btn-secondary btn-sm" disabled={disabled} aria-label={`Reset ${label} to default`} onClick={() => restore(null)}>Reset to default</button>}
+  {canResetDefault && <button type="button" className="btn btn-secondary btn-sm" disabled={disabled} aria-label={removeLabel ? `${removeLabel}: ${label}` : `Reset ${label} to default`} onClick={() => restore(null)}>{removeLabel ?? 'Reset to default'}</button>}
  </span>
 }
 export function formatSettingValue(value: unknown): string {

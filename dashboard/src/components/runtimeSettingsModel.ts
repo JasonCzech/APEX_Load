@@ -1147,9 +1147,16 @@ function writeOverridePath(wire: PartialRuntimeSettingsOverride, path: string, v
   if (segments) writeSegments(wire as Record<string, unknown>, segments, value)
 }
 
+/**
+ * The map keys the layers below a row supply at a map path. Splitting a map the
+ * row lists whole lists these too (with no value, so they stay cleared), as the
+ * backend's overrideFieldPathsExcludingValue does with the target's layers.
+ */
+export type LowerMapKeys = (mapPath: string) => readonly string[]
+
 /** One level of child paths under `path`, used to split a listed ancestor when one
  * of its descendants is reset (backend overrideFieldPathsExcluding). */
-function childOverridePaths(path: string, wire: PartialRuntimeSettingsOverride): string[] {
+function childOverridePaths(path: string, wire: PartialRuntimeSettingsOverride, lowerMapKeys?: LowerMapKeys): string[] {
   const shape = overridePathShape(path)
   if (!shape) return []
   switch (shape.kind) {
@@ -1157,7 +1164,9 @@ function childOverridePaths(path: string, wire: PartialRuntimeSettingsOverride):
       return Array.from(schemaStruct(shape.struct)?.keys() ?? []).map(field => `${path}.${field}`)
     case 'map': {
       const value = readOverridePath(wire, path)
-      return isPlainObject(value) ? Object.keys(value).map(key => `${path}.${key}`) : []
+      const keys = new Set(isPlainObject(value) ? Object.keys(value) : [])
+      for (const key of lowerMapKeys?.(path) ?? []) keys.add(key)
+      return Array.from(keys, key => `${path}.${key}`)
     }
     case 'env':
       return Object.keys(wire.env ?? {}).map(key => `env.${key}`)
@@ -1269,11 +1278,11 @@ function layerPathValue(state: PartialRuntimeState, path: string, lower: () => u
   return { supplies: false }
 }
 
-function overridePathsExcluding(ancestor: string, excluded: string, wire: PartialRuntimeSettingsOverride): string[] {
+function overridePathsExcluding(ancestor: string, excluded: string, wire: PartialRuntimeSettingsOverride, lowerMapKeys?: LowerMapKeys): string[] {
   const out: string[] = []
-  for (const child of childOverridePaths(ancestor, wire)) {
+  for (const child of childOverridePaths(ancestor, wire, lowerMapKeys)) {
     if (child === excluded) continue
-    if (excluded.startsWith(`${child}.`)) out.push(...overridePathsExcluding(child, excluded, wire))
+    if (excluded.startsWith(`${child}.`)) out.push(...overridePathsExcluding(child, excluded, wire, lowerMapKeys))
     else out.push(child)
   }
   return out
@@ -1609,12 +1618,12 @@ function setStateField(state: PartialRuntimeState, path: string, value: unknown)
   }
 }
 
-function resetStateField(state: PartialRuntimeState, path: string) {
+function resetStateField(state: PartialRuntimeState, path: string, lowerMapKeys?: LowerMapKeys) {
   let fields = state.fields.filter(field => !pathCoveredBy(field, path))
   for (;;) {
     const ancestor = fields.find(field => path.startsWith(`${field}.`))
     if (!ancestor) break
-    fields = [...fields.filter(field => field !== ancestor), ...overridePathsExcluding(ancestor, path, state.wire)]
+    fields = [...fields.filter(field => field !== ancestor), ...overridePathsExcluding(ancestor, path, state.wire, lowerMapKeys)]
   }
   state.fields = fields
   writeOverridePath(state.wire, path, undefined)
@@ -1639,12 +1648,18 @@ export function setOverrideField(draft: ScenarioRuntimeSettingsDraft | undefined
  * anything under it) leaves override_fields and the draft, every other
  * overridden field stays, and a listed ancestor is split into its remaining
  * children (overrideFieldPathsExcluding) so siblings keep their override.
+ * `lowerMapKeys` names the keys the layers below supply under a map the row
+ * lists whole, so splitting it keeps them cleared.
  */
-export function resetOverrideField(draft: ScenarioRuntimeSettingsDraft | undefined, path: string): ScenarioRuntimeSettingsDraft {
+export function resetOverrideField(
+  draft: ScenarioRuntimeSettingsDraft | undefined,
+  path: string,
+  options?: { lowerMapKeys?: LowerMapKeys },
+): ScenarioRuntimeSettingsDraft {
   const canonical = normalizeRuntimeOverrideFieldPath(path)
   if (!canonical) return draft ?? { ...EMPTY_RUNTIME_DRAFT }
   const state = partialRuntimeState(draft)
-  resetStateField(state, canonical)
+  resetStateField(state, canonical, options?.lowerMapKeys)
   return draftFromPartialState(state)
 }
 

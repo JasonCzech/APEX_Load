@@ -936,6 +936,23 @@ describe('native protocol sections (Phase 4)', () => {
     expect(overlayRuntimeOverrideSection({ metadata: { 'x-tenant': 'a', keep: 'b' } }, removed, 'grpc')).toEqual({ metadata: { keep: 'b' } })
   })
 
+  it('keeps lower-layer keys cleared when resetting one key of a map listed whole', () => {
+    // A group row lists grpc.metadata whole with {a}, which clears the key b the
+    // script supplies. Resetting a must not bring b back (backend
+    // overrideFieldPathsExcludingValue also lists the target layers' keys).
+    const script = { base_url: '', grpc: { metadata: { b: '2' } } }
+    const group = runtimeDraftFromOverride({ grpc: { metadata: { a: '1' } }, override_fields: ['grpc.metadata'] })
+    expect(effectiveRuntimeValue('grpc.metadata', { group, script }).value).toEqual({ a: '1' })
+    const reset = resetOverrideField(group, 'grpc.metadata.a', { lowerMapKeys: () => ['b'] })
+    expect(runtimeOverrideFieldPaths(reset)).toEqual(['grpc.metadata.b'])
+    expect(effectiveRuntimeValue('grpc.metadata', { group: reset, script }).value ?? {}).toEqual({})
+    // A whole section listed splits the same way down to the map.
+    const section = runtimeDraftFromOverride({ grpc: { metadata: { a: '1' }, timeout_ms: 10 }, override_fields: ['grpc'] })
+    const sectionReset = resetOverrideField(section, 'grpc.metadata.a', { lowerMapKeys: path => (path === 'grpc.metadata' ? ['b'] : []) })
+    expect(runtimeOverrideFieldPaths(sectionReset)).toContain('grpc.metadata.b')
+    expect(runtimeOverrideFieldPaths(sectionReset)).not.toContain('grpc.metadata.a')
+  })
+
   it('resolves a map edited key by key at any layer, each layer laid over the ones below', () => {
     const script = { base_url: '', kafka: { properties: { b: '2', c: '3' } } }
     const scenario = setOverrideField(setOverrideField(undefined, 'kafka.properties.a', '1'), 'kafka.properties.c', undefined)

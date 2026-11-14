@@ -1726,7 +1726,7 @@ export function ScriptRuntimeSettingsView({
               <label><span>Destination</span>
                 <input value={script.config.jms?.destination || ''} placeholder="orders.in"
                   onChange={e => updateField('config.jms', { ...script.config.jms, provider: jmsProvider || script.config.jms?.provider, destination: e.target.value })} /></label>
-              <SelectField label="Destination Type" path="config.jms.destination_type" value={script.config.jms?.destination_type} defaultValue="queue"
+              <SelectField label="Destination type" path="config.jms.destination_type" value={script.config.jms?.destination_type} defaultValue="queue"
                 onChange={value => updateField('config.jms', { ...script.config.jms, provider: jmsProvider || script.config.jms?.provider, destination_type: value })} />
               <label><span>Reply To</span>
                 <input value={script.config.jms?.reply_to || ''} placeholder="orders.reply"
@@ -1741,7 +1741,7 @@ export function ScriptRuntimeSettingsView({
                   onChangeMs={value => updateField('config.jms', { ...script.config.jms, provider: jmsProvider || script.config.jms?.provider, timeout_ms: value ?? 0 })} /></label>
               <SelectField label="Acknowledgement" path="config.jms.acknowledgement" value={script.config.jms?.acknowledgement} defaultValue="auto"
                 onChange={value => updateField('config.jms', { ...script.config.jms, provider: jmsProvider || script.config.jms?.provider, acknowledgement: value })} />
-              <SelectField label="Delivery Mode" path="config.jms.delivery_mode" value={script.config.jms?.delivery_mode} defaultValue="persistent"
+              <SelectField label="Delivery mode" path="config.jms.delivery_mode" value={script.config.jms?.delivery_mode} defaultValue="persistent"
                 onChange={value => updateField('config.jms', { ...script.config.jms, provider: jmsProvider || script.config.jms?.provider, delivery_mode: value })} />
             </div>
           </div>
@@ -1794,10 +1794,10 @@ export function ScriptRuntimeSettingsView({
                   onChange={e => updateField('config.eventhubs', { ...script.config.eventhubs, event_hub: e.target.value })} /></label>
               <SelectField label="Authentication" path="config.eventhubs.auth_type" value={script.config.eventhubs?.auth_type} defaultValue="connection_string"
                 onChange={value => updateField('config.eventhubs', { ...script.config.eventhubs, auth_type: value })} />
-              <label><span>Connection String Secret</span>
+              <label><span>Connection string secret</span>
                 <input value={script.config.eventhubs?.connection_string_secret || ''} placeholder="eventhubs-primary"
                   onChange={e => updateField('config.eventhubs', { ...script.config.eventhubs, connection_string_secret: e.target.value })} /></label>
-              <CredentialField label="Connection String" path="config.eventhubs.connection_string" value={script.config.eventhubs?.connection_string}
+              <CredentialField label="Connection string" path="config.eventhubs.connection_string" value={script.config.eventhubs?.connection_string}
                 onChange={value => updateField('config.eventhubs', { ...script.config.eventhubs, connection_string: value })} />
               <label className="checkbox-label">
                 <input type="checkbox" checked={script.config.eventhubs?.mock ?? false}
@@ -1818,7 +1818,7 @@ export function ScriptRuntimeSettingsView({
               <label><span>Consumer group</span>
                 <input value={script.config.eventhubs?.consumer_group || ''} placeholder="$Default"
                   onChange={e => updateField('config.eventhubs', { ...script.config.eventhubs, consumer_group: e.target.value })} /></label>
-              <SelectField label="Observer Start Position" path="config.eventhubs.start_position" value={script.config.eventhubs?.start_position} defaultValue="latest"
+              <SelectField label="Observer start position" path="config.eventhubs.start_position" value={script.config.eventhubs?.start_position} defaultValue="latest"
                 onChange={value => updateField('config.eventhubs', { ...script.config.eventhubs, start_position: value })} />
               <label><span>Timeout (s)</span>
                 <SecondsFromMillisecondsInput valueMs={script.config.eventhubs?.timeout_ms} fallbackMs={5000}
@@ -1974,7 +1974,7 @@ export function ScriptRuntimeSettingsView({
             <label><span>Max Rows</span>
               <input type="number" value={script.config.database?.max_rows || 100}
                 onChange={e => updateField('config.database', { ...script.config.database, max_rows: Number(e.target.value) })} /></label>
-            <IntegerField label="Max Open Connections" path="config.database.max_open_conns" value={script.config.database?.max_open_conns} min={0} placeholder="Unlimited"
+            <IntegerField label="Max open connections" path="config.database.max_open_conns" value={script.config.database?.max_open_conns} min={0} placeholder="Unlimited"
               onChange={value => updateField('config.database', { ...script.config.database, max_open_conns: value })} />
             <label data-catalog-path="config.database.conn_max_lifetime_ms"><span>Connection max lifetime (s)</span>
               <SecondsFromMillisecondsInput aria-label="Connection max lifetime" valueMs={script.config.database?.conn_max_lifetime_ms} emptyWhenUndefined placeholder="No limit"

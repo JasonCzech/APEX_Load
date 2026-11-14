@@ -11,6 +11,11 @@ import {
 } from './RuntimeConfigFieldControls'
 import { KAFKA_OAUTH_MODE, kafkaRuntimeSummary, patchConfigBlock, type AuthorKafkaConfig } from './protocolRuntimeOptions'
 import type { RuntimeSettingsSectionProps } from './ScriptRuntimeSettingsProtocolSections'
+import { KAFKA_EVENTHUBS_PROFILE_DEFAULTS, PROTOCOL_OVERRIDE_ENGINE_DEFAULTS, isKafkaEventHubsProfile } from './runtime-settings/protocolOverrideFieldSpecs'
+
+// What pkg/protocol/kafka/kafka.go runs with when the script leaves a value unset.
+const ENGINE_TIMEOUT_MS = Number(PROTOCOL_OVERRIDE_ENGINE_DEFAULTS['kafka.timeout_ms'])
+const ENGINE_MOCK_PARTITIONS = String(PROTOCOL_OVERRIDE_ENGINE_DEFAULTS['kafka.partitions'])
 
 const PRODUCER_FIELDS: { key: keyof NonNullable<AuthorKafkaConfig['producer']>; label: string }[] = [
   { key: 'retries', label: 'Delivery retries' },
@@ -34,6 +39,9 @@ export function KafkaRuntimeSection({ script, sectionIsActive, onSelectSection, 
   const set = (path: string, value: unknown) => onUpdateField('config.kafka', patchConfigBlock(kafka, path, value))
   const active = sectionIsActive('kafka')
   const oauthEnabled = kafka.oauth !== undefined
+  // The eventhubs profile fills an unset protocol and mechanism with SASL_SSL +
+  // PLAIN ($ConnectionString) before connecting (pkg/protocol/kafka/kafka.go).
+  const eventHubsProfile = isKafkaEventHubsProfile(kafka.profile)
 
   return (
     <div className={`settings-section ${active ? 'open' : ''}`}>
@@ -59,7 +67,7 @@ export function KafkaRuntimeSection({ script, sectionIsActive, onSelectSection, 
             <h5>Transport &amp; connections</h5>
             <div className="form-grid">
               <label data-catalog-path="config.kafka.timeout_ms"><span>Operation timeout (s)</span>
-                <SecondsFromMillisecondsInput aria-label="Kafka operation timeout" valueMs={kafka.timeout_ms} fallbackMs={30000}
+                <SecondsFromMillisecondsInput aria-label="Kafka operation timeout" valueMs={kafka.timeout_ms} fallbackMs={ENGINE_TIMEOUT_MS}
                   onChangeMs={value => set('timeout_ms', value || undefined)} /></label>
               <IntegerField label="Max record size (bytes)" path="config.kafka.max_message_bytes" value={kafka.max_message_bytes} min={0} max={67108864} placeholder="1048576" onChange={value => set('max_message_bytes', value)} />
               <SelectField label="Batch compression" path="config.kafka.compression" value={kafka.compression} defaultValue="none" onChange={value => set('compression', value)} />
@@ -76,8 +84,8 @@ export function KafkaRuntimeSection({ script, sectionIsActive, onSelectSection, 
           <div className="settings-sub-group" data-canonical-group="security_proxy_auth">
             <h5>Security, proxy &amp; auth</h5>
             <div className="form-grid">
-              <SelectField label="Security protocol" path="config.kafka.security_protocol" value={kafka.security_protocol} defaultValue="plaintext" onChange={value => set('security_protocol', value)} />
-              <SelectField label="SASL mechanism" path="config.kafka.sasl_mechanism" value={kafka.sasl_mechanism} onChange={value => set('sasl_mechanism', value)} />
+              <SelectField label="Security protocol" path="config.kafka.security_protocol" value={kafka.security_protocol} defaultValue={eventHubsProfile ? KAFKA_EVENTHUBS_PROFILE_DEFAULTS.security_protocol : 'plaintext'} onChange={value => set('security_protocol', value)} />
+              <SelectField label="SASL mechanism" path="config.kafka.sasl_mechanism" value={kafka.sasl_mechanism} defaultValue={eventHubsProfile ? KAFKA_EVENTHUBS_PROFILE_DEFAULTS.sasl_mechanism : undefined} onChange={value => set('sasl_mechanism', value)} />
               <TextField label="SASL username" path="config.kafka.sasl_username" value={kafka.sasl_username} onChange={value => set('sasl_username', value)} />
               <CredentialField label="SASL password" path="config.kafka.sasl_password" value={kafka.sasl_password} onChange={value => set('sasl_password', value)} placeholder="{{secret.KAFKA_PASSWORD}}" />
               <SecretNameField label="SASL password secret name" path="config.kafka.sasl_password_secret" value={kafka.sasl_password_secret} onChange={value => set('sasl_password_secret', value)} placeholder="KAFKA_PASSWORD" />
@@ -119,7 +127,7 @@ export function KafkaRuntimeSection({ script, sectionIsActive, onSelectSection, 
               <SelectField label="Idempotent producer" path="config.kafka.idempotence" value={kafka.idempotence} onChange={value => set('idempotence', value)} />
               <TextField label="Transactional ID" path="config.kafka.transactional_id" value={kafka.transactional_id} onChange={value => set('transactional_id', value)} />
               <SelectField label="Partition routing" path="config.kafka.partition_strategy" value={kafka.partition_strategy} defaultValue="key-hash" onChange={value => set('partition_strategy', value)} />
-              <IntegerField label="Mock topic partitions" path="config.kafka.partitions" value={kafka.partitions} min={0} placeholder="1" onChange={value => set('partitions', value)} />
+              <IntegerField label="Mock topic partitions" path="config.kafka.partitions" value={kafka.partitions} min={0} placeholder={ENGINE_MOCK_PARTITIONS} onChange={value => set('partitions', value)} />
               <TextField label="Consumer group ID" path="config.kafka.consumer_group" value={kafka.consumer_group} onChange={value => set('consumer_group', value)} placeholder="orders-workers" />
               <SelectField label="Initial offset reset" path="config.kafka.auto_offset_reset" value={kafka.auto_offset_reset} defaultValue="latest" onChange={value => set('auto_offset_reset', value)} />
               <SelectField label="Consumer isolation level" path="config.kafka.isolation_level" value={kafka.isolation_level} onChange={value => set('isolation_level', value)} />

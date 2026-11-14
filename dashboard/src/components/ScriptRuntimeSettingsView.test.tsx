@@ -817,7 +817,7 @@ describe('ScriptRuntimeSettingsView Event Hubs settings', () => {
   it('renders the Event Hubs section for an imported capture script', () => {
     renderEventHubs()
     expect(container.textContent).toContain('Event Hubs Runtime')
-    expect(container.textContent).toContain('Observer Start Position')
+    expect(container.textContent).toContain('Observer start position')
     const eventHub = Array.from(container.querySelectorAll<HTMLInputElement>('input'))
       .find(input => input.closest('label')?.textContent?.includes('Event Hub'))
     expect(eventHub?.value).toBe('orders')

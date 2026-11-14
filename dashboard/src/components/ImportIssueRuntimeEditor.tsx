@@ -28,7 +28,7 @@ export default function ImportIssueRuntimeEditor({ script, migrationPending, tls
     <p>Compare the imported behavior with the current draft. Applying settings refreshes checks; it does not establish exact source compatibility.</p>
     {!rows.length ? <p>No individual runtime differences were supplied for this draft. Inspect the evidence below or open Runtime settings.</p> : <div className="lr-table-wrap"><table className="import-settings-table" data-table-pagination="off"><thead><tr><th>Setting / source</th><th>Current draft</th><th>Replay consequence</th></tr></thead><tbody>{rows.map(row => <tr key={row.id}>
       <th scope="row">{row.label}<small>{row.imported}</small></th>
-      <td>{row.path && row.field ? <SettingValue category={row.category} path={row.path} label={`${row.category}: ${row.label}`} value={readSetting(script, row.path)} fallbackValue={tlsOnly ? row.path.endsWith('min_version') ? '1.2' : '1.3' : undefined} type={row.field.type} options={row.field.options} credentialReference={row.field.credentialReference} readOnly={migrationPending && row.path.startsWith('config.http.tls.')} /> : 'No editable equivalent'}</td>
+      <td>{row.path && row.field ? <SettingValue category={row.category} path={row.path} label={`${row.category}: ${row.label}`} value={readSetting(script, row.path)} fallbackValue={tlsOnly ? row.path.endsWith('min_version') ? '1.2' : '1.3' : undefined} type={row.field.type} options={row.field.options} credentialReference={row.field.credentialReference} clearOnly={row.field.clearOnly} readOnly={migrationPending && row.path.startsWith('config.http.tls.')} /> : 'No editable equivalent'}</td>
       <td>{row.note}</td>
     </tr>)}</tbody></table></div>}
   </section>

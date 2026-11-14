@@ -7,11 +7,12 @@ import { ClearableTextOverrideInput, MaskedTextOverrideInput, SecretOverrideInpu
 import { REDACTED_SECRET } from '../runtime-settings/scenarioOverrideValues'
 import ListOverrideTextarea from './ListOverrideTextarea'
 import MapOverrideEditor from './MapOverrideEditor'
-import { secretNameFieldIssue } from '../runtime-settings/protocolCredentialLeaves'
+import SecretNameOverrideInput from './SecretNameOverrideInput'
 import {
   PROTOCOL_OVERRIDE_FIELD_SPECS,
   PROTOCOL_OVERRIDE_OPTION_LABELS,
   PROTOCOL_OVERRIDE_PAIRED_PATHS,
+  protocolOverrideProfileDefault,
   type ProtocolOverrideFieldSpec,
   type ProtocolOverrideSpecSection,
 } from '../runtime-settings/protocolOverrideFieldSpecs'
@@ -81,7 +82,10 @@ function asRecord(value: unknown): Record<string, unknown> {
 export function renderProtocolOverrideFields({ section, effectiveAt, inheritedAt, overridden, overrideValue, edit, renderField, paths }: ProtocolOverrideTabProps): ReactNode {
   const specs = PROTOCOL_OVERRIDE_FIELD_SPECS[section].filter(spec => !paths || paths.includes(spec.path))
   const setPath = (path: string, value: unknown) => edit(draft => setOverrideField(draft, path, value))
-  const resetPath = (path: string) => edit(draft => resetOverrideField(draft, path))
+  // Splitting a map this layer lists whole also lists the keys the layers below
+  // supply, so the ones the row was clearing stay cleared.
+  const lowerMapKeys = (mapPath: string) => Object.keys(asRecord(inheritedAt(mapPath)))
+  const resetPath = (path: string) => edit(draft => resetOverrideField(draft, path, { lowerMapKeys }))
   const setOrReset = (path: string, value: unknown) => (value === undefined ? resetPath(path) : setPath(path, value))
   /** This layer's string at `path`: undefined inherits; a covered path with no value is an explicit "". */
   const stringOverride = (path: string): string | undefined => {
@@ -89,10 +93,24 @@ export function renderProtocolOverrideFields({ section, effectiveAt, inheritedAt
     const value = overrideValue(path)
     return value === undefined || value === null ? '' : String(value)
   }
-  const placeholderFor = (spec: ProtocolOverrideFieldSpec) => inh(inheritedAt(spec.path), spec.defaultValue === undefined ? 'Inherit' : String(spec.defaultValue))
+  /**
+   * The value shown while no layer sets `spec.path`: a profile-dependent engine
+   * default (the eventhubs Kafka profile's SASL_SSL + PLAIN, from the effective
+   * kafka.profile the host resolves), else the spec's documented default.
+   */
+  const fallbackFor = (spec: ProtocolOverrideFieldSpec) => protocolOverrideProfileDefault(spec.path, effectiveAt) ?? spec.defaultValue
+  const placeholderFor = (spec: ProtocolOverrideFieldSpec) => {
+    const fallback = fallbackFor(spec)
+    return inh(inheritedAt(spec.path), fallback === undefined ? 'Inherit' : String(fallback))
+  }
 
   // A paired field (the parameter delimiters) applies only together with its
   // partner, so setting one pins the other at its effective value.
+  /** What typing a delimiter pins an unset or cleared partner at: the value below this layer, else the default. */
+  const partnerPinValue = (partner: string) => {
+    const below = inheritedAt(partner)
+    return hasText(below) ? below : specs.find(spec => spec.path === partner)?.defaultValue
+  }
   const setPaired = (path: string, value: unknown) => {
     const partner = PROTOCOL_OVERRIDE_PAIRED_PATHS[path]
     if (!partner) {
@@ -100,7 +118,17 @@ export function renderProtocolOverrideFields({ section, effectiveAt, inheritedAt
       return
     }
     if (value === undefined) {
-      edit(draft => resetOverrideField(resetOverrideField(draft, path), partner))
+      // Erasing one delimiter (backspacing it to retype) keeps a partner this
+      // layer set apart from what would be pinned: discarding it would lose the
+      // user's value. A partner equal to the pin value (the automatic pin, or a
+      // value that changes nothing) resets with it, so an auto-pin never stays
+      // pinned beside an inherited delimiter. This is decided from the row
+      // alone, so a blur or remount between typing and erasing changes nothing.
+      // The reset action (resetFor) still resets both, and a partner cleared
+      // with the pair resets with it.
+      const partnerValue = overrideValue(partner)
+      const keepPartner = overridden(partner) && hasText(partnerValue) && String(partnerValue) !== String(partnerPinValue(partner) ?? '')
+      edit(draft => keepPartner ? resetOverrideField(draft, path) : resetOverrideField(resetOverrideField(draft, path), partner))
       return
     }
     // "" on one delimiter ("Override with no value") clears the pair: the run
@@ -110,12 +138,13 @@ export function renderProtocolOverrideFields({ section, effectiveAt, inheritedAt
       return
     }
     // A value on one delimiter pins the partner at its effective value, or, when
-    // this layer cleared the partner, at the value below it (else the default).
-    const partnerSpec = specs.find(spec => spec.path === partner)
+    // that is empty (this layer or one below cleared the pair), at the value
+    // below this layer, else the default: never "" beside a set delimiter.
     const partnerCleared = overridden(partner) && !hasText(overrideValue(partner))
+    const belowOrDefault = partnerPinValue(partner)
     const partnerValue = partnerCleared
-      ? (hasText(inheritedAt(partner)) ? inheritedAt(partner) : partnerSpec?.defaultValue)
-      : effectiveAt(partner) ?? partnerSpec?.defaultValue
+      ? belowOrDefault
+      : hasText(effectiveAt(partner)) ? effectiveAt(partner) : belowOrDefault
     edit(draft => {
       const next = setOverrideField(draft, path, value)
       return overridden(partner) && !partnerCleared ? next : setOverrideField(next, partner, partnerValue)
@@ -152,7 +181,16 @@ export function renderProtocolOverrideFields({ section, effectiveAt, inheritedAt
         const current = stringOverride(path)
         const options = spec.options ?? []
         const offersNone = options.includes('') || current === ''
-        const below = String(inheritedAt(path) ?? spec.defaultValue ?? '')
+        // A stored value the list no longer offers (one the validator refuses
+        // here) stays visible so it can be cleared, but cannot be chosen anew.
+        const storedOutside = current !== undefined && current !== '' && !options.includes(current)
+        const inherited = inheritedAt(path)
+        const profileDefault = protocolOverrideProfileDefault(path, effectiveAt)
+        const below = String((profileDefault !== undefined && !hasText(inherited) ? profileDefault : inherited) ?? spec.defaultValue ?? '')
+        // Under a profile that fills "" in (eventhubs: kafka.go turns an empty
+        // mechanism into PLAIN and an empty protocol into SASL_SSL), the explicit
+        // no-value choice runs with that default, not with no SASL or plaintext.
+        const noneLabel = profileDefault !== undefined ? `No value (profile default: ${optionLabel(path, profileDefault)})` : optionLabel(path, '')
         return (
           <label>
             <span>{label}</span>
@@ -167,7 +205,8 @@ export function renderProtocolOverrideFields({ section, effectiveAt, inheritedAt
               }}
             >
               <option value="">Inherit ({below ? optionLabel(path, below) : 'Default'})</option>
-              {offersNone && <option value={NONE_OPTION_VALUE}>{optionLabel(path, '')}</option>}
+              {offersNone && <option value={NONE_OPTION_VALUE}>{noneLabel}</option>}
+              {storedOutside && <option value={current}>{`${current} (stored value, not supported here)`}</option>}
               {options.filter(option => option !== '').map(option => <option key={option} value={option}>{optionLabel(path, option)}</option>)}
             </select>
           </label>
@@ -207,26 +246,16 @@ export function renderProtocolOverrideFields({ section, effectiveAt, inheritedAt
             onChange={next => setOrReset(path, next || undefined)}
           />
         )
-      case 'secret_name': {
-        const value = stringOverride(path) ?? ''
-        const issue = value && value !== REDACTED_SECRET ? secretNameFieldIssue(value) : undefined
+      case 'secret_name':
         return (
-          <label>
-            <span>{label}</span>
-            <input
-              className="settings-input"
-              autoComplete="off"
-              spellCheck={false}
-              aria-label={label}
-              aria-invalid={issue ? true : undefined}
-              value={value === REDACTED_SECRET ? '' : value}
-              placeholder={value === REDACTED_SECRET ? 'Stored value (unchanged)' : inh(inheritedAt(path), 'Inherit (secret name or {{secret.NAME}})')}
-              onChange={event => setOrReset(path, event.target.value || undefined)}
-            />
-            {issue && <span className="form-error" role="alert">{issue}</span>}
-          </label>
+          <SecretNameOverrideInput
+            key={path}
+            label={label}
+            value={stringOverride(path)}
+            inheritPlaceholder={inh(inheritedAt(path), 'Inherit (secret name or {{secret.NAME}})')}
+            onChange={next => setOrReset(path, next)}
+          />
         )
-      }
       case 'list':
       case 'brokers': {
         const listed = overridden(path) ? (overrideValue(path) as string[] | undefined) ?? [] : undefined
@@ -253,7 +282,7 @@ export function renderProtocolOverrideFields({ section, effectiveAt, inheritedAt
       case 'capabilities':
         return <MapOverrideEditor spec={spec} effective={asRecord(effectiveAt(path))} inherited={asRecord(inheritedAt(path))} overridden={overridden} setPath={setPath} resetPath={resetPath} />
       case 'textarea':
-      default:
+      default: {
         // Three states: inherit, a value, or listed with no value (the clear).
         return (
           <ClearableTextOverrideInput
@@ -265,6 +294,7 @@ export function renderProtocolOverrideFields({ section, effectiveAt, inheritedAt
             onChange={next => setPaired(path, next)}
           />
         )
+      }
     }
   }
 

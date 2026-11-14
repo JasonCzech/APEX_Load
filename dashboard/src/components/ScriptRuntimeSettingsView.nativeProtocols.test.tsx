@@ -127,6 +127,27 @@ describe('Kafka runtime section', () => {
     click(button('Remove preserved properties'))
     expect(onUpdateField).toHaveBeenLastCalledWith('config.kafka', { topic: 'orders' })
   })
+
+  it('shows the engine fallbacks for an unset timeout and mock partition count', () => {
+    render(script('kafka', { kafka: { topic: 'orders' } }), 'kafka')
+    expect(field('config.kafka.timeout_ms').value).toBe('5')
+    expect(field('config.kafka.partitions').placeholder).toBe('4')
+  })
+
+  it('shows the Event Hubs profile security defaults when the profile is eventhubs and security is unset', () => {
+    render(script('kafka', { kafka: { profile: 'eventhubs' } }), 'kafka')
+    expect(field<HTMLSelectElement>('config.kafka.security_protocol', 'select').value).toBe('sasl_ssl')
+    expect(field<HTMLSelectElement>('config.kafka.sasl_mechanism', 'select').value).toBe('plain')
+    render(script('kafka', { kafka: { profile: 'eventhubs', security_protocol: 'ssl', sasl_mechanism: 'oauthbearer' } }), 'kafka')
+    expect(field<HTMLSelectElement>('config.kafka.security_protocol', 'select').value).toBe('ssl')
+    expect(field<HTMLSelectElement>('config.kafka.sasl_mechanism', 'select').value).toBe('oauthbearer')
+    render(script('kafka', { kafka: { profile: 'EventHubs' } }), 'kafka')
+    expect(field<HTMLSelectElement>('config.kafka.security_protocol', 'select').value).toBe('sasl_ssl')
+    expect(field<HTMLSelectElement>('config.kafka.sasl_mechanism', 'select').value).toBe('plain')
+    render(script('kafka', {}), 'kafka')
+    expect(field<HTMLSelectElement>('config.kafka.security_protocol', 'select').value).toBe('plaintext')
+    expect(field<HTMLSelectElement>('config.kafka.sasl_mechanism', 'select').value).toBe('')
+  })
 })
 
 describe('Database runtime fields', () => {

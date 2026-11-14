@@ -320,6 +320,13 @@ describe('importRuntimeSettingsModel', () => {
   expect(readSetting(objectScript, 'config.log.extended_options')).toBeUndefined()
  })
 
+ it('keeps the database driver narrowed to the drivers the runtime registers when the served list widens it', () => {
+  const merged = mergeImportRuntimeFields([
+   { path: 'config.database.driver', category: 'Database', type: 'select', options: ['sqlite', 'sqlite3', 'postgres', 'mysql', 'odbc', 'oracle'] },
+  ])
+  expect(merged.find(field => field.path === 'config.database.driver')?.options).toEqual(['sqlite', 'postgres'])
+ })
+
  it('merges remote fields from GET /api/v1/scripts/import/settings/fields, offering secrets as Credentials references and skipping non-scalars', async () => {
   const merged = mergeImportRuntimeFields([
    {
@@ -470,7 +477,8 @@ describe('remaining protocol families', () => {
   const rows = runtimeSettingRows(draft('database'))['Additional APEX settings']
   expect(rows.filter(row => row.category === 'Database').map(row => row.path)).toEqual(expect.arrayContaining(['config.database.driver', 'config.database.dsn', 'config.database.max_rows']))
   expect(rows.find(row => row.path === 'config.database.dsn')?.field?.credentialReference).toBe(true)
-  expect(rows.find(row => row.path === 'config.database.driver')?.field?.options).toEqual(['postgres', 'mysql', 'oracle', 'odbc', 'sqlite', 'sqlite3'])
+  // The runtime registers only the pgx and sqlite drivers (pkg/protocol/database).
+  expect(rows.find(row => row.path === 'config.database.driver')?.field?.options).toEqual(['sqlite', 'postgres'])
   expect(rows.some(row => row.path?.startsWith('config.kafka.') || row.path?.startsWith('config.grpc.'))).toBe(false)
  })
 

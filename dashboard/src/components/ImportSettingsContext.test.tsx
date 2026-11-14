@@ -173,3 +173,104 @@ describe('ImportSettingsContext out-of-catalog (imported) select handling', () =
     }
   })
 })
+
+describe('ImportSettingsContext list (lines) settings', () => {
+  it('trims lines, drops blank ones and sends a cleared list as unset', async () => {
+    const draft: ScriptDefinition = {
+      name: 'Kafka draft',
+      version: '1.0',
+      protocol: 'kafka',
+      config: { base_url: '', kafka: { brokers: ['broker-1.example.test:9092'], topic: 'orders' } },
+      actions: [],
+    }
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+    const typeInto = async (textarea: HTMLTextAreaElement, value: string) => act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(textarea, value)
+      textarea.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    const apply = async () => {
+      mocks.request.mockResolvedValueOnce({ script: draft, findings: [], readiness: { replay_ready: true, promotion_ready: true }, secret_binding_requirements: [] })
+      const applyButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Apply Kafka')!
+      await act(async () => applyButton.click())
+      const calls = postCalls()
+      return (JSON.parse(calls[calls.length - 1][1].body as string) as { changes: Array<{ path: string; value: unknown }> }).changes
+    }
+    const openEditor = async () => {
+      const editButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Edit Kafka')!
+      await act(async () => editButton.click())
+      const textarea = container.querySelector<HTMLTextAreaElement>('textarea[aria-label="Kafka: Brokers (one per line)"]')!
+      expect(textarea).toBeTruthy()
+      return textarea
+    }
+    try {
+      await act(async () => {
+        root.render(
+          <ImportSettingsProvider script={draft} disabled={false} onApplied={vi.fn()} onBusyChange={vi.fn()}>
+            <ImportRuntimeSettingsTable script={draft} />
+          </ImportSettingsProvider>,
+        )
+      })
+      let textarea = await openEditor()
+      await typeInto(textarea, 'broker-1.example.test:9092\n')
+      // The raw text (with the new line) stays while typing.
+      expect(textarea.value).toBe('broker-1.example.test:9092\n')
+      await typeInto(textarea, '  broker-1.example.test:9092 \n\nbroker-2.example.test:9092\n')
+      expect(await apply()).toEqual([{ path: 'config.kafka.brokers', value: ['broker-1.example.test:9092', 'broker-2.example.test:9092'] }])
+
+      textarea = await openEditor()
+      await typeInto(textarea, '\n  \n')
+      expect(await apply()).toEqual([{ path: 'config.kafka.brokers', value: null }])
+    } finally {
+      await act(async () => root.unmount())
+      container.remove()
+      mocks.request.mockReset()
+    }
+  })
+})
+
+describe('ImportSettingsContext clear-only settings', () => {
+  it('shows java_http.object_schema as a stored value with a remove action and no free-text entry', async () => {
+    const draft: ScriptDefinition = {
+      name: 'Java HTTP draft',
+      version: '1.0',
+      protocol: 'java_http',
+      config: { base_url: 'https://example.test', java_http: { codec: 'java_serialized_object_base64', object_schema: 'com.example.Order' } },
+      actions: [],
+    }
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+    try {
+      await act(async () => {
+        root.render(
+          <ImportSettingsProvider script={draft} disabled={false} onApplied={vi.fn()} onBusyChange={vi.fn()}>
+            <ImportRuntimeSettingsTable script={draft} />
+          </ImportSettingsProvider>,
+        )
+      })
+      const categoryButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.startsWith('Java HTTP'))!
+      await act(async () => categoryButton.click())
+      const editButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Edit Java HTTP')!
+      await act(async () => editButton.click())
+      const label = 'Java HTTP: Java object class or schema'
+      expect(container.querySelector(`input[aria-label="${label}"], textarea[aria-label="${label}"], select[aria-label="${label}"]`)).toBeNull()
+      const remove = container.querySelector<HTMLButtonElement>(`button[aria-label="Remove value: ${label}"]`)!
+      expect(remove).toBeTruthy()
+      expect(remove.closest('label')?.textContent).toContain('com.example.Order')
+      await act(async () => remove.click())
+      // Removed, the field still offers no entry to type a value back.
+      expect(container.querySelector(`input[aria-label="${label}"], textarea[aria-label="${label}"]`)).toBeNull()
+      mocks.request.mockResolvedValueOnce({ script: draft, findings: [], readiness: { replay_ready: true, promotion_ready: true }, secret_binding_requirements: [] })
+      const applyButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Apply Java HTTP')!
+      await act(async () => applyButton.click())
+      const calls = postCalls()
+      expect((JSON.parse(calls[calls.length - 1][1].body as string) as { changes: unknown[] }).changes).toEqual([{ path: 'config.java_http.object_schema', value: null }])
+    } finally {
+      await act(async () => root.unmount())
+      container.remove()
+      mocks.request.mockReset()
+    }
+  })
+})

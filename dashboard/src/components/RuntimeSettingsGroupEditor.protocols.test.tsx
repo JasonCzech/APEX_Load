@@ -619,3 +619,187 @@ describe('RuntimeSettingsGroupEditor protocol override tabs', () => {
     }
   })
 })
+
+describe('RuntimeSettingsGroupEditor protocol override tabs (round-4 fixes)', () => {
+  it('keeps a lower-layer key cleared when removing a key of a map the row lists whole', () => {
+    const group: RuntimeEditorGroup = { name: 'Orders RPC', scriptId: 'g1', protocol: 'grpc', scriptConfig: { base_url: '', grpc: { metadata: { b: '2' } } } }
+    // A v1 row (or Apply to groups) lists grpc.metadata whole with {a}, clearing the script's b.
+    mount({ group, initial: runtimeDraftFromOverride({ grpc: { metadata: { a: '1' } }, override_fields: ['grpc.metadata'] }) })
+    clickTab('gRPC')
+    click(container.querySelector('button[aria-label="Remove Default gRPC metadata a"]')!)
+    expect(lastRow()).toEqual({ override_fields: ['grpc.metadata.b'] })
+    expect(effectiveRuntimeValue('grpc.metadata', { group: latest, script: group.scriptConfig }).value ?? {}).toEqual({})
+  })
+
+  it('keeps the partner delimiter override while one delimiter is backspaced to empty and retyped', () => {
+    mount({
+      group: { name: 'LR Java', scriptId: 'jv', protocol: 'java_vuser', scriptConfig: { base_url: '', java_vuser: { param_left_brace: '{', param_right_brace: '}' } } },
+      initial: runtimeDraftFromOverride({ java_vuser: { param_left_brace: '<%', param_right_brace: '%>' }, override_fields: ['java_vuser.param_left_brace', 'java_vuser.param_right_brace'] }),
+    })
+    clickTab('Java Env')
+    const left = control<HTMLInputElement>('Parameter left delimiter', 'input')
+    setInput(left, '<')
+    setInput(left, '')
+    expect(lastRow()?.java_vuser?.param_right_brace).toBe('%>')
+    typeInto(control<HTMLInputElement>('Parameter left delimiter', 'input'), '[')
+    expect(lastRow()?.java_vuser).toEqual({ param_left_brace: '[', param_right_brace: '%>' })
+  })
+
+  it('never pins an empty partner delimiter when a lower layer cleared the pair', () => {
+    mount({
+      group: { name: 'LR Java', scriptId: 'jv', protocol: 'java_vuser', scriptConfig: { base_url: '', java_vuser: { param_left_brace: '<<', param_right_brace: '>>' } } },
+      scenarioDefault: { java_vuser: { param_left_brace: '', param_right_brace: '' }, override_fields: ['java_vuser.param_left_brace', 'java_vuser.param_right_brace'] } as RuntimeSettingsOverride,
+    })
+    clickTab('Java Env')
+    typeInto(control<HTMLInputElement>('Parameter left delimiter', 'input'), '<')
+    expect(lastRow()?.java_vuser).toEqual({ param_left_brace: '<', param_right_brace: '}' })
+  })
+
+  it('returns an inherited masked map credential to inheriting when typed text is erased', () => {
+    mount({
+      group: JMS_GROUP,
+      scenarioDefault: { jms: { properties: { password: '[REDACTED]' } }, override_fields: ['jms.properties.password'] } as RuntimeSettingsOverride,
+    })
+    clickTab('JMS')
+    const password = () => container.querySelector('input[aria-label="JMS connection properties password value"]') as HTMLInputElement
+    expect(password().placeholder).toBe('Stored secret (unchanged)')
+    typeInto(password(), 'a')
+    expect(lastRow()?.jms?.properties?.password).toBe('a')
+    setInput(password(), '')
+    expect(lastRow()?.override_fields ?? []).not.toContain('jms.properties.password')
+    expect(lastRow()?.jms?.properties?.password).toBeUndefined()
+  })
+
+  it('restores a masked secret name when typed text is erased', () => {
+    mount({ group: KAFKA_GROUP, initial: runtimeDraftFromOverride({ kafka: { sasl_password_secret: '[REDACTED]' }, override_fields: ['kafka.sasl_password_secret'] }) })
+    clickTab('Kafka')
+    const input = () => control<HTMLInputElement>('SASL password secret name', 'input')
+    expect(input().placeholder).toBe('Stored value (unchanged)')
+    typeInto(input(), 'x')
+    expect(lastRow()?.kafka?.sasl_password_secret).toBe('x')
+    setInput(input(), '')
+    expect(lastRow()).toEqual({ kafka: { sasl_password_secret: '[REDACTED]' }, override_fields: ['kafka.sasl_password_secret'] })
+  })
+
+  it('offers no java_http value the embedded validator rejects, but lets a stored one be cleared', () => {
+    const group: RuntimeEditorGroup = { name: 'Java RMI', scriptId: 'jh', protocol: 'java_http', scriptConfig: { base_url: 'https://java.example.test', java_http: { request_mapping: { id: '$.id' } } } }
+    mount({ group, initial: runtimeDraftFromOverride({ java_http: { object_schema: 'com.example.Order' }, override_fields: ['java_http.object_schema'] }) })
+    clickTab('Java over HTTP')
+    const schema = control<HTMLSelectElement>('Java object class or schema', 'select')
+    expect(Array.from(schema.options).map(option => option.textContent)).toEqual([
+      'Inherit (Default)', 'Override with no value', 'com.example.Order (stored value, not supported here)',
+    ])
+    expect(schema.value).toBe('com.example.Order')
+    const extractor = control<HTMLSelectElement>('Default response extractor type', 'select')
+    expect(Array.from(extractor.options).map(option => option.textContent)).toEqual(['Inherit (Default)', 'Override with no value'])
+    // Request mapping only removes what a lower layer supplies.
+    expect(container.querySelector('input[aria-label="New Request field mapping key"]')).toBeNull()
+    expect((container.querySelector('input[aria-label="Request field mapping id value"]') as HTMLInputElement).readOnly).toBe(true)
+    setSelect(schema, '')
+    expect(lastRow()?.override_fields ?? []).not.toContain('java_http.object_schema')
+  })
+
+  it('drops the partner delimiter it pinned when the typed delimiter is erased back to inherit', () => {
+    mount({ group: { name: 'LR Java', scriptId: 'jv', protocol: 'java_vuser', scriptConfig: { base_url: '', java_vuser: { param_left_brace: '{', param_right_brace: '}' } } } })
+    clickTab('Java Env')
+    const left = () => control<HTMLInputElement>('Parameter left delimiter', 'input')
+    typeInto(left(), '[')
+    expect(lastRow()?.java_vuser).toEqual({ param_left_brace: '[', param_right_brace: '}' })
+    setInput(left(), '')
+    expect((lastRow()?.override_fields ?? []).filter(path => path.startsWith('java_vuser.param_'))).toEqual([])
+    expect(lastRow()?.java_vuser?.param_right_brace).toBeUndefined()
+  })
+
+  it('keeps a partner delimiter the user edited after the auto-pin when the typed one is erased', () => {
+    mount({ group: { name: 'LR Java', scriptId: 'jv', protocol: 'java_vuser', scriptConfig: { base_url: '', java_vuser: { param_left_brace: '{', param_right_brace: '}' } } } })
+    clickTab('Java Env')
+    const left = () => control<HTMLInputElement>('Parameter left delimiter', 'input')
+    const right = () => control<HTMLInputElement>('Parameter right delimiter', 'input')
+    typeInto(left(), '[')
+    blur(left())
+    setInput(right(), ']')
+    blur(right())
+    setInput(left(), '')
+    expect(lastRow()?.java_vuser?.param_right_brace).toBe(']')
+  })
+
+  it('shows the Event Hubs profile defaults as the inherited Kafka security protocol, SASL mechanism and username', () => {
+    const group: RuntimeEditorGroup = { ...KAFKA_GROUP, scriptConfig: { base_url: '', kafka: { profile: 'eventhubs', topic: 'orders' } } }
+    mount({ group })
+    clickTab('Kafka')
+    expect(control<HTMLSelectElement>('Kafka security protocol', 'select').options[0].textContent).toBe('Inherit (sasl_ssl)')
+    expect(control<HTMLSelectElement>('SASL authentication mechanism', 'select').options[0].textContent).toBe('Inherit (plain)')
+    expect(control<HTMLInputElement>('SASL username', 'input').placeholder).toBe('$ConnectionString')
+    // Leaving the profile at this layer brings back the plain Kafka defaults.
+    const profile = control<HTMLSelectElement>('Kafka broker profile', 'select')
+    setSelect(profile, optionByText(profile, 'None (plain Kafka)').value)
+    expect(control<HTMLSelectElement>('Kafka security protocol', 'select').options[0].textContent).toBe('Inherit (plaintext)')
+    expect(control<HTMLSelectElement>('SASL authentication mechanism', 'select').options[0].textContent).toBe('Inherit (Default)')
+    expect(control<HTMLInputElement>('SASL username', 'input').placeholder).not.toBe('$ConnectionString')
+  })
+
+  it('shows the Event Hubs profile defaults when this layer sets the profile', () => {
+    const group: RuntimeEditorGroup = { ...KAFKA_GROUP, scriptConfig: { base_url: '', kafka: { topic: 'orders' } } }
+    mount({ group, initial: runtimeDraftFromOverride({ kafka: { profile: 'eventhubs' }, override_fields: ['kafka.profile'] }) })
+    clickTab('Kafka')
+    expect(control<HTMLSelectElement>('Kafka security protocol', 'select').options[0].textContent).toBe('Inherit (sasl_ssl)')
+    expect(control<HTMLSelectElement>('SASL authentication mechanism', 'select').options[0].textContent).toBe('Inherit (plain)')
+  })
+
+  it('drops an auto-pinned partner delimiter on erase even after a blur', () => {
+    mount({ group: { name: 'LR Java', scriptId: 'jv', protocol: 'java_vuser', scriptConfig: { base_url: '', java_vuser: { param_left_brace: '{', param_right_brace: '}' } } } })
+    clickTab('Java Env')
+    const left = () => control<HTMLInputElement>('Parameter left delimiter', 'input')
+    typeInto(left(), '[')
+    blur(left())
+    setInput(left(), '')
+    expect((lastRow()?.override_fields ?? []).filter(path => path.startsWith('java_vuser.param_'))).toEqual([])
+    expect(lastRow()?.java_vuser?.param_right_brace).toBeUndefined()
+  })
+
+  it('drops an auto-pinned partner delimiter on erase after a tab switch remounts the field', () => {
+    mount({ group: { name: 'LR Java', scriptId: 'jv', protocol: 'java_vuser', scriptConfig: { base_url: '', java_vuser: { param_left_brace: '{', param_right_brace: '}' } } } })
+    clickTab('Java Env')
+    typeInto(control<HTMLInputElement>('Parameter left delimiter', 'input'), '[')
+    clickTab('Think Time')
+    clickTab('Java Env')
+    setInput(control<HTMLInputElement>('Parameter left delimiter', 'input'), '')
+    expect((lastRow()?.override_fields ?? []).filter(path => path.startsWith('java_vuser.param_'))).toEqual([])
+  })
+
+  it('drops a partner pinned at the default beside a pair a lower layer cleared', () => {
+    mount({
+      group: { name: 'LR Java', scriptId: 'jv', protocol: 'java_vuser', scriptConfig: { base_url: '', java_vuser: { param_left_brace: '<<', param_right_brace: '>>' } } },
+      scenarioDefault: { java_vuser: { param_left_brace: '', param_right_brace: '' }, override_fields: ['java_vuser.param_left_brace', 'java_vuser.param_right_brace'] } as RuntimeSettingsOverride,
+    })
+    clickTab('Java Env')
+    const left = () => control<HTMLInputElement>('Parameter left delimiter', 'input')
+    typeInto(left(), '<')
+    blur(left())
+    setInput(left(), '')
+    expect((lastRow()?.override_fields ?? []).filter(path => path.startsWith('java_vuser.param_'))).toEqual([])
+  })
+
+  it('reads the Event Hubs profile case-insensitively, as the validator and engine do', () => {
+    const group: RuntimeEditorGroup = { ...KAFKA_GROUP, scriptConfig: { base_url: '', kafka: { profile: ' EventHubs', topic: 'orders' } } }
+    mount({ group })
+    clickTab('Kafka')
+    expect(control<HTMLSelectElement>('Kafka security protocol', 'select').options[0].textContent).toBe('Inherit (sasl_ssl)')
+    expect(control<HTMLSelectElement>('SASL authentication mechanism', 'select').options[0].textContent).toBe('Inherit (plain)')
+    expect(control<HTMLInputElement>('SASL username', 'input').placeholder).toBe('$ConnectionString')
+  })
+
+  it('labels the explicit no-value choice with the Event Hubs profile default it runs with', () => {
+    const group: RuntimeEditorGroup = { ...KAFKA_GROUP, scriptConfig: { base_url: '', kafka: { profile: 'eventhubs', topic: 'orders' } } }
+    mount({ group, initial: runtimeDraftFromOverride({ kafka: { security_protocol: '' }, override_fields: ['kafka.security_protocol'] }) })
+    clickTab('Kafka')
+    const mechanism = control<HTMLSelectElement>('SASL authentication mechanism', 'select')
+    const labels = Array.from(mechanism.options).map(option => option.textContent)
+    expect(labels).not.toContain('None (no SASL)')
+    expect(labels).toContain('No value (profile default: plain)')
+    setSelect(mechanism, optionByText(mechanism, 'No value (profile default: plain)').value)
+    expect(lastRow()?.override_fields ?? []).toContain('kafka.sasl_mechanism')
+    const protocol = control<HTMLSelectElement>('Kafka security protocol', 'select')
+    expect(protocol.options[protocol.selectedIndex].textContent).toBe('No value (profile default: sasl_ssl)')
+  })
+})

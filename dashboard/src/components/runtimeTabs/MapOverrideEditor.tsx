@@ -1,10 +1,9 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 
 import { isSensitiveCredentialPreviewHeader } from '../credentialPreviewPolicy'
 import { isCredentialCapabilityKey, isSensitiveSettingName } from '../runtime-settings/protocolCredentialLeaves'
 import { REDACTED_SECRET } from '../runtime-settings/scenarioOverrideValues'
 import { type ProtocolOverrideFieldSpec } from '../runtime-settings/protocolOverrideFieldSpecs'
-import { useValueBeforeTyping } from '../runtime-settings/useValueBeforeTyping'
 
 const NOT_PARSED = Symbol('not parsed')
 
@@ -56,7 +55,7 @@ const hasKey = (record: Record<string, unknown>, key: string) => Object.prototyp
  * string, a number a number); while a typed value does not parse yet ("12."),
  * the text is kept locally and nothing is written.
  */
-function MapValueInput({ label, value, capability, secret, readOnly, onValue }: {
+function MapValueInput({ label, value, capability, secret, readOnly, owned, onValue, onInherit }: {
   label: string
   value: unknown
   capability: boolean
@@ -64,14 +63,29 @@ function MapValueInput({ label, value, capability, secret, readOnly, onValue }: 
   secret: boolean
   /** The value is shown but cannot be edited (only removed). */
   readOnly?: boolean
+  /** This layer overrides the key (else its value comes from a layer below). */
+  owned: boolean
   onValue: (value: unknown) => void
+  /** Returns the key to inheriting from the layers below. */
+  onInherit: () => void
 }) {
   const [pending, setPending] = useState<string | null>(null)
   const masked = value === REDACTED_SECRET
   const type = capability ? capabilityType(value) : 'text'
-  // Erasing typed text over a stored (masked) value sends the mask back,
-  // however many characters were typed first.
-  const emitFor = useValueBeforeTyping(typeof value === 'string' ? value : undefined)
+  // Erasing typed text over a masked value returns the key to what it was
+  // before the typing began, however many characters were typed first: the
+  // mask when this layer stored it (the server keeps the stored value), or
+  // inheriting when it came from a layer below. Writing the mask at this layer
+  // for an inherited value would list a key with no prior value here, which the
+  // server reconciles as a removal of the inherited credential.
+  const typedRef = useRef<string | undefined>(undefined)
+  const beforeRef = useRef<'mask' | 'inherit' | undefined>(undefined)
+  const restoreFor = (text: string): 'mask' | 'inherit' | undefined => {
+    const typedHere = typedRef.current !== undefined && value === typedRef.current
+    if (!typedHere) beforeRef.current = masked ? (owned ? 'mask' : 'inherit') : undefined
+    typedRef.current = text === '' ? undefined : text
+    return text === '' ? beforeRef.current : undefined
+  }
   return (
     <input
       className="settings-input"
@@ -87,9 +101,11 @@ function MapValueInput({ label, value, capability, secret, readOnly, onValue }: 
       onChange={event => {
         if (readOnly) return
         const text = event.target.value
-        if (emitFor(text) === REDACTED_SECRET && text === '') {
+        const restore = restoreFor(text)
+        if (restore) {
           setPending(null)
-          onValue(REDACTED_SECRET)
+          if (restore === 'mask') onValue(REDACTED_SECRET)
+          else onInherit()
           return
         }
         const parsed = parseCapability(text, type)
@@ -146,7 +162,7 @@ export default function MapOverrideEditor({ spec, effective, inherited, overridd
       <span>{spec.label}</span>
       {removeOnly && (
         <p className="form-hint">
-          Generic properties are not executable, so none can be added or edited here. Use the typed fields instead; this list only removes properties a lower layer supplies.
+          {spec.removeOnlyNote ?? 'Generic properties are not executable, so none can be added or edited here. Use the typed fields instead; this list only removes properties a lower layer supplies.'}
         </p>
       )}
       {entries.length === 0 && removed.length === 0 && <p className="form-hint">No entries.</p>}
@@ -159,7 +175,9 @@ export default function MapOverrideEditor({ spec, effective, inherited, overridd
             capability={capability}
             secret={credentialKey(spec, key)}
             readOnly={removeOnly}
+            owned={overridden(keyPath(key))}
             onValue={next => setPath(keyPath(key), next)}
+            onInherit={() => resetPath(keyPath(key))}
           />
           {overridden(keyPath(key)) && hasKey(inherited, key) && resetButton(key)}
           <button type="button" className="btn btn-sm btn-ghost" aria-label={`Remove ${spec.label} ${key}`} onClick={() => remove(key)}>

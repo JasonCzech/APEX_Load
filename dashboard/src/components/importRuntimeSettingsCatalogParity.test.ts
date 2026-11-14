@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import catalogSource from '../../../pkg/dsl/config_catalog.go?raw'
+import javaHTTPValidationSource from '../../../pkg/dsl/catalog_java_http_validation.go?raw'
 import contractFields from '../../../pkg/api/import_settings_fields.json'
 import {
  CANONICAL_RUNTIME_GROUP_IDS,
+ IMPORT_CLEAR_ONLY_PATHS,
+ IMPORT_NARROWED_SELECT_PATHS,
  importRuntimeFields,
  mergeImportRuntimeFields,
  resolveCanonicalRuntimeGroup,
@@ -54,6 +57,9 @@ const PROTOCOL_FAMILIES = ['kafka', 'jms', 'eventhubs', 'grpc', 'websocket', 'da
 const protocolImport = catalog.filter(entry => entry.scopes.includes('import') && entry.protocols.some(protocol => PROTOCOL_FAMILIES.some(family => protocol === family || (family === 'jms' && protocol.startsWith('jms')))))
 const editableField = (entry: CatalogEntry) => !['key_value_map', 'object_list', 'object'].includes(entry.type)
 const contractByPath = new Map((contractFields as Array<{ path: string; options?: string[] }>).map(field => [field.path, field]))
+// Settings DSL validation rejects whenever they hold a value: the editor offers
+// them clear-only (a stored value can be removed), never as typed entry.
+const validationRejectedPaths = Array.from(javaHTTPValidationSource.matchAll(/"(config\.java_http\.[a-z_]+) is not supported by embedded java_http"/g), match => match[1]).sort()
 const resolvedGroupId = (path: string) => CANONICAL_RUNTIME_GROUP_IDS[resolveCanonicalRuntimeGroup('HTTP', path)]
 
 // Fixed values DSL validation accepts (pkg/dsl/validate.go validateWebRuntime*)
@@ -93,6 +99,19 @@ describe('offline import runtime catalog parity with pkg/dsl/config_catalog.go',
   expect(importRuntimeFields.filter(field => field.credentialReference && !byPath.get(field.path)?.secret).map(field => field.path)).toEqual(['config.http.proxy.username'])
  })
 
+ it('offers settings that validation always rejects only as clear-only, offline and after the served list merges', () => {
+  expect(validationRejectedPaths).toContain('config.java_http.object_schema')
+  const editableRejected = validationRejectedPaths.filter(path => protocolImport.some(entry => entry.path === path && editableField(entry)))
+  expect(editableRejected).toEqual(['config.java_http.object_schema'])
+  expect([...IMPORT_CLEAR_ONLY_PATHS].sort()).toEqual(editableRejected)
+  const served = protocolImport.filter(editableField).map(entry => ({ path: entry.path, type: entry.type, group: entry.group, options: entry.options, protocols: entry.protocols, secret: entry.secret }))
+  for (const fields of [importRuntimeFields, mergeImportRuntimeFields(served), mergeImportRuntimeFields(served, [])]) {
+   const offered = new Map(fields.map(field => [field.path, field]))
+   expect(editableRejected.filter(path => offered.get(path)?.clearOnly !== true)).toEqual([])
+   expect(fields.filter(field => field.clearOnly).map(field => field.path).sort()).toEqual(editableRejected)
+  }
+ })
+
  it('files each protocol family setting under its catalog group', () => {
   const mismatches = importRuntimeFields
    .filter(field => protocolImport.includes(byPath.get(field.path)!))
@@ -128,8 +147,7 @@ describe('offline import runtime catalog parity with pkg/dsl/config_catalog.go',
    const rejected = (field.options || []).filter(option => !accepted.includes(option))
    if (rejected.length) problems.push(`${field.path}: rejected ${rejected.join(', ')}`)
    const missing = accepted.filter(option => !(field.options || []).includes(option))
-   const narrowedTls = field.path === 'config.http.tls.min_version' || field.path === 'config.http.tls.max_version'
-   if (missing.length && !narrowedTls) problems.push(`${field.path}: missing ${missing.join(', ')}`)
+   if (missing.length && !IMPORT_NARROWED_SELECT_PATHS.has(field.path)) problems.push(`${field.path}: missing ${missing.join(', ')}`)
   }
   expect(problems).toEqual([])
  })

@@ -237,14 +237,14 @@ export function JavaHTTPRuntimeSection({ script, sectionIsActive, onSelectSectio
           <div className="settings-sub-group">
             <h5>Codec</h5>
             <div className="form-grid">
-              <SelectField label="Wire Format" path="config.java_http.codec" value={javaHTTP?.codec} unsetLabel="Choose a codec (required)" onChange={value => updateField('config.java_http.codec', value)} />
-              <SelectField label="Helper Mode" path="config.java_http.helper_mode" value={javaHTTP?.helper_mode} defaultValue="embedded" onChange={value => updateField('config.java_http.helper_mode', value)} />
-              <SelectField label="Body Encoding" path="config.java_http.body_encoding" value={javaHTTP?.body_encoding} defaultValue="base64" onChange={value => updateField('config.java_http.body_encoding', value)} />
+              <SelectField label="Wire format" path="config.java_http.codec" value={javaHTTP?.codec} unsetLabel="Choose a codec (required)" onChange={value => updateField('config.java_http.codec', value)} />
+              <SelectField label="Helper mode" path="config.java_http.helper_mode" value={javaHTTP?.helper_mode} defaultValue="embedded" onChange={value => updateField('config.java_http.helper_mode', value)} />
+              <SelectField label="Body encoding" path="config.java_http.body_encoding" value={javaHTTP?.body_encoding} defaultValue="base64" onChange={value => updateField('config.java_http.body_encoding', value)} />
             </div>
           </div>
 
           <div className="settings-sub-group">
-            <h5>Transport Defaults</h5>
+            <h5>Transport defaults</h5>
             <div className="form-grid">
               <label data-catalog-path="config.java_http.content_type">
                 <span>Content-Type</span>
