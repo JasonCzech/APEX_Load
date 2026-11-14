@@ -212,6 +212,7 @@ export const CANONICAL_RUNTIME_GROUPS: readonly CanonicalRuntimeGroupDefinition[
     sectionIds: [
       'http',
       'jms',
+      'kafka',
       'eventhubs',
       'websocket',
       'grpc',
@@ -405,8 +406,8 @@ export function isCanonicalGroupSupportedForProtocol(
     return false
   }
   if (groupId === 'transport_connections') {
-    // A protocol without its own runtime transport section (kafka today) has
-    // nowhere for this pill to land, so the rail hides it.
+    // A protocol without its own runtime transport section has nowhere for
+    // this pill to land, so the rail hides it.
     return getNativeTransportSectionForProtocol(normalized) !== null
   }
   return true
@@ -445,6 +446,7 @@ export function getCanonicalGroupForSection(
     case 'soap':
       return 'protocol_behavior_session'
     case 'jms':
+    case 'kafka':
     case 'eventhubs':
     case 'websocket':
     case 'grpc':
@@ -486,6 +488,8 @@ export function getNativeTransportSectionForProtocol(
   const normalized = normalizeRuntimeProtocol(protocol)
   if (normalized.startsWith('jms')) return 'jms'
   switch (normalized) {
+    case 'kafka':
+      return 'kafka'
     case 'eventhubs':
       return 'eventhubs'
     case 'websocket':
@@ -646,6 +650,7 @@ const RUNTIME_FIELD_LOCATIONS: ReadonlyArray<[string, RuntimeFieldLocation]> = [
   ['soap', { section: 'soap' }],
   ['browser_emulation', { section: 'browser_emulation' }],
   ['web_runtime', { section: 'web_runtime' }],
+  ['kafka', { section: 'kafka' }],
   ['browser', { section: 'http', httpTransportTab: 'browser' }],
   // HTTP transport tabs (HttpRequestDefaultsEditor, HTTPReplayPolicyFields).
   ['http.user_agent', { section: 'http', httpTransportTab: 'request_defaults' }],

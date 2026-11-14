@@ -2,6 +2,7 @@ import { type RunLogicBlock, type ScriptDefinition } from '../types/scripts'
 import { useState } from 'react'
 import { RuntimeSectionIcon } from './RuntimeSectionIcon'
 import SecondsFromMillisecondsInput from './SecondsFromMillisecondsInput'
+import { KeyValueMapField, SelectField, UnsupportedStoredValue } from './RuntimeConfigFieldControls'
 import {
   formatContentChecks,
   formatDFEChain,
@@ -195,42 +196,40 @@ export function SoapRuntimeSection({ script, sectionIsActive, onSelectSection, o
   )
 }
 
+/**
+ * Java over HTTP runtime settings. Only the fields the embedded MVP validator
+ * (pkg/dsl/catalog_java_http_validation.go) accepts are editable: codec
+ * java_serialized_object_base64, helper mode embedded, body encoding base64,
+ * Content-Type, Accept, response mapping and preserve_binary_result. A stored
+ * object schema, request mapping or extractor type fails validation, so it is
+ * shown with a way to remove it instead of an editor that invites more.
+ */
 export function JavaHTTPRuntimeSection({ script, sectionIsActive, onSelectSection, onUpdateField }: RuntimeSettingsSectionProps) {
   const runtimeSectionIsActive = sectionIsActive
   const selectRuntimeSettingsSection = onSelectSection
   const updateField = onUpdateField
+  const javaHTTP = script.config.java_http
 
-  const addJavaHTTPMapping = (field: 'request_mapping' | 'response_mapping') => {
-    const key = window.prompt(field === 'request_mapping' ? 'Request mapping key:' : 'Response mapping key:')
-    if (!key) return
-    updateField('config.java_http', {
-      ...(script.config.java_http || {}),
-      [field]: {
-        ...((script.config.java_http?.[field] as Record<string, string> | undefined) || {}),
-        [key]: '',
-      },
-    })
+  const updateResponseMapping = (responseMapping: Record<string, string> | undefined) => {
+    const next = { ...(javaHTTP || {}) }
+    if (responseMapping) next.response_mapping = responseMapping
+    else delete next.response_mapping
+    updateField('config.java_http', next)
   }
 
-  const updateJavaHTTPMapping = (field: 'request_mapping' | 'response_mapping', oldKey: string, newKey: string, value: string) => {
-    const mapping = { ...((script.config.java_http?.[field] as Record<string, string> | undefined) || {}) }
-    if (oldKey !== newKey) delete mapping[oldKey]
-    mapping[newKey] = value
-    updateField('config.java_http', { ...(script.config.java_http || {}), [field]: mapping })
+  const clearUnsupported = (field: 'object_schema' | 'request_mapping' | 'extractor_type') => {
+    const next = { ...(javaHTTP || {}) }
+    delete next[field]
+    updateField('config.java_http', next)
   }
-
-  const removeJavaHTTPMapping = (field: 'request_mapping' | 'response_mapping', key: string) => {
-    const mapping = { ...((script.config.java_http?.[field] as Record<string, string> | undefined) || {}) }
-    delete mapping[key]
-    updateField('config.java_http', { ...(script.config.java_http || {}), [field]: mapping })
-  }
+  const requestMappingKeys = Object.keys(javaHTTP?.request_mapping || {})
 
   return (
     <div className={`settings-section ${runtimeSectionIsActive('java_http') ? 'open' : ''}`}>
       <button className="section-toggle" onClick={() => selectRuntimeSettingsSection('java_http')}>
         <RuntimeSectionIcon section="java_http" />
         <span className="section-label">Java HTTP Settings</span>
-        <span className="section-summary">{`${script.config.java_http?.codec || 'java_serialized_object_base64'} · ${script.config.java_http?.helper_mode || 'embedded'}`}</span>
+        <span className="section-summary">{`${javaHTTP?.codec || 'java_serialized_object_base64'} · ${javaHTTP?.helper_mode || 'embedded'}`}</span>
         <span className="chevron">{runtimeSectionIsActive('java_http') ? '▾' : '▸'}</span>
       </button>
       {runtimeSectionIsActive('java_http') && (
@@ -238,78 +237,52 @@ export function JavaHTTPRuntimeSection({ script, sectionIsActive, onSelectSectio
           <div className="settings-sub-group">
             <h5>Codec</h5>
             <div className="form-grid">
-              <label>
-                <span>Wire Format</span>
-                <select value={script.config.java_http?.codec || 'java_serialized_object_base64'} onChange={e => updateField('config.java_http.codec', e.target.value)}>
-                  <option value="java_serialized_object_base64">java_serialized_object_base64</option>
-                </select>
-              </label>
-              <label>
-                <span>Helper Mode</span>
-                <select value={script.config.java_http?.helper_mode || 'embedded'} onChange={e => updateField('config.java_http.helper_mode', e.target.value)}>
-                  <option value="embedded">embedded</option>
-                  <option value="sidecar">sidecar</option>
-                </select>
-              </label>
-              <label>
-                <span>Body Encoding</span>
-                <select value={script.config.java_http?.body_encoding || 'base64'} onChange={e => updateField('config.java_http.body_encoding', e.target.value)}>
-                  <option value="base64">base64</option>
-                </select>
-              </label>
+              <SelectField label="Wire Format" path="config.java_http.codec" value={javaHTTP?.codec} unsetLabel="Choose a codec (required)" onChange={value => updateField('config.java_http.codec', value)} />
+              <SelectField label="Helper Mode" path="config.java_http.helper_mode" value={javaHTTP?.helper_mode} defaultValue="embedded" onChange={value => updateField('config.java_http.helper_mode', value)} />
+              <SelectField label="Body Encoding" path="config.java_http.body_encoding" value={javaHTTP?.body_encoding} defaultValue="base64" onChange={value => updateField('config.java_http.body_encoding', value)} />
             </div>
           </div>
 
           <div className="settings-sub-group">
             <h5>Transport Defaults</h5>
             <div className="form-grid">
-              <label>
+              <label data-catalog-path="config.java_http.content_type">
                 <span>Content-Type</span>
-                <input value={script.config.java_http?.content_type || ''} onChange={e => updateField('config.java_http.content_type', e.target.value)} placeholder="application/x-java-serialized-object" />
+                <input value={javaHTTP?.content_type || ''} onChange={e => updateField('config.java_http.content_type', e.target.value)} placeholder="application/x-java-serialized-object" />
               </label>
-              <label>
+              <label data-catalog-path="config.java_http.accept">
                 <span>Accept</span>
-                <input value={script.config.java_http?.accept || ''} onChange={e => updateField('config.java_http.accept', e.target.value)} placeholder="application/x-java-serialized-object" />
+                <input value={javaHTTP?.accept || ''} onChange={e => updateField('config.java_http.accept', e.target.value)} placeholder="application/x-java-serialized-object" />
               </label>
-              <label>
-                <span>Object Schema</span>
-                <input value={script.config.java_http?.object_schema || ''} onChange={e => updateField('config.java_http.object_schema', e.target.value)} placeholder="com.example.AuthRequest" />
-              </label>
-              <label>
-                <span>Extractor type</span>
-                <input value={script.config.java_http?.extractor_type || ''} onChange={e => updateField('config.java_http.extractor_type', e.target.value)} placeholder="opaque" />
-              </label>
-              <label className="checkbox-label">
-                <input type="checkbox" checked={script.config.java_http?.preserve_binary_result ?? true} onChange={e => updateField('config.java_http.preserve_binary_result', e.target.checked)} />
+              <label className="checkbox-label" data-catalog-path="config.java_http.preserve_binary_result">
+                {/* Unset is off at run time: the engine preserves binary results only when this is true. */}
+                <input type="checkbox" checked={javaHTTP?.preserve_binary_result ?? false} onChange={e => updateField('config.java_http.preserve_binary_result', e.target.checked)} />
                 <span>Preserve binary responses as base64 text</span>
               </label>
+              {javaHTTP?.object_schema?.trim() && (
+                <UnsupportedStoredValue label="Object schema" path="config.java_http.object_schema" value={javaHTTP.object_schema}
+                  reason="Embedded Java over HTTP does not support an object schema, so validation fails until it is removed." onClear={() => clearUnsupported('object_schema')} />
+              )}
+              {javaHTTP?.extractor_type?.trim() && (
+                <UnsupportedStoredValue label="Extractor type" path="config.java_http.extractor_type" value={javaHTTP.extractor_type}
+                  reason="Embedded Java over HTTP does not support a default extractor type, so validation fails until it is removed." onClear={() => clearUnsupported('extractor_type')} />
+              )}
+              {requestMappingKeys.length > 0 && (
+                <UnsupportedStoredValue label="Request mapping" path="config.java_http.request_mapping" value={requestMappingKeys.join(', ')}
+                  reason="Embedded Java over HTTP sends opaque base64 payloads and does not support request mapping, so validation fails until it is removed." onClear={() => clearUnsupported('request_mapping')} />
+              )}
             </div>
           </div>
 
-          <div className="settings-sub-group">
-            <div className="sub-header"><h4>Request Mapping</h4><button className="btn btn-sm btn-ghost" onClick={() => addJavaHTTPMapping('request_mapping')}>+ Add</button></div>
-            <div className="cell-muted" style={{ marginBottom: 8 }}>Mappings are stored with the draft for future helper-aware serializers. Current Java-over-HTTP execution still sends opaque base64 payloads.</div>
-            {Object.entries(script.config.java_http?.request_mapping || {}).length === 0 && <div className="cell-muted">No request mapping entries defined.</div>}
-            {Object.entries(script.config.java_http?.request_mapping || {}).map(([key, value]) => (
-              <div key={`request-${key}`} className="pair-row">
-                <input value={key} onChange={e => updateJavaHTTPMapping('request_mapping', key, e.target.value, value)} placeholder="logical field" />
-                <input value={value} onChange={e => updateJavaHTTPMapping('request_mapping', key, key, e.target.value)} placeholder="serialized property path" />
-                <button className="btn btn-sm btn-ghost" onClick={() => removeJavaHTTPMapping('request_mapping', key)}>✕</button>
-              </div>
-            ))}
-          </div>
-
-          <div className="settings-sub-group">
-            <div className="sub-header"><h4>Response Mapping</h4><button className="btn btn-sm btn-ghost" onClick={() => addJavaHTTPMapping('response_mapping')}>+ Add</button></div>
-            {Object.entries(script.config.java_http?.response_mapping || {}).length === 0 && <div className="cell-muted">No response mapping entries defined.</div>}
-            {Object.entries(script.config.java_http?.response_mapping || {}).map(([key, value]) => (
-              <div key={`response-${key}`} className="pair-row">
-                <input value={key} onChange={e => updateJavaHTTPMapping('response_mapping', key, e.target.value, value)} placeholder="serialized property path" />
-                <input value={value} onChange={e => updateJavaHTTPMapping('response_mapping', key, key, e.target.value)} placeholder="replay variable or logical field" />
-                <button className="btn btn-sm btn-ghost" onClick={() => removeJavaHTTPMapping('response_mapping', key)}>✕</button>
-              </div>
-            ))}
-          </div>
+          <KeyValueMapField
+            label="Response mapping"
+            path="config.java_http.response_mapping"
+            value={javaHTTP?.response_mapping}
+            keyPlaceholder="serialized property path"
+            valuePlaceholder="replay variable or logical field"
+            addLabel="Add mapping"
+            onChange={updateResponseMapping}
+          />
         </div>
       )}
     </div>

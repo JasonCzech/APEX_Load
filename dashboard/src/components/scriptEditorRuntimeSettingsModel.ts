@@ -61,6 +61,7 @@ export const RUNTIME_SETTINGS_SECTION_IDS = [
   'runlogic',
   'errors',
   'jms',
+  'kafka',
   'eventhubs',
   'websocket',
   'grpc',
@@ -104,6 +105,7 @@ export interface RuntimeProtocolCapabilities {
   javaHttp: boolean
   javaVuser: boolean
   jms: boolean
+  kafka: boolean
   network: boolean
   requiresBaseURL: boolean
   soap: boolean
@@ -135,6 +137,7 @@ export function getRuntimeProtocolCapabilities(protocol: string): RuntimeProtoco
   const soap = normalized === 'soap'
   const database = normalized === 'database'
   const jms = normalized.startsWith('jms')
+  const kafka = normalized === 'kafka'
   const eventHubs = normalized === 'eventhubs'
   const network = normalized === 'network'
   const appium = normalized === 'appium'
@@ -153,8 +156,9 @@ export function getRuntimeProtocolCapabilities(protocol: string): RuntimeProtoco
     javaHttp,
     javaVuser,
     jms,
+    kafka,
     network,
-    requiresBaseURL: !jms && !database && !network && !javaVuser && !appium,
+    requiresBaseURL: !jms && !kafka && !database && !network && !javaVuser && !appium,
     soap,
     webSocket: normalized === 'websocket',
   }
@@ -164,6 +168,7 @@ export function runtimeSettingsSectionIsAvailable(section: RuntimeSettingsSectio
   const capability = getRuntimeProtocolCapabilities(protocol)
   switch (section) {
     case 'jms': return capability.jms
+    case 'kafka': return capability.kafka
     case 'eventhubs': return capability.eventHubs
     case 'websocket': return capability.webSocket
     case 'grpc': return capability.grpc

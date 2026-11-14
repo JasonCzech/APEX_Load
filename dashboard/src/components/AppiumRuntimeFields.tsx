@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 
 import type { AppiumConfig } from '../types/scripts'
 import SecondsFromMillisecondsInput from './SecondsFromMillisecondsInput'
+import { secretReferenceNames } from './protocolRuntimeOptions'
 
 function formatCapabilities(capabilities?: Record<string, unknown>): string {
   return JSON.stringify(capabilities || {}, null, 2)
@@ -58,15 +59,27 @@ export default function AppiumRuntimeFields({
     }
   }
 
+  // Secret references stay references: the URL and capabilities show
+  // {{secret.NAME}} as written and name the project secrets they resolve.
+  const serverReferences = secretReferenceNames(current.server_url)
+  const capabilityReferences = [...new Set(secretReferenceNames(committed))]
+
   return (
     <div className="form-grid">
       <label className="full-width">
         <span>Appium server URL</span>
         <input
+          autoComplete="off"
+          spellCheck={false}
           value={current.server_url || ''}
           onChange={e => onChange({ ...current, server_url: e.target.value })}
           placeholder="http://127.0.0.1:4723 or https://{{secret.CLOUD_USER}}:{{secret.CLOUD_KEY}}@hub.example.com/wd/hub"
         />
+        {serverReferences.length > 0 && (
+          <span className="field-hint" data-secret-reference-note>
+            References project secret {serverReferences.join(', ')}, resolved at run time and never shown here.
+          </span>
+        )}
       </label>
       <label className="full-width">
         <span>Capabilities (JSON)</span>
@@ -80,6 +93,11 @@ export default function AppiumRuntimeFields({
         {draftError
           ? <span className="field-error" role="alert">{draftError}</span>
           : <span className="field-hint">platformName, appium:automationName, appium:deviceName or appium:udid, and appium:app or appium:bundleId.</span>}
+        {capabilityReferences.length > 0 && (
+          <span className="field-hint" data-secret-reference-note>
+            Capabilities reference project secret {capabilityReferences.join(', ')}, resolved at run time.
+          </span>
+        )}
       </label>
       <label>
         <span>Session start timeout (s)</span>

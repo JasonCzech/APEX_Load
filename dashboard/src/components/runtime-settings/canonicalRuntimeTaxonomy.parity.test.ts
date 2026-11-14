@@ -14,6 +14,7 @@ import {
   getCanonicalGroupsForProtocol,
   getCanonicalRuntimeGroupsForProtocol,
   getNativeTransportSectionForProtocol,
+  getRuntimeFieldLocation,
   getTlsMaxVersionHttp3Warning,
   isCanonicalGroupSupportedForProtocol,
   isLocationInCanonicalGroup,
@@ -170,15 +171,21 @@ describe('canonicalRuntimeTaxonomy navigation parity with section availability',
     expect(getCanonicalGroupDestination('transport_connections', protocol)).toEqual({ section: 'jms' })
   })
 
-  it('hides Transport & connections for a protocol without a transport section', () => {
-    expect(getNativeTransportSectionForProtocol('kafka')).toBeNull()
-    expect(isCanonicalGroupSupportedForProtocol('transport_connections', 'kafka')).toBe(false)
+  it('routes Transport & connections to the Kafka section for kafka', () => {
+    expect(getNativeTransportSectionForProtocol('kafka')).toBe('kafka')
+    expect(isCanonicalGroupSupportedForProtocol('transport_connections', 'kafka')).toBe(true)
     expect(getCanonicalRuntimeGroupsForProtocol('kafka').map(group => group.id)).toEqual([
       'target_identity',
       'run_logic_pacing',
       'think_time',
+      'transport_connections',
       'errors_logging_diagnostics',
     ])
+    expect(getCanonicalGroupDestination('transport_connections', 'kafka')).toEqual({ section: 'kafka' })
+    expect(getCanonicalGroupForSection('kafka')).toBe('transport_connections')
+    expect(isLocationInCanonicalGroup('transport_connections', 'kafka')).toBe(true)
+    expect(getRuntimeFieldLocation('config.kafka.sasl_mechanism', 'kafka')).toEqual({ section: 'kafka' })
+    expect(getRuntimeFieldLocation('config.kafka.brokers', 'http')).toBeNull()
   })
 
   it('places every HTTP transport tab in exactly one group', () => {
