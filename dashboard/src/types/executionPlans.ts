@@ -9,6 +9,8 @@ export interface ExecutionPlanEntry {
   enabled?: boolean
   /** Stored and returned verbatim (no masking): the run's test-level runtime row, v1 or partial. */
   runtime_overrides?: PartialRuntimeSettingsOverride
+  /** Override schema version the server stamps on every write (0/omitted = legacy row). */
+  runtime_overrides_schema?: number
   failure_policy?: string
   data_pools?: ScenarioDataPoolBinding[]
   timeslot_id?: string

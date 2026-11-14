@@ -72,6 +72,16 @@ var runtimeOverrideFieldKeys = map[string]bool{
 	"browser_config":    true,
 	"browser_emulation": true,
 	"java_vuser":        true,
+	// Native protocol sections (runtimeProtocolOverrideSections). Their
+	// credential leaves are never copied (keepTargetProtocolCredentials).
+	"kafka":     true,
+	"jms":       true,
+	"eventhubs": true,
+	"grpc":      true,
+	"database":  true,
+	"network":   true,
+	"appium":    true,
+	"java_http": true,
 }
 
 func (s *Server) handleApplyScenarioRuntimeToGroups(w http.ResponseWriter, r *http.Request) {
@@ -204,6 +214,22 @@ func (tr *TestRunner) ApplyScenarioRuntimeToGroups(id string, req ApplyRuntimeTo
 		// retained stale target values because nil/empty source fields were skipped.
 		priorTargetRuntime := refs[target].RuntimeSettings
 		refs[target].RuntimeSettings = replaceRuntimeFields(priorTargetRuntime, effective, applicable)
+		for _, section := range runtimeProtocolOverrideSections {
+			if !slices.Contains(applicable, section) {
+				continue
+			}
+			if blocked := runtimeProtocolUncopyableCredentialPaths(refs[target].RuntimeSettings, section); len(blocked) > 0 {
+				return nil, true, fmt.Errorf("source group %d %s carry credentials, which are never copied between groups; remove them from the source (use the section's secret fields) or leave %s out of the copy", req.SourceGroup, strings.Join(blocked, ", "), section)
+			}
+			// The target's inherited layers name the map keys the copy
+			// must clear when it lists a map key by key.
+			var inheritedTargets []*RuntimeSettingsOverride
+			if targetStored, ok := tr.scripts[refs[target].ScriptID]; ok && targetStored != nil && targetStored.Script != nil {
+				inheritedTargets = append(inheritedTargets, runtimeSettingsFromScriptConfig(targetStored.Script.Config))
+			}
+			inheritedTargets = append(inheritedTargets, stored.RuntimeSettings)
+			refs[target].RuntimeSettings = keepTargetProtocolCredentials(refs[target].RuntimeSettings, priorTargetRuntime, section, inheritedTargets...)
+		}
 		if slices.Contains(applicable, "soap") {
 			sourceToken := soapUsernameTokenOf(refs[target].RuntimeSettings)
 			refs[target].RuntimeSettings = keepTargetSOAPCredentials(refs[target].RuntimeSettings, priorTargetRuntime)
@@ -508,6 +534,7 @@ func runtimeSettingsFromScriptConfig(config dsl.ScriptConfig) *RuntimeSettingsOv
 	if config.BrowserEmulation != nil {
 		projected.BrowserEmulation = cloneViaJSON(config.BrowserEmulation)
 	}
+	runtimeProtocolSectionsFromScriptConfig(projected, &config)
 	if runtimeSettingsOverrideEmpty(projected) {
 		return nil
 	}
@@ -525,11 +552,17 @@ func runtimeJavaVuserOverrideFromConfig(java dsl.JavaVuserConfig) *RuntimeJavaVu
 		SkipParameterEvaluation: cloneBoolPointer(java.SkipParameterEvaluation),
 		JVMSharing:              java.JVMSharing,
 		VUsersPerJVM:            java.VUsersPerJVM,
+		StartupTimeoutMs:        java.StartupTimeoutMs,
+		ActionTimeoutMs:         java.ActionTimeoutMs,
+		ParamLeftBrace:          java.ParamLeftBrace,
+		ParamRightBrace:         java.ParamRightBrace,
 	}
 	if projected.JDKSelection == "" && projected.JDKHome == "" &&
 		len(projected.AdditionalVMParameters) == 0 && len(projected.Classpath) == 0 &&
 		projected.UseXBootClasspath == nil && projected.DedicatedClassLoader == nil &&
-		projected.SkipParameterEvaluation == nil && projected.JVMSharing == "" && projected.VUsersPerJVM == 0 {
+		projected.SkipParameterEvaluation == nil && projected.JVMSharing == "" && projected.VUsersPerJVM == 0 &&
+		projected.StartupTimeoutMs == 0 && projected.ActionTimeoutMs == 0 &&
+		projected.ParamLeftBrace == "" && projected.ParamRightBrace == "" {
 		return nil
 	}
 	return projected
@@ -682,6 +715,7 @@ func projectRuntimeFields(src *RuntimeSettingsOverride, fields []string) *Runtim
 	if !requested["java_vuser"] {
 		clone.JavaVuser = nil
 	}
+	clearUnrequestedRuntimeProtocolSections(clone, requested)
 	clone.Env = nil
 	clone.RedactionRules = nil
 	clone.OverrideFields = filterOverrideFieldsForSections(clone.OverrideFields, requested)
@@ -690,7 +724,8 @@ func projectRuntimeFields(src *RuntimeSettingsOverride, fields []string) *Runtim
 		clone.AutoTransactions == "" && clone.BaseURL == "" &&
 		clone.Results == nil && clone.Log == nil && clone.RunLogic == nil &&
 		clone.WebSocket == nil && clone.HTTP == nil && clone.WebRuntime == nil && clone.SOAP == nil && clone.BrowserConfig == nil &&
-		clone.BrowserEmulation == nil && clone.JavaVuser == nil && len(clone.OverrideFields) == 0 {
+		clone.BrowserEmulation == nil && clone.JavaVuser == nil && len(presentRuntimeProtocolSections(clone)) == 0 &&
+		len(clone.OverrideFields) == 0 {
 		return nil
 	}
 	return clone
@@ -781,6 +816,10 @@ func replaceRuntimeFields(target, source *RuntimeSettingsOverride, fields []stri
 			next.BrowserEmulation = src.BrowserEmulation
 		case "java_vuser":
 			next.JavaVuser = src.JavaVuser
+		default:
+			if isRuntimeProtocolOverrideSection(field) {
+				replaceRuntimeProtocolSection(next, src, field)
+			}
 		}
 	}
 
@@ -910,7 +949,7 @@ func runtimeSettingsOverrideEmpty(settings *RuntimeSettingsOverride) bool {
 			settings.AutoTransactions == "" && settings.BaseURL == "" && settings.Log == nil &&
 			settings.Results == nil && settings.RunLogic == nil && settings.WebSocket == nil && settings.HTTP == nil && settings.WebRuntime == nil &&
 			settings.SOAP == nil && settings.BrowserConfig == nil && settings.BrowserEmulation == nil &&
-			settings.JavaVuser == nil &&
+			settings.JavaVuser == nil && len(presentRuntimeProtocolSections(settings)) == 0 &&
 			len(settings.Env) == 0 && len(settings.RedactionRules) == 0 && len(settings.OverrideFields) == 0)
 }
 
@@ -925,6 +964,9 @@ func hasRuntimeSettingsOverrides(settings *RuntimeSettingsOverride) bool {
 // apply path here and the editor's "Not applicable" rows must consume the same
 // predicate to avoid drift.
 func fieldApplicableForProtocol(field, protocol string) bool {
+	if applies, ok := runtimeProtocolFieldApplies(field, protocol); ok {
+		return applies
+	}
 	switch field {
 	case "browser", "browser_config":
 		return protocolFamilyIsBrowser(protocol)

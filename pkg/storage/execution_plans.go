@@ -146,7 +146,12 @@ type ExecutionPlanEntry struct {
 	ScenarioName     string          `json:"scenario_name,omitempty"`
 	Enabled          *bool           `json:"enabled,omitempty"` // nil = enabled (default)
 	RuntimeOverrides json.RawMessage `json:"runtime_overrides,omitempty"`
-	FailurePolicy    string          `json:"failure_policy,omitempty"` // halt | skip
+	// RuntimeOverridesSchema is the runtime-overrides schema the row was
+	// validated under, recorded by the controller on every plan write (0 for
+	// rows written before it existed). A row keeps the semantics of the schema
+	// it was written under: keys a later schema recognizes stay ignored.
+	RuntimeOverridesSchema int    `json:"runtime_overrides_schema,omitempty"`
+	FailurePolicy          string `json:"failure_policy,omitempty"` // halt | skip
 	// DataPools, when non-empty, overrides the scenario's shared data-pool
 	// bindings for this entry's run (the materialize step passes them through,
 	// and an explicit override wins over the scenario defaults).
@@ -195,19 +200,22 @@ type ExecutionPlanRunEntry struct {
 	// resume a sequential run after a controller restart. They live inside the
 	// existing entries_json column, so adding them requires no SQL migration and
 	// old rows remain readable (their zero values use the safe halt policy).
-	FailurePolicy       string                    `json:"failure_policy,omitempty"`
-	RuntimeOverrides    json.RawMessage           `json:"runtime_overrides,omitempty"`
-	DataPools           []ScenarioDataPoolBinding `json:"data_pools,omitempty"`
-	TimeslotID          *string                   `json:"timeslot_id,omitempty"`
-	RunName             string                    `json:"run_name,omitempty"`
-	AttribSubject       string                    `json:"attrib_subject,omitempty"`
-	AttribName          string                    `json:"attrib_name,omitempty"`
-	ActorType           string                    `json:"actor_type,omitempty"`
-	ActorSubject        string                    `json:"actor_subject,omitempty"`
-	ActorDisplayName    string                    `json:"actor_display_name,omitempty"`
-	ActivityInitiatedBy string                    `json:"activity_initiated_by,omitempty"`
-	ApprovalID          string                    `json:"approval_id,omitempty"`
-	MaterializationKey  string                    `json:"materialization_key,omitempty"`
+	FailurePolicy    string          `json:"failure_policy,omitempty"`
+	RuntimeOverrides json.RawMessage `json:"runtime_overrides,omitempty"`
+	// RuntimeOverridesSchema is copied from the plan entry (see
+	// ExecutionPlanEntry.RuntimeOverridesSchema).
+	RuntimeOverridesSchema int                       `json:"runtime_overrides_schema,omitempty"`
+	DataPools              []ScenarioDataPoolBinding `json:"data_pools,omitempty"`
+	TimeslotID             *string                   `json:"timeslot_id,omitempty"`
+	RunName                string                    `json:"run_name,omitempty"`
+	AttribSubject          string                    `json:"attrib_subject,omitempty"`
+	AttribName             string                    `json:"attrib_name,omitempty"`
+	ActorType              string                    `json:"actor_type,omitempty"`
+	ActorSubject           string                    `json:"actor_subject,omitempty"`
+	ActorDisplayName       string                    `json:"actor_display_name,omitempty"`
+	ActivityInitiatedBy    string                    `json:"activity_initiated_by,omitempty"`
+	ApprovalID             string                    `json:"approval_id,omitempty"`
+	MaterializationKey     string                    `json:"materialization_key,omitempty"`
 	// PlanName, ApplicationID and ReleaseID snapshot the plan's name and where
 	// the entry's run is filed, so a resumed sequence files and names later
 	// entries as the run began.

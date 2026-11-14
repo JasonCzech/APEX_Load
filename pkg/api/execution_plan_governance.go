@@ -308,15 +308,19 @@ type executionPlanApprovalFingerprint struct {
 }
 
 type executionPlanApprovalEntryFingerprint struct {
-	Order            int                               `json:"order"`
-	ScenarioID       string                            `json:"scenario_id"`
-	ScenarioName     string                            `json:"scenario_name,omitempty"`
-	Enabled          bool                              `json:"enabled"`
-	FailurePolicy    string                            `json:"failure_policy,omitempty"`
-	TimeslotID       string                            `json:"timeslot_id,omitempty"`
-	RuntimeOverrides any                               `json:"runtime_overrides,omitempty"`
-	DataPools        []storage.ScenarioDataPoolBinding `json:"data_pools,omitempty"`
-	Scenario         *executionPlanScenarioFingerprint `json:"scenario,omitempty"`
+	Order            int    `json:"order"`
+	ScenarioID       string `json:"scenario_id"`
+	ScenarioName     string `json:"scenario_name,omitempty"`
+	Enabled          bool   `json:"enabled"`
+	FailurePolicy    string `json:"failure_policy,omitempty"`
+	TimeslotID       string `json:"timeslot_id,omitempty"`
+	RuntimeOverrides any    `json:"runtime_overrides,omitempty"`
+	// RuntimeOverridesSchema decides which override keys a run applies, so
+	// a schema upgrade is a content change. Schema 0 is omitted so approvals
+	// stored before the schema existed keep their hash.
+	RuntimeOverridesSchema int                               `json:"runtime_overrides_schema,omitempty"`
+	DataPools              []storage.ScenarioDataPoolBinding `json:"data_pools,omitempty"`
+	Scenario               *executionPlanScenarioFingerprint `json:"scenario,omitempty"`
 }
 
 type executionPlanScenarioFingerprint struct {
@@ -379,14 +383,15 @@ func (tr *TestRunner) executionPlanApprovalContentHashForPeak(plan *storage.Exec
 	}
 	for _, entry := range entries {
 		entryFP := executionPlanApprovalEntryFingerprint{
-			Order:            entry.Order,
-			ScenarioID:       strings.TrimSpace(entry.ScenarioID),
-			ScenarioName:     strings.TrimSpace(entry.ScenarioName),
-			Enabled:          entry.IsEnabled(),
-			FailurePolicy:    strings.TrimSpace(entry.FailurePolicy),
-			TimeslotID:       trimPtr(entry.TimeslotID),
-			RuntimeOverrides: canonicalJSONValue(entry.RuntimeOverrides),
-			DataPools:        append([]storage.ScenarioDataPoolBinding(nil), entry.DataPools...),
+			Order:                  entry.Order,
+			ScenarioID:             strings.TrimSpace(entry.ScenarioID),
+			ScenarioName:           strings.TrimSpace(entry.ScenarioName),
+			Enabled:                entry.IsEnabled(),
+			FailurePolicy:          strings.TrimSpace(entry.FailurePolicy),
+			TimeslotID:             trimPtr(entry.TimeslotID),
+			RuntimeOverrides:       canonicalJSONValue(entry.RuntimeOverrides),
+			RuntimeOverridesSchema: entry.RuntimeOverridesSchema,
+			DataPools:              append([]storage.ScenarioDataPoolBinding(nil), entry.DataPools...),
 		}
 		if scenario, ok := tr.GetScenario(entry.ScenarioID); ok {
 			entryFP.Scenario = executionPlanScenarioApprovalFingerprint(scenario)

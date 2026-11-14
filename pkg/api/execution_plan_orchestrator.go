@@ -140,6 +140,9 @@ func buildPlanEntryCreateRequest(planName, projectID string, planTimeslot *strin
 		if err := json.Unmarshal(entry.RuntimeOverrides, &parsed); err != nil {
 			return CreateTestRequest{}, fmt.Errorf("decode runtime overrides for scenario %s: %w", entry.ScenarioID, err)
 		}
+		if err := prepareExecutionPlanEntryRuntimeOverrides(parsed, entry.RuntimeOverridesSchema); err != nil {
+			return CreateTestRequest{}, fmt.Errorf("runtime overrides for scenario %s: %w", entry.ScenarioID, err)
+		}
 		req.RuntimeSettings = parsed
 	}
 	if len(entry.DataPools) > 0 {
@@ -169,22 +172,25 @@ func trimPtr(s *string) string {
 func executionPlanRunEntrySnapshot(entry storage.ExecutionPlanEntry, runName, attribSubject, attribName string, effectiveTimeslot *string, approval *storage.ExecutionPlanApproval, actors ...testCreationActor) storage.ExecutionPlanRunEntry {
 	actor := executionPlanCreationActor(attribSubject, attribName, actors...)
 	return storage.ExecutionPlanRunEntry{
-		Order:               entry.Order,
-		ScenarioID:          entry.ScenarioID,
-		ScenarioName:        entry.ScenarioName,
-		Status:              "pending",
-		FailurePolicy:       entry.FailurePolicy,
-		RuntimeOverrides:    append(json.RawMessage(nil), entry.RuntimeOverrides...),
-		DataPools:           append([]storage.ScenarioDataPoolBinding(nil), entry.DataPools...),
-		TimeslotID:          cloneStringPtr(effectiveTimeslot),
-		RunName:             runName,
-		AttribSubject:       strings.TrimSpace(attribSubject),
-		AttribName:          strings.TrimSpace(attribName),
-		ActorType:           actor.Type,
-		ActorSubject:        actor.Subject,
-		ActorDisplayName:    actor.DisplayName,
-		ActivityInitiatedBy: actor.InitiatedBy,
-		ApprovalID:          approvalID(approval),
+		Order:            entry.Order,
+		ScenarioID:       entry.ScenarioID,
+		ScenarioName:     entry.ScenarioName,
+		Status:           "pending",
+		FailurePolicy:    entry.FailurePolicy,
+		RuntimeOverrides: append(json.RawMessage(nil), entry.RuntimeOverrides...),
+		DataPools:        append([]storage.ScenarioDataPoolBinding(nil), entry.DataPools...),
+		TimeslotID:       cloneStringPtr(effectiveTimeslot),
+		// The snapshot keeps the schema the row was written under, so a
+		// resumed run reads it the same way.
+		RuntimeOverridesSchema: entry.RuntimeOverridesSchema,
+		RunName:                runName,
+		AttribSubject:          strings.TrimSpace(attribSubject),
+		AttribName:             strings.TrimSpace(attribName),
+		ActorType:              actor.Type,
+		ActorSubject:           actor.Subject,
+		ActorDisplayName:       actor.DisplayName,
+		ActivityInitiatedBy:    actor.InitiatedBy,
+		ApprovalID:             approvalID(approval),
 	}
 }
 
@@ -265,13 +271,14 @@ func (tr *TestRunner) preflightExecutionPlanRuntimeSecretAuthority(plan *storage
 
 func executionPlanEntryFromRunEntry(entry storage.ExecutionPlanRunEntry) storage.ExecutionPlanEntry {
 	return storage.ExecutionPlanEntry{
-		Order:            entry.Order,
-		ScenarioID:       entry.ScenarioID,
-		ScenarioName:     entry.ScenarioName,
-		RuntimeOverrides: append(json.RawMessage(nil), entry.RuntimeOverrides...),
-		FailurePolicy:    entry.FailurePolicy,
-		DataPools:        append([]storage.ScenarioDataPoolBinding(nil), entry.DataPools...),
-		TimeslotID:       cloneStringPtr(entry.TimeslotID),
+		Order:                  entry.Order,
+		ScenarioID:             entry.ScenarioID,
+		ScenarioName:           entry.ScenarioName,
+		RuntimeOverrides:       append(json.RawMessage(nil), entry.RuntimeOverrides...),
+		RuntimeOverridesSchema: entry.RuntimeOverridesSchema,
+		FailurePolicy:          entry.FailurePolicy,
+		DataPools:              append([]storage.ScenarioDataPoolBinding(nil), entry.DataPools...),
+		TimeslotID:             cloneStringPtr(entry.TimeslotID),
 	}
 }
 

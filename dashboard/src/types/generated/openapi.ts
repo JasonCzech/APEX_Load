@@ -7521,6 +7521,12 @@ export interface operations {
             }) | null;
           }) | null;
           "runtime_settings"?: ({
+            "appium"?: ({
+              "capabilities"?: Record<string, unknown>;
+              "element_timeout_ms"?: number;
+              "server_url"?: string;
+              "session_timeout_ms"?: number;
+            }) | null;
             "auto_transactions"?: string;
             "base_url"?: string;
             "browser"?: ({
@@ -7617,6 +7623,18 @@ export interface operations {
               "mode"?: string;
               "platform"?: string;
             }) | null;
+            "database"?: ({
+              "conn_max_lifetime_ms"?: number;
+              "driver"?: string;
+              "dsn"?: string;
+              "dsn_secret"?: string;
+              "max_idle_conns"?: number;
+              "max_open_conns"?: number;
+              "max_rows"?: number;
+              "query_timeout_ms"?: number;
+              "read_only"?: boolean;
+              "rollback_on_teardown"?: boolean;
+            }) | null;
             "env"?: Record<string, string>;
             "error_handling"?: ({
               "continue_on_error"?: (boolean) | null;
@@ -7628,6 +7646,34 @@ export interface operations {
               "retry_delay_ms"?: number;
               "retry_on"?: Array<string>;
               "snapshot_on_error"?: boolean;
+            }) | null;
+            "eventhubs"?: ({
+              "auth_type"?: string;
+              "checkpoint_container_url"?: string;
+              "connection_string"?: string;
+              "connection_string_secret"?: string;
+              "consumer_group"?: string;
+              "consumer_mode"?: string;
+              "event_hub"?: string;
+              "mock"?: boolean;
+              "namespace"?: string;
+              "observe_partition_tail"?: boolean;
+              "owner_level"?: (number) | null;
+              "partition_id"?: string;
+              "partition_key"?: string;
+              "processor_max_partitions"?: number;
+              "start_position"?: string;
+              "tail_poll_interval_ms"?: number;
+              "timeout_ms"?: number;
+            }) | null;
+            "grpc"?: ({
+              "authority"?: string;
+              "max_recv_msg_size"?: number;
+              "metadata"?: Record<string, string>;
+              "plain_text"?: boolean;
+              "proto_files"?: Array<string>;
+              "timeout_ms"?: number;
+              "use_reflection"?: boolean;
             }) | null;
             "http"?: ({
               "accept_encoding"?: string;
@@ -7698,16 +7744,112 @@ export interface operations {
               "version"?: string;
             }) | null;
             "iterations"?: (number) | null;
+            "java_http"?: ({
+              "accept"?: string;
+              "body_encoding"?: string;
+              "codec"?: string;
+              "content_type"?: string;
+              "extractor_type"?: string;
+              "helper_mode"?: string;
+              "object_schema"?: string;
+              "preserve_binary_result"?: boolean;
+              "request_mapping"?: Record<string, string>;
+              "response_mapping"?: Record<string, string>;
+            }) | null;
             "java_vuser"?: ({
+              "action_timeout_ms"?: number;
               "additional_vm_parameters"?: Array<string>;
               "classpath"?: Array<string>;
               "dedicated_class_loader"?: (boolean) | null;
               "jdk_home"?: string;
               "jdk_selection"?: string;
               "jvm_sharing"?: string;
+              "param_left_brace"?: string;
+              "param_right_brace"?: string;
               "skip_parameter_evaluation"?: (boolean) | null;
+              "startup_timeout_ms"?: number;
               "use_xbootclasspath"?: (boolean) | null;
               "vusers_per_jvm"?: number;
+            }) | null;
+            "jms"?: ({
+              "acknowledgement"?: string;
+              "broker_url"?: string;
+              "client_id"?: string;
+              "delivery_mode"?: string;
+              "destination"?: string;
+              "destination_type"?: string;
+              "message_vpn"?: string;
+              "mock"?: boolean;
+              "password"?: string;
+              "properties"?: Record<string, string>;
+              "provider"?: string;
+              "reply_to"?: string;
+              "subscription"?: string;
+              "timeout_ms"?: number;
+              "tls"?: ({
+                "ca_cert_secret"?: string;
+                "insecure_skip_verify"?: boolean;
+                "trust_store_ref"?: string;
+              }) | null;
+              "username"?: string;
+            }) | null;
+            "kafka"?: ({
+              "acks"?: string;
+              "auto_offset_reset"?: string;
+              "brokers"?: Array<string>;
+              "client_id"?: string;
+              "compression"?: string;
+              "consumer_group"?: string;
+              "consumer_transactions"?: boolean;
+              "idempotence"?: string;
+              "isolation_level"?: string;
+              "max_message_bytes"?: number;
+              "mock"?: boolean;
+              "oauth"?: ({
+                "authentication_method"?: string;
+                "client_id"?: string;
+                "client_secret"?: string;
+                "client_secret_ref"?: string;
+                "mode"?: string;
+                "scope"?: string;
+                "token_url"?: string;
+              }) | null;
+              "oauth_scope"?: string;
+              "partition_strategy"?: string;
+              "partitions"?: number;
+              "producer"?: ({
+                "admission_timeout_ms"?: (number) | null;
+                "batch_bytes"?: (number) | null;
+                "buffer_bytes"?: (number) | null;
+                "delivery_timeout_ms"?: (number) | null;
+                "linger_ms"?: (number) | null;
+                "max_in_flight_requests"?: (number) | null;
+                "request_timeout_ms"?: (number) | null;
+                "retries"?: (number) | null;
+              }) | null;
+              "profile"?: string;
+              "properties"?: Record<string, string>;
+              "sasl_mechanism"?: string;
+              "sasl_password"?: string;
+              "sasl_password_secret"?: string;
+              "sasl_username"?: string;
+              "schema"?: string;
+              "schema_id"?: number;
+              "schema_registry_url"?: string;
+              "security_protocol"?: string;
+              "serialization"?: string;
+              "subject"?: string;
+              "timeout_ms"?: number;
+              "tls"?: ({
+                "ca_cert_file"?: string;
+                "client_cert_file"?: string;
+                "client_key_file"?: string;
+                "insecure_skip_verify"?: boolean;
+                "max_version"?: string;
+                "min_version"?: string;
+              }) | null;
+              "topic"?: string;
+              "transactional_id"?: string;
             }) | null;
             "log"?: ({
               "error_buffer_bytes"?: number;
@@ -7718,6 +7860,19 @@ export interface operations {
               "redact_run_evidence"?: (boolean) | null;
             }) | null;
             "log_level"?: string;
+            "network"?: ({
+              "address"?: string;
+              "base_dn"?: string;
+              "from"?: string;
+              "host"?: string;
+              "password"?: string;
+              "port"?: number;
+              "subprotocol"?: string;
+              "timeout_ms"?: number;
+              "tls"?: boolean;
+              "to"?: Array<string>;
+              "username"?: string;
+            }) | null;
             "override_fields"?: Array<string>;
             "pacing"?: ({
               "arrival_process"?: string;
@@ -8027,18 +8182,26 @@ export interface operations {
               "revision_source_group_index"?: (number) | null;
               "role"?: string;
               "runtime_settings"?: ({
+                "appium"?: (Record<string, unknown>) | null;
                 "auto_transactions"?: string;
                 "base_url"?: string;
                 "browser"?: (Record<string, unknown>) | null;
                 "browser_config"?: (Record<string, unknown>) | null;
                 "browser_emulation"?: (Record<string, unknown>) | null;
+                "database"?: (Record<string, unknown>) | null;
                 "env"?: Record<string, string>;
                 "error_handling"?: (Record<string, unknown>) | null;
+                "eventhubs"?: (Record<string, unknown>) | null;
+                "grpc"?: (Record<string, unknown>) | null;
                 "http"?: (Record<string, unknown>) | null;
                 "iterations"?: (number) | null;
+                "java_http"?: (Record<string, unknown>) | null;
                 "java_vuser"?: (Record<string, unknown>) | null;
+                "jms"?: (Record<string, unknown>) | null;
+                "kafka"?: (Record<string, unknown>) | null;
                 "log"?: (Record<string, unknown>) | null;
                 "log_level"?: string;
+                "network"?: (Record<string, unknown>) | null;
                 "override_fields"?: Array<string>;
                 "pacing"?: (Record<string, unknown>) | null;
                 "redaction_rules"?: Array<Record<string, unknown>>;
@@ -8063,6 +8226,12 @@ export interface operations {
             "project_id"?: string;
             "resource_baseline"?: boolean;
             "runtime_settings"?: ({
+              "appium"?: ({
+                "capabilities"?: Record<string, unknown>;
+                "element_timeout_ms"?: number;
+                "server_url"?: string;
+                "session_timeout_ms"?: number;
+              }) | null;
               "auto_transactions"?: string;
               "base_url"?: string;
               "browser"?: ({
@@ -8119,6 +8288,18 @@ export interface operations {
                 "mode"?: string;
                 "platform"?: string;
               }) | null;
+              "database"?: ({
+                "conn_max_lifetime_ms"?: number;
+                "driver"?: string;
+                "dsn"?: string;
+                "dsn_secret"?: string;
+                "max_idle_conns"?: number;
+                "max_open_conns"?: number;
+                "max_rows"?: number;
+                "query_timeout_ms"?: number;
+                "read_only"?: boolean;
+                "rollback_on_teardown"?: boolean;
+              }) | null;
               "env"?: Record<string, string>;
               "error_handling"?: ({
                 "continue_on_error"?: (boolean) | null;
@@ -8130,6 +8311,34 @@ export interface operations {
                 "retry_delay_ms"?: number;
                 "retry_on"?: Array<string>;
                 "snapshot_on_error"?: boolean;
+              }) | null;
+              "eventhubs"?: ({
+                "auth_type"?: string;
+                "checkpoint_container_url"?: string;
+                "connection_string"?: string;
+                "connection_string_secret"?: string;
+                "consumer_group"?: string;
+                "consumer_mode"?: string;
+                "event_hub"?: string;
+                "mock"?: boolean;
+                "namespace"?: string;
+                "observe_partition_tail"?: boolean;
+                "owner_level"?: (number) | null;
+                "partition_id"?: string;
+                "partition_key"?: string;
+                "processor_max_partitions"?: number;
+                "start_position"?: string;
+                "tail_poll_interval_ms"?: number;
+                "timeout_ms"?: number;
+              }) | null;
+              "grpc"?: ({
+                "authority"?: string;
+                "max_recv_msg_size"?: number;
+                "metadata"?: Record<string, string>;
+                "plain_text"?: boolean;
+                "proto_files"?: Array<string>;
+                "timeout_ms"?: number;
+                "use_reflection"?: boolean;
               }) | null;
               "http"?: ({
                 "accept_encoding"?: string;
@@ -8174,16 +8383,84 @@ export interface operations {
                 "version"?: string;
               }) | null;
               "iterations"?: (number) | null;
+              "java_http"?: ({
+                "accept"?: string;
+                "body_encoding"?: string;
+                "codec"?: string;
+                "content_type"?: string;
+                "extractor_type"?: string;
+                "helper_mode"?: string;
+                "object_schema"?: string;
+                "preserve_binary_result"?: boolean;
+                "request_mapping"?: Record<string, string>;
+                "response_mapping"?: Record<string, string>;
+              }) | null;
               "java_vuser"?: ({
+                "action_timeout_ms"?: number;
                 "additional_vm_parameters"?: Array<string>;
                 "classpath"?: Array<string>;
                 "dedicated_class_loader"?: (boolean) | null;
                 "jdk_home"?: string;
                 "jdk_selection"?: string;
                 "jvm_sharing"?: string;
+                "param_left_brace"?: string;
+                "param_right_brace"?: string;
                 "skip_parameter_evaluation"?: (boolean) | null;
+                "startup_timeout_ms"?: number;
                 "use_xbootclasspath"?: (boolean) | null;
                 "vusers_per_jvm"?: number;
+              }) | null;
+              "jms"?: ({
+                "acknowledgement"?: string;
+                "broker_url"?: string;
+                "client_id"?: string;
+                "delivery_mode"?: string;
+                "destination"?: string;
+                "destination_type"?: string;
+                "message_vpn"?: string;
+                "mock"?: boolean;
+                "password"?: string;
+                "properties"?: Record<string, string>;
+                "provider"?: string;
+                "reply_to"?: string;
+                "subscription"?: string;
+                "timeout_ms"?: number;
+                "tls"?: (Record<string, unknown>) | null;
+                "username"?: string;
+              }) | null;
+              "kafka"?: ({
+                "acks"?: string;
+                "auto_offset_reset"?: string;
+                "brokers"?: Array<string>;
+                "client_id"?: string;
+                "compression"?: string;
+                "consumer_group"?: string;
+                "consumer_transactions"?: boolean;
+                "idempotence"?: string;
+                "isolation_level"?: string;
+                "max_message_bytes"?: number;
+                "mock"?: boolean;
+                "oauth"?: (Record<string, unknown>) | null;
+                "oauth_scope"?: string;
+                "partition_strategy"?: string;
+                "partitions"?: number;
+                "producer"?: (Record<string, unknown>) | null;
+                "profile"?: string;
+                "properties"?: Record<string, string>;
+                "sasl_mechanism"?: string;
+                "sasl_password"?: string;
+                "sasl_password_secret"?: string;
+                "sasl_username"?: string;
+                "schema"?: string;
+                "schema_id"?: number;
+                "schema_registry_url"?: string;
+                "security_protocol"?: string;
+                "serialization"?: string;
+                "subject"?: string;
+                "timeout_ms"?: number;
+                "tls"?: (Record<string, unknown>) | null;
+                "topic"?: string;
+                "transactional_id"?: string;
               }) | null;
               "log"?: ({
                 "error_buffer_bytes"?: number;
@@ -8194,6 +8471,19 @@ export interface operations {
                 "redact_run_evidence"?: (boolean) | null;
               }) | null;
               "log_level"?: string;
+              "network"?: ({
+                "address"?: string;
+                "base_dn"?: string;
+                "from"?: string;
+                "host"?: string;
+                "password"?: string;
+                "port"?: number;
+                "subprotocol"?: string;
+                "timeout_ms"?: number;
+                "tls"?: boolean;
+                "to"?: Array<string>;
+                "username"?: string;
+              }) | null;
               "override_fields"?: Array<string>;
               "pacing"?: ({
                 "arrival_process"?: string;
@@ -22502,6 +22792,12 @@ export interface operations {
               "resource_baseline"?: boolean;
               "result_count"?: number;
               "runtime_settings"?: ({
+                "appium"?: ({
+                  "capabilities"?: Record<string, unknown>;
+                  "element_timeout_ms"?: number;
+                  "server_url"?: string;
+                  "session_timeout_ms"?: number;
+                }) | null;
                 "auto_transactions"?: string;
                 "base_url"?: string;
                 "browser"?: ({
@@ -22558,6 +22854,18 @@ export interface operations {
                   "mode"?: string;
                   "platform"?: string;
                 }) | null;
+                "database"?: ({
+                  "conn_max_lifetime_ms"?: number;
+                  "driver"?: string;
+                  "dsn"?: string;
+                  "dsn_secret"?: string;
+                  "max_idle_conns"?: number;
+                  "max_open_conns"?: number;
+                  "max_rows"?: number;
+                  "query_timeout_ms"?: number;
+                  "read_only"?: boolean;
+                  "rollback_on_teardown"?: boolean;
+                }) | null;
                 "env"?: Record<string, string>;
                 "error_handling"?: ({
                   "continue_on_error"?: (boolean) | null;
@@ -22569,6 +22877,34 @@ export interface operations {
                   "retry_delay_ms"?: number;
                   "retry_on"?: Array<string>;
                   "snapshot_on_error"?: boolean;
+                }) | null;
+                "eventhubs"?: ({
+                  "auth_type"?: string;
+                  "checkpoint_container_url"?: string;
+                  "connection_string"?: string;
+                  "connection_string_secret"?: string;
+                  "consumer_group"?: string;
+                  "consumer_mode"?: string;
+                  "event_hub"?: string;
+                  "mock"?: boolean;
+                  "namespace"?: string;
+                  "observe_partition_tail"?: boolean;
+                  "owner_level"?: (number) | null;
+                  "partition_id"?: string;
+                  "partition_key"?: string;
+                  "processor_max_partitions"?: number;
+                  "start_position"?: string;
+                  "tail_poll_interval_ms"?: number;
+                  "timeout_ms"?: number;
+                }) | null;
+                "grpc"?: ({
+                  "authority"?: string;
+                  "max_recv_msg_size"?: number;
+                  "metadata"?: Record<string, string>;
+                  "plain_text"?: boolean;
+                  "proto_files"?: Array<string>;
+                  "timeout_ms"?: number;
+                  "use_reflection"?: boolean;
                 }) | null;
                 "http"?: ({
                   "accept_encoding"?: string;
@@ -22613,16 +22949,84 @@ export interface operations {
                   "version"?: string;
                 }) | null;
                 "iterations"?: (number) | null;
+                "java_http"?: ({
+                  "accept"?: string;
+                  "body_encoding"?: string;
+                  "codec"?: string;
+                  "content_type"?: string;
+                  "extractor_type"?: string;
+                  "helper_mode"?: string;
+                  "object_schema"?: string;
+                  "preserve_binary_result"?: boolean;
+                  "request_mapping"?: Record<string, string>;
+                  "response_mapping"?: Record<string, string>;
+                }) | null;
                 "java_vuser"?: ({
+                  "action_timeout_ms"?: number;
                   "additional_vm_parameters"?: Array<string>;
                   "classpath"?: Array<string>;
                   "dedicated_class_loader"?: (boolean) | null;
                   "jdk_home"?: string;
                   "jdk_selection"?: string;
                   "jvm_sharing"?: string;
+                  "param_left_brace"?: string;
+                  "param_right_brace"?: string;
                   "skip_parameter_evaluation"?: (boolean) | null;
+                  "startup_timeout_ms"?: number;
                   "use_xbootclasspath"?: (boolean) | null;
                   "vusers_per_jvm"?: number;
+                }) | null;
+                "jms"?: ({
+                  "acknowledgement"?: string;
+                  "broker_url"?: string;
+                  "client_id"?: string;
+                  "delivery_mode"?: string;
+                  "destination"?: string;
+                  "destination_type"?: string;
+                  "message_vpn"?: string;
+                  "mock"?: boolean;
+                  "password"?: string;
+                  "properties"?: Record<string, string>;
+                  "provider"?: string;
+                  "reply_to"?: string;
+                  "subscription"?: string;
+                  "timeout_ms"?: number;
+                  "tls"?: (Record<string, unknown>) | null;
+                  "username"?: string;
+                }) | null;
+                "kafka"?: ({
+                  "acks"?: string;
+                  "auto_offset_reset"?: string;
+                  "brokers"?: Array<string>;
+                  "client_id"?: string;
+                  "compression"?: string;
+                  "consumer_group"?: string;
+                  "consumer_transactions"?: boolean;
+                  "idempotence"?: string;
+                  "isolation_level"?: string;
+                  "max_message_bytes"?: number;
+                  "mock"?: boolean;
+                  "oauth"?: (Record<string, unknown>) | null;
+                  "oauth_scope"?: string;
+                  "partition_strategy"?: string;
+                  "partitions"?: number;
+                  "producer"?: (Record<string, unknown>) | null;
+                  "profile"?: string;
+                  "properties"?: Record<string, string>;
+                  "sasl_mechanism"?: string;
+                  "sasl_password"?: string;
+                  "sasl_password_secret"?: string;
+                  "sasl_username"?: string;
+                  "schema"?: string;
+                  "schema_id"?: number;
+                  "schema_registry_url"?: string;
+                  "security_protocol"?: string;
+                  "serialization"?: string;
+                  "subject"?: string;
+                  "timeout_ms"?: number;
+                  "tls"?: (Record<string, unknown>) | null;
+                  "topic"?: string;
+                  "transactional_id"?: string;
                 }) | null;
                 "log"?: ({
                   "error_buffer_bytes"?: number;
@@ -22633,6 +23037,19 @@ export interface operations {
                   "redact_run_evidence"?: (boolean) | null;
                 }) | null;
                 "log_level"?: string;
+                "network"?: ({
+                  "address"?: string;
+                  "base_dn"?: string;
+                  "from"?: string;
+                  "host"?: string;
+                  "password"?: string;
+                  "port"?: number;
+                  "subprotocol"?: string;
+                  "timeout_ms"?: number;
+                  "tls"?: boolean;
+                  "to"?: Array<string>;
+                  "username"?: string;
+                }) | null;
                 "override_fields"?: Array<string>;
                 "pacing"?: ({
                   "arrival_process"?: string;
@@ -22795,18 +23212,26 @@ export interface operations {
                 "ramp_up"?: string;
                 "role"?: string;
                 "runtime_settings"?: ({
+                  "appium"?: (Record<string, unknown>) | null;
                   "auto_transactions"?: string;
                   "base_url"?: string;
                   "browser"?: (Record<string, unknown>) | null;
                   "browser_config"?: (Record<string, unknown>) | null;
                   "browser_emulation"?: (Record<string, unknown>) | null;
+                  "database"?: (Record<string, unknown>) | null;
                   "env"?: Record<string, string>;
                   "error_handling"?: (Record<string, unknown>) | null;
+                  "eventhubs"?: (Record<string, unknown>) | null;
+                  "grpc"?: (Record<string, unknown>) | null;
                   "http"?: (Record<string, unknown>) | null;
                   "iterations"?: (number) | null;
+                  "java_http"?: (Record<string, unknown>) | null;
                   "java_vuser"?: (Record<string, unknown>) | null;
+                  "jms"?: (Record<string, unknown>) | null;
+                  "kafka"?: (Record<string, unknown>) | null;
                   "log"?: (Record<string, unknown>) | null;
                   "log_level"?: string;
+                  "network"?: (Record<string, unknown>) | null;
                   "override_fields"?: Array<string>;
                   "pacing"?: (Record<string, unknown>) | null;
                   "redaction_rules"?: Array<Record<string, unknown>>;
@@ -26705,18 +27130,26 @@ export interface operations {
                 "ref_key"?: string;
                 "resource_baseline"?: boolean;
                 "runtime_settings"?: ({
+                  "appium"?: (Record<string, unknown>) | null;
                   "auto_transactions"?: string;
                   "base_url"?: string;
                   "browser"?: (Record<string, unknown>) | null;
                   "browser_config"?: (Record<string, unknown>) | null;
                   "browser_emulation"?: (Record<string, unknown>) | null;
+                  "database"?: (Record<string, unknown>) | null;
                   "env"?: Record<string, string>;
                   "error_handling"?: (Record<string, unknown>) | null;
+                  "eventhubs"?: (Record<string, unknown>) | null;
+                  "grpc"?: (Record<string, unknown>) | null;
                   "http"?: (Record<string, unknown>) | null;
                   "iterations"?: (number) | null;
+                  "java_http"?: (Record<string, unknown>) | null;
                   "java_vuser"?: (Record<string, unknown>) | null;
+                  "jms"?: (Record<string, unknown>) | null;
+                  "kafka"?: (Record<string, unknown>) | null;
                   "log"?: (Record<string, unknown>) | null;
                   "log_level"?: string;
+                  "network"?: (Record<string, unknown>) | null;
                   "override_fields"?: Array<string>;
                   "pacing"?: (Record<string, unknown>) | null;
                   "redaction_rules"?: Array<Record<string, unknown>>;
@@ -26915,6 +27348,12 @@ export interface operations {
             "resource_baseline"?: boolean;
             "result_count"?: number;
             "runtime_settings"?: ({
+              "appium"?: ({
+                "capabilities"?: Record<string, unknown>;
+                "element_timeout_ms"?: number;
+                "server_url"?: string;
+                "session_timeout_ms"?: number;
+              }) | null;
               "auto_transactions"?: string;
               "base_url"?: string;
               "browser"?: ({
@@ -27011,6 +27450,18 @@ export interface operations {
                 "mode"?: string;
                 "platform"?: string;
               }) | null;
+              "database"?: ({
+                "conn_max_lifetime_ms"?: number;
+                "driver"?: string;
+                "dsn"?: string;
+                "dsn_secret"?: string;
+                "max_idle_conns"?: number;
+                "max_open_conns"?: number;
+                "max_rows"?: number;
+                "query_timeout_ms"?: number;
+                "read_only"?: boolean;
+                "rollback_on_teardown"?: boolean;
+              }) | null;
               "env"?: Record<string, string>;
               "error_handling"?: ({
                 "continue_on_error"?: (boolean) | null;
@@ -27022,6 +27473,34 @@ export interface operations {
                 "retry_delay_ms"?: number;
                 "retry_on"?: Array<string>;
                 "snapshot_on_error"?: boolean;
+              }) | null;
+              "eventhubs"?: ({
+                "auth_type"?: string;
+                "checkpoint_container_url"?: string;
+                "connection_string"?: string;
+                "connection_string_secret"?: string;
+                "consumer_group"?: string;
+                "consumer_mode"?: string;
+                "event_hub"?: string;
+                "mock"?: boolean;
+                "namespace"?: string;
+                "observe_partition_tail"?: boolean;
+                "owner_level"?: (number) | null;
+                "partition_id"?: string;
+                "partition_key"?: string;
+                "processor_max_partitions"?: number;
+                "start_position"?: string;
+                "tail_poll_interval_ms"?: number;
+                "timeout_ms"?: number;
+              }) | null;
+              "grpc"?: ({
+                "authority"?: string;
+                "max_recv_msg_size"?: number;
+                "metadata"?: Record<string, string>;
+                "plain_text"?: boolean;
+                "proto_files"?: Array<string>;
+                "timeout_ms"?: number;
+                "use_reflection"?: boolean;
               }) | null;
               "http"?: ({
                 "accept_encoding"?: string;
@@ -27092,16 +27571,112 @@ export interface operations {
                 "version"?: string;
               }) | null;
               "iterations"?: (number) | null;
+              "java_http"?: ({
+                "accept"?: string;
+                "body_encoding"?: string;
+                "codec"?: string;
+                "content_type"?: string;
+                "extractor_type"?: string;
+                "helper_mode"?: string;
+                "object_schema"?: string;
+                "preserve_binary_result"?: boolean;
+                "request_mapping"?: Record<string, string>;
+                "response_mapping"?: Record<string, string>;
+              }) | null;
               "java_vuser"?: ({
+                "action_timeout_ms"?: number;
                 "additional_vm_parameters"?: Array<string>;
                 "classpath"?: Array<string>;
                 "dedicated_class_loader"?: (boolean) | null;
                 "jdk_home"?: string;
                 "jdk_selection"?: string;
                 "jvm_sharing"?: string;
+                "param_left_brace"?: string;
+                "param_right_brace"?: string;
                 "skip_parameter_evaluation"?: (boolean) | null;
+                "startup_timeout_ms"?: number;
                 "use_xbootclasspath"?: (boolean) | null;
                 "vusers_per_jvm"?: number;
+              }) | null;
+              "jms"?: ({
+                "acknowledgement"?: string;
+                "broker_url"?: string;
+                "client_id"?: string;
+                "delivery_mode"?: string;
+                "destination"?: string;
+                "destination_type"?: string;
+                "message_vpn"?: string;
+                "mock"?: boolean;
+                "password"?: string;
+                "properties"?: Record<string, string>;
+                "provider"?: string;
+                "reply_to"?: string;
+                "subscription"?: string;
+                "timeout_ms"?: number;
+                "tls"?: ({
+                  "ca_cert_secret"?: string;
+                  "insecure_skip_verify"?: boolean;
+                  "trust_store_ref"?: string;
+                }) | null;
+                "username"?: string;
+              }) | null;
+              "kafka"?: ({
+                "acks"?: string;
+                "auto_offset_reset"?: string;
+                "brokers"?: Array<string>;
+                "client_id"?: string;
+                "compression"?: string;
+                "consumer_group"?: string;
+                "consumer_transactions"?: boolean;
+                "idempotence"?: string;
+                "isolation_level"?: string;
+                "max_message_bytes"?: number;
+                "mock"?: boolean;
+                "oauth"?: ({
+                  "authentication_method"?: string;
+                  "client_id": string;
+                  "client_secret"?: string;
+                  "client_secret_ref"?: string;
+                  "mode": string;
+                  "scope"?: string;
+                  "token_url": string;
+                }) | null;
+                "oauth_scope"?: string;
+                "partition_strategy"?: string;
+                "partitions"?: number;
+                "producer"?: ({
+                  "admission_timeout_ms"?: (number) | null;
+                  "batch_bytes"?: (number) | null;
+                  "buffer_bytes"?: (number) | null;
+                  "delivery_timeout_ms"?: (number) | null;
+                  "linger_ms"?: (number) | null;
+                  "max_in_flight_requests"?: (number) | null;
+                  "request_timeout_ms"?: (number) | null;
+                  "retries"?: (number) | null;
+                }) | null;
+                "profile"?: string;
+                "properties"?: Record<string, string>;
+                "sasl_mechanism"?: string;
+                "sasl_password"?: string;
+                "sasl_password_secret"?: string;
+                "sasl_username"?: string;
+                "schema"?: string;
+                "schema_id"?: number;
+                "schema_registry_url"?: string;
+                "security_protocol"?: string;
+                "serialization"?: string;
+                "subject"?: string;
+                "timeout_ms"?: number;
+                "tls"?: ({
+                  "ca_cert_file"?: string;
+                  "client_cert_file"?: string;
+                  "client_key_file"?: string;
+                  "insecure_skip_verify"?: boolean;
+                  "max_version"?: string;
+                  "min_version"?: string;
+                }) | null;
+                "topic"?: string;
+                "transactional_id"?: string;
               }) | null;
               "log"?: ({
                 "error_buffer_bytes"?: number;
@@ -27112,6 +27687,19 @@ export interface operations {
                 "redact_run_evidence"?: (boolean) | null;
               }) | null;
               "log_level"?: string;
+              "network"?: ({
+                "address"?: string;
+                "base_dn"?: string;
+                "from"?: string;
+                "host"?: string;
+                "password"?: string;
+                "port"?: number;
+                "subprotocol"?: string;
+                "timeout_ms"?: number;
+                "tls"?: boolean;
+                "to"?: Array<string>;
+                "username"?: string;
+              }) | null;
               "override_fields"?: Array<string>;
               "pacing"?: ({
                 "arrival_process"?: string;
@@ -27379,6 +27967,12 @@ export interface operations {
               "ramp_up"?: string;
               "role"?: string;
               "runtime_settings"?: ({
+                "appium"?: ({
+                  "capabilities"?: Record<string, unknown>;
+                  "element_timeout_ms"?: number;
+                  "server_url"?: string;
+                  "session_timeout_ms"?: number;
+                }) | null;
                 "auto_transactions"?: string;
                 "base_url"?: string;
                 "browser"?: ({
@@ -27435,6 +28029,18 @@ export interface operations {
                   "mode"?: string;
                   "platform"?: string;
                 }) | null;
+                "database"?: ({
+                  "conn_max_lifetime_ms"?: number;
+                  "driver"?: string;
+                  "dsn"?: string;
+                  "dsn_secret"?: string;
+                  "max_idle_conns"?: number;
+                  "max_open_conns"?: number;
+                  "max_rows"?: number;
+                  "query_timeout_ms"?: number;
+                  "read_only"?: boolean;
+                  "rollback_on_teardown"?: boolean;
+                }) | null;
                 "env"?: Record<string, string>;
                 "error_handling"?: ({
                   "continue_on_error"?: (boolean) | null;
@@ -27446,6 +28052,34 @@ export interface operations {
                   "retry_delay_ms"?: number;
                   "retry_on"?: Array<string>;
                   "snapshot_on_error"?: boolean;
+                }) | null;
+                "eventhubs"?: ({
+                  "auth_type"?: string;
+                  "checkpoint_container_url"?: string;
+                  "connection_string"?: string;
+                  "connection_string_secret"?: string;
+                  "consumer_group"?: string;
+                  "consumer_mode"?: string;
+                  "event_hub"?: string;
+                  "mock"?: boolean;
+                  "namespace"?: string;
+                  "observe_partition_tail"?: boolean;
+                  "owner_level"?: (number) | null;
+                  "partition_id"?: string;
+                  "partition_key"?: string;
+                  "processor_max_partitions"?: number;
+                  "start_position"?: string;
+                  "tail_poll_interval_ms"?: number;
+                  "timeout_ms"?: number;
+                }) | null;
+                "grpc"?: ({
+                  "authority"?: string;
+                  "max_recv_msg_size"?: number;
+                  "metadata"?: Record<string, string>;
+                  "plain_text"?: boolean;
+                  "proto_files"?: Array<string>;
+                  "timeout_ms"?: number;
+                  "use_reflection"?: boolean;
                 }) | null;
                 "http"?: ({
                   "accept_encoding"?: string;
@@ -27490,16 +28124,84 @@ export interface operations {
                   "version"?: string;
                 }) | null;
                 "iterations"?: (number) | null;
+                "java_http"?: ({
+                  "accept"?: string;
+                  "body_encoding"?: string;
+                  "codec"?: string;
+                  "content_type"?: string;
+                  "extractor_type"?: string;
+                  "helper_mode"?: string;
+                  "object_schema"?: string;
+                  "preserve_binary_result"?: boolean;
+                  "request_mapping"?: Record<string, string>;
+                  "response_mapping"?: Record<string, string>;
+                }) | null;
                 "java_vuser"?: ({
+                  "action_timeout_ms"?: number;
                   "additional_vm_parameters"?: Array<string>;
                   "classpath"?: Array<string>;
                   "dedicated_class_loader"?: (boolean) | null;
                   "jdk_home"?: string;
                   "jdk_selection"?: string;
                   "jvm_sharing"?: string;
+                  "param_left_brace"?: string;
+                  "param_right_brace"?: string;
                   "skip_parameter_evaluation"?: (boolean) | null;
+                  "startup_timeout_ms"?: number;
                   "use_xbootclasspath"?: (boolean) | null;
                   "vusers_per_jvm"?: number;
+                }) | null;
+                "jms"?: ({
+                  "acknowledgement"?: string;
+                  "broker_url"?: string;
+                  "client_id"?: string;
+                  "delivery_mode"?: string;
+                  "destination"?: string;
+                  "destination_type"?: string;
+                  "message_vpn"?: string;
+                  "mock"?: boolean;
+                  "password"?: string;
+                  "properties"?: Record<string, string>;
+                  "provider"?: string;
+                  "reply_to"?: string;
+                  "subscription"?: string;
+                  "timeout_ms"?: number;
+                  "tls"?: (Record<string, unknown>) | null;
+                  "username"?: string;
+                }) | null;
+                "kafka"?: ({
+                  "acks"?: string;
+                  "auto_offset_reset"?: string;
+                  "brokers"?: Array<string>;
+                  "client_id"?: string;
+                  "compression"?: string;
+                  "consumer_group"?: string;
+                  "consumer_transactions"?: boolean;
+                  "idempotence"?: string;
+                  "isolation_level"?: string;
+                  "max_message_bytes"?: number;
+                  "mock"?: boolean;
+                  "oauth"?: (Record<string, unknown>) | null;
+                  "oauth_scope"?: string;
+                  "partition_strategy"?: string;
+                  "partitions"?: number;
+                  "producer"?: (Record<string, unknown>) | null;
+                  "profile"?: string;
+                  "properties"?: Record<string, string>;
+                  "sasl_mechanism"?: string;
+                  "sasl_password"?: string;
+                  "sasl_password_secret"?: string;
+                  "sasl_username"?: string;
+                  "schema"?: string;
+                  "schema_id"?: number;
+                  "schema_registry_url"?: string;
+                  "security_protocol"?: string;
+                  "serialization"?: string;
+                  "subject"?: string;
+                  "timeout_ms"?: number;
+                  "tls"?: (Record<string, unknown>) | null;
+                  "topic"?: string;
+                  "transactional_id"?: string;
                 }) | null;
                 "log"?: ({
                   "error_buffer_bytes"?: number;
@@ -27510,6 +28212,19 @@ export interface operations {
                   "redact_run_evidence"?: (boolean) | null;
                 }) | null;
                 "log_level"?: string;
+                "network"?: ({
+                  "address"?: string;
+                  "base_dn"?: string;
+                  "from"?: string;
+                  "host"?: string;
+                  "password"?: string;
+                  "port"?: number;
+                  "subprotocol"?: string;
+                  "timeout_ms"?: number;
+                  "tls"?: boolean;
+                  "to"?: Array<string>;
+                  "username"?: string;
+                }) | null;
                 "override_fields"?: Array<string>;
                 "pacing"?: ({
                   "arrival_process"?: string;
@@ -27940,18 +28655,26 @@ export interface operations {
                 "ref_key"?: string;
                 "resource_baseline"?: boolean;
                 "runtime_settings"?: ({
+                  "appium"?: (Record<string, unknown>) | null;
                   "auto_transactions"?: string;
                   "base_url"?: string;
                   "browser"?: (Record<string, unknown>) | null;
                   "browser_config"?: (Record<string, unknown>) | null;
                   "browser_emulation"?: (Record<string, unknown>) | null;
+                  "database"?: (Record<string, unknown>) | null;
                   "env"?: Record<string, string>;
                   "error_handling"?: (Record<string, unknown>) | null;
+                  "eventhubs"?: (Record<string, unknown>) | null;
+                  "grpc"?: (Record<string, unknown>) | null;
                   "http"?: (Record<string, unknown>) | null;
                   "iterations"?: (number) | null;
+                  "java_http"?: (Record<string, unknown>) | null;
                   "java_vuser"?: (Record<string, unknown>) | null;
+                  "jms"?: (Record<string, unknown>) | null;
+                  "kafka"?: (Record<string, unknown>) | null;
                   "log"?: (Record<string, unknown>) | null;
                   "log_level"?: string;
+                  "network"?: (Record<string, unknown>) | null;
                   "override_fields"?: Array<string>;
                   "pacing"?: (Record<string, unknown>) | null;
                   "redaction_rules"?: Array<Record<string, unknown>>;
@@ -28150,6 +28873,12 @@ export interface operations {
             "resource_baseline"?: boolean;
             "result_count"?: number;
             "runtime_settings"?: ({
+              "appium"?: ({
+                "capabilities"?: Record<string, unknown>;
+                "element_timeout_ms"?: number;
+                "server_url"?: string;
+                "session_timeout_ms"?: number;
+              }) | null;
               "auto_transactions"?: string;
               "base_url"?: string;
               "browser"?: ({
@@ -28246,6 +28975,18 @@ export interface operations {
                 "mode"?: string;
                 "platform"?: string;
               }) | null;
+              "database"?: ({
+                "conn_max_lifetime_ms"?: number;
+                "driver"?: string;
+                "dsn"?: string;
+                "dsn_secret"?: string;
+                "max_idle_conns"?: number;
+                "max_open_conns"?: number;
+                "max_rows"?: number;
+                "query_timeout_ms"?: number;
+                "read_only"?: boolean;
+                "rollback_on_teardown"?: boolean;
+              }) | null;
               "env"?: Record<string, string>;
               "error_handling"?: ({
                 "continue_on_error"?: (boolean) | null;
@@ -28257,6 +28998,34 @@ export interface operations {
                 "retry_delay_ms"?: number;
                 "retry_on"?: Array<string>;
                 "snapshot_on_error"?: boolean;
+              }) | null;
+              "eventhubs"?: ({
+                "auth_type"?: string;
+                "checkpoint_container_url"?: string;
+                "connection_string"?: string;
+                "connection_string_secret"?: string;
+                "consumer_group"?: string;
+                "consumer_mode"?: string;
+                "event_hub"?: string;
+                "mock"?: boolean;
+                "namespace"?: string;
+                "observe_partition_tail"?: boolean;
+                "owner_level"?: (number) | null;
+                "partition_id"?: string;
+                "partition_key"?: string;
+                "processor_max_partitions"?: number;
+                "start_position"?: string;
+                "tail_poll_interval_ms"?: number;
+                "timeout_ms"?: number;
+              }) | null;
+              "grpc"?: ({
+                "authority"?: string;
+                "max_recv_msg_size"?: number;
+                "metadata"?: Record<string, string>;
+                "plain_text"?: boolean;
+                "proto_files"?: Array<string>;
+                "timeout_ms"?: number;
+                "use_reflection"?: boolean;
               }) | null;
               "http"?: ({
                 "accept_encoding"?: string;
@@ -28327,16 +29096,112 @@ export interface operations {
                 "version"?: string;
               }) | null;
               "iterations"?: (number) | null;
+              "java_http"?: ({
+                "accept"?: string;
+                "body_encoding"?: string;
+                "codec"?: string;
+                "content_type"?: string;
+                "extractor_type"?: string;
+                "helper_mode"?: string;
+                "object_schema"?: string;
+                "preserve_binary_result"?: boolean;
+                "request_mapping"?: Record<string, string>;
+                "response_mapping"?: Record<string, string>;
+              }) | null;
               "java_vuser"?: ({
+                "action_timeout_ms"?: number;
                 "additional_vm_parameters"?: Array<string>;
                 "classpath"?: Array<string>;
                 "dedicated_class_loader"?: (boolean) | null;
                 "jdk_home"?: string;
                 "jdk_selection"?: string;
                 "jvm_sharing"?: string;
+                "param_left_brace"?: string;
+                "param_right_brace"?: string;
                 "skip_parameter_evaluation"?: (boolean) | null;
+                "startup_timeout_ms"?: number;
                 "use_xbootclasspath"?: (boolean) | null;
                 "vusers_per_jvm"?: number;
+              }) | null;
+              "jms"?: ({
+                "acknowledgement"?: string;
+                "broker_url"?: string;
+                "client_id"?: string;
+                "delivery_mode"?: string;
+                "destination"?: string;
+                "destination_type"?: string;
+                "message_vpn"?: string;
+                "mock"?: boolean;
+                "password"?: string;
+                "properties"?: Record<string, string>;
+                "provider"?: string;
+                "reply_to"?: string;
+                "subscription"?: string;
+                "timeout_ms"?: number;
+                "tls"?: ({
+                  "ca_cert_secret"?: string;
+                  "insecure_skip_verify"?: boolean;
+                  "trust_store_ref"?: string;
+                }) | null;
+                "username"?: string;
+              }) | null;
+              "kafka"?: ({
+                "acks"?: string;
+                "auto_offset_reset"?: string;
+                "brokers"?: Array<string>;
+                "client_id"?: string;
+                "compression"?: string;
+                "consumer_group"?: string;
+                "consumer_transactions"?: boolean;
+                "idempotence"?: string;
+                "isolation_level"?: string;
+                "max_message_bytes"?: number;
+                "mock"?: boolean;
+                "oauth"?: ({
+                  "authentication_method"?: string;
+                  "client_id": string;
+                  "client_secret"?: string;
+                  "client_secret_ref"?: string;
+                  "mode": string;
+                  "scope"?: string;
+                  "token_url": string;
+                }) | null;
+                "oauth_scope"?: string;
+                "partition_strategy"?: string;
+                "partitions"?: number;
+                "producer"?: ({
+                  "admission_timeout_ms"?: (number) | null;
+                  "batch_bytes"?: (number) | null;
+                  "buffer_bytes"?: (number) | null;
+                  "delivery_timeout_ms"?: (number) | null;
+                  "linger_ms"?: (number) | null;
+                  "max_in_flight_requests"?: (number) | null;
+                  "request_timeout_ms"?: (number) | null;
+                  "retries"?: (number) | null;
+                }) | null;
+                "profile"?: string;
+                "properties"?: Record<string, string>;
+                "sasl_mechanism"?: string;
+                "sasl_password"?: string;
+                "sasl_password_secret"?: string;
+                "sasl_username"?: string;
+                "schema"?: string;
+                "schema_id"?: number;
+                "schema_registry_url"?: string;
+                "security_protocol"?: string;
+                "serialization"?: string;
+                "subject"?: string;
+                "timeout_ms"?: number;
+                "tls"?: ({
+                  "ca_cert_file"?: string;
+                  "client_cert_file"?: string;
+                  "client_key_file"?: string;
+                  "insecure_skip_verify"?: boolean;
+                  "max_version"?: string;
+                  "min_version"?: string;
+                }) | null;
+                "topic"?: string;
+                "transactional_id"?: string;
               }) | null;
               "log"?: ({
                 "error_buffer_bytes"?: number;
@@ -28347,6 +29212,19 @@ export interface operations {
                 "redact_run_evidence"?: (boolean) | null;
               }) | null;
               "log_level"?: string;
+              "network"?: ({
+                "address"?: string;
+                "base_dn"?: string;
+                "from"?: string;
+                "host"?: string;
+                "password"?: string;
+                "port"?: number;
+                "subprotocol"?: string;
+                "timeout_ms"?: number;
+                "tls"?: boolean;
+                "to"?: Array<string>;
+                "username"?: string;
+              }) | null;
               "override_fields"?: Array<string>;
               "pacing"?: ({
                 "arrival_process"?: string;
@@ -28614,6 +29492,12 @@ export interface operations {
               "ramp_up"?: string;
               "role"?: string;
               "runtime_settings"?: ({
+                "appium"?: ({
+                  "capabilities"?: Record<string, unknown>;
+                  "element_timeout_ms"?: number;
+                  "server_url"?: string;
+                  "session_timeout_ms"?: number;
+                }) | null;
                 "auto_transactions"?: string;
                 "base_url"?: string;
                 "browser"?: ({
@@ -28670,6 +29554,18 @@ export interface operations {
                   "mode"?: string;
                   "platform"?: string;
                 }) | null;
+                "database"?: ({
+                  "conn_max_lifetime_ms"?: number;
+                  "driver"?: string;
+                  "dsn"?: string;
+                  "dsn_secret"?: string;
+                  "max_idle_conns"?: number;
+                  "max_open_conns"?: number;
+                  "max_rows"?: number;
+                  "query_timeout_ms"?: number;
+                  "read_only"?: boolean;
+                  "rollback_on_teardown"?: boolean;
+                }) | null;
                 "env"?: Record<string, string>;
                 "error_handling"?: ({
                   "continue_on_error"?: (boolean) | null;
@@ -28681,6 +29577,34 @@ export interface operations {
                   "retry_delay_ms"?: number;
                   "retry_on"?: Array<string>;
                   "snapshot_on_error"?: boolean;
+                }) | null;
+                "eventhubs"?: ({
+                  "auth_type"?: string;
+                  "checkpoint_container_url"?: string;
+                  "connection_string"?: string;
+                  "connection_string_secret"?: string;
+                  "consumer_group"?: string;
+                  "consumer_mode"?: string;
+                  "event_hub"?: string;
+                  "mock"?: boolean;
+                  "namespace"?: string;
+                  "observe_partition_tail"?: boolean;
+                  "owner_level"?: (number) | null;
+                  "partition_id"?: string;
+                  "partition_key"?: string;
+                  "processor_max_partitions"?: number;
+                  "start_position"?: string;
+                  "tail_poll_interval_ms"?: number;
+                  "timeout_ms"?: number;
+                }) | null;
+                "grpc"?: ({
+                  "authority"?: string;
+                  "max_recv_msg_size"?: number;
+                  "metadata"?: Record<string, string>;
+                  "plain_text"?: boolean;
+                  "proto_files"?: Array<string>;
+                  "timeout_ms"?: number;
+                  "use_reflection"?: boolean;
                 }) | null;
                 "http"?: ({
                   "accept_encoding"?: string;
@@ -28725,16 +29649,84 @@ export interface operations {
                   "version"?: string;
                 }) | null;
                 "iterations"?: (number) | null;
+                "java_http"?: ({
+                  "accept"?: string;
+                  "body_encoding"?: string;
+                  "codec"?: string;
+                  "content_type"?: string;
+                  "extractor_type"?: string;
+                  "helper_mode"?: string;
+                  "object_schema"?: string;
+                  "preserve_binary_result"?: boolean;
+                  "request_mapping"?: Record<string, string>;
+                  "response_mapping"?: Record<string, string>;
+                }) | null;
                 "java_vuser"?: ({
+                  "action_timeout_ms"?: number;
                   "additional_vm_parameters"?: Array<string>;
                   "classpath"?: Array<string>;
                   "dedicated_class_loader"?: (boolean) | null;
                   "jdk_home"?: string;
                   "jdk_selection"?: string;
                   "jvm_sharing"?: string;
+                  "param_left_brace"?: string;
+                  "param_right_brace"?: string;
                   "skip_parameter_evaluation"?: (boolean) | null;
+                  "startup_timeout_ms"?: number;
                   "use_xbootclasspath"?: (boolean) | null;
                   "vusers_per_jvm"?: number;
+                }) | null;
+                "jms"?: ({
+                  "acknowledgement"?: string;
+                  "broker_url"?: string;
+                  "client_id"?: string;
+                  "delivery_mode"?: string;
+                  "destination"?: string;
+                  "destination_type"?: string;
+                  "message_vpn"?: string;
+                  "mock"?: boolean;
+                  "password"?: string;
+                  "properties"?: Record<string, string>;
+                  "provider"?: string;
+                  "reply_to"?: string;
+                  "subscription"?: string;
+                  "timeout_ms"?: number;
+                  "tls"?: (Record<string, unknown>) | null;
+                  "username"?: string;
+                }) | null;
+                "kafka"?: ({
+                  "acks"?: string;
+                  "auto_offset_reset"?: string;
+                  "brokers"?: Array<string>;
+                  "client_id"?: string;
+                  "compression"?: string;
+                  "consumer_group"?: string;
+                  "consumer_transactions"?: boolean;
+                  "idempotence"?: string;
+                  "isolation_level"?: string;
+                  "max_message_bytes"?: number;
+                  "mock"?: boolean;
+                  "oauth"?: (Record<string, unknown>) | null;
+                  "oauth_scope"?: string;
+                  "partition_strategy"?: string;
+                  "partitions"?: number;
+                  "producer"?: (Record<string, unknown>) | null;
+                  "profile"?: string;
+                  "properties"?: Record<string, string>;
+                  "sasl_mechanism"?: string;
+                  "sasl_password"?: string;
+                  "sasl_password_secret"?: string;
+                  "sasl_username"?: string;
+                  "schema"?: string;
+                  "schema_id"?: number;
+                  "schema_registry_url"?: string;
+                  "security_protocol"?: string;
+                  "serialization"?: string;
+                  "subject"?: string;
+                  "timeout_ms"?: number;
+                  "tls"?: (Record<string, unknown>) | null;
+                  "topic"?: string;
+                  "transactional_id"?: string;
                 }) | null;
                 "log"?: ({
                   "error_buffer_bytes"?: number;
@@ -28745,6 +29737,19 @@ export interface operations {
                   "redact_run_evidence"?: (boolean) | null;
                 }) | null;
                 "log_level"?: string;
+                "network"?: ({
+                  "address"?: string;
+                  "base_dn"?: string;
+                  "from"?: string;
+                  "host"?: string;
+                  "password"?: string;
+                  "port"?: number;
+                  "subprotocol"?: string;
+                  "timeout_ms"?: number;
+                  "tls"?: boolean;
+                  "to"?: Array<string>;
+                  "username"?: string;
+                }) | null;
                 "override_fields"?: Array<string>;
                 "pacing"?: ({
                   "arrival_process"?: string;
@@ -41641,6 +42646,7 @@ export interface operations {
             "failure_policy"?: string;
             "order"?: number;
             "runtime_overrides"?: unknown;
+            "runtime_overrides_schema"?: number;
             "scenario_id"?: string;
             "scenario_name"?: string;
             "timeslot_id"?: (string) | null;
@@ -41684,6 +42690,7 @@ export interface operations {
               "failure_policy"?: string;
               "order": number;
               "runtime_overrides"?: unknown;
+              "runtime_overrides_schema"?: number;
               "scenario_id": string;
               "scenario_name"?: string;
               "timeslot_id"?: (string) | null;
@@ -43571,18 +44578,26 @@ export interface operations {
             "revision_source_group_index"?: (number) | null;
             "role"?: string;
             "runtime_settings"?: ({
+              "appium"?: (Record<string, unknown>) | null;
               "auto_transactions"?: string;
               "base_url"?: string;
               "browser"?: (Record<string, unknown>) | null;
               "browser_config"?: (Record<string, unknown>) | null;
               "browser_emulation"?: (Record<string, unknown>) | null;
+              "database"?: (Record<string, unknown>) | null;
               "env"?: Record<string, string>;
               "error_handling"?: (Record<string, unknown>) | null;
+              "eventhubs"?: (Record<string, unknown>) | null;
+              "grpc"?: (Record<string, unknown>) | null;
               "http"?: (Record<string, unknown>) | null;
               "iterations"?: (number) | null;
+              "java_http"?: (Record<string, unknown>) | null;
               "java_vuser"?: (Record<string, unknown>) | null;
+              "jms"?: (Record<string, unknown>) | null;
+              "kafka"?: (Record<string, unknown>) | null;
               "log"?: (Record<string, unknown>) | null;
               "log_level"?: string;
+              "network"?: (Record<string, unknown>) | null;
               "override_fields"?: Array<string>;
               "pacing"?: (Record<string, unknown>) | null;
               "redaction_rules"?: Array<Record<string, unknown>>;
@@ -43617,6 +44632,12 @@ export interface operations {
           "resource_baseline"?: boolean;
           "revision_source_test_id"?: string;
           "runtime_settings"?: ({
+            "appium"?: ({
+              "capabilities"?: Record<string, unknown>;
+              "element_timeout_ms"?: number;
+              "server_url"?: string;
+              "session_timeout_ms"?: number;
+            }) | null;
             "auto_transactions"?: string;
             "base_url"?: string;
             "browser"?: ({
@@ -43673,6 +44694,18 @@ export interface operations {
               "mode"?: string;
               "platform"?: string;
             }) | null;
+            "database"?: ({
+              "conn_max_lifetime_ms"?: number;
+              "driver"?: string;
+              "dsn"?: string;
+              "dsn_secret"?: string;
+              "max_idle_conns"?: number;
+              "max_open_conns"?: number;
+              "max_rows"?: number;
+              "query_timeout_ms"?: number;
+              "read_only"?: boolean;
+              "rollback_on_teardown"?: boolean;
+            }) | null;
             "env"?: Record<string, string>;
             "error_handling"?: ({
               "continue_on_error"?: (boolean) | null;
@@ -43684,6 +44717,34 @@ export interface operations {
               "retry_delay_ms"?: number;
               "retry_on"?: Array<string>;
               "snapshot_on_error"?: boolean;
+            }) | null;
+            "eventhubs"?: ({
+              "auth_type"?: string;
+              "checkpoint_container_url"?: string;
+              "connection_string"?: string;
+              "connection_string_secret"?: string;
+              "consumer_group"?: string;
+              "consumer_mode"?: string;
+              "event_hub"?: string;
+              "mock"?: boolean;
+              "namespace"?: string;
+              "observe_partition_tail"?: boolean;
+              "owner_level"?: (number) | null;
+              "partition_id"?: string;
+              "partition_key"?: string;
+              "processor_max_partitions"?: number;
+              "start_position"?: string;
+              "tail_poll_interval_ms"?: number;
+              "timeout_ms"?: number;
+            }) | null;
+            "grpc"?: ({
+              "authority"?: string;
+              "max_recv_msg_size"?: number;
+              "metadata"?: Record<string, string>;
+              "plain_text"?: boolean;
+              "proto_files"?: Array<string>;
+              "timeout_ms"?: number;
+              "use_reflection"?: boolean;
             }) | null;
             "http"?: ({
               "accept_encoding"?: string;
@@ -43728,16 +44789,84 @@ export interface operations {
               "version"?: string;
             }) | null;
             "iterations"?: (number) | null;
+            "java_http"?: ({
+              "accept"?: string;
+              "body_encoding"?: string;
+              "codec"?: string;
+              "content_type"?: string;
+              "extractor_type"?: string;
+              "helper_mode"?: string;
+              "object_schema"?: string;
+              "preserve_binary_result"?: boolean;
+              "request_mapping"?: Record<string, string>;
+              "response_mapping"?: Record<string, string>;
+            }) | null;
             "java_vuser"?: ({
+              "action_timeout_ms"?: number;
               "additional_vm_parameters"?: Array<string>;
               "classpath"?: Array<string>;
               "dedicated_class_loader"?: (boolean) | null;
               "jdk_home"?: string;
               "jdk_selection"?: string;
               "jvm_sharing"?: string;
+              "param_left_brace"?: string;
+              "param_right_brace"?: string;
               "skip_parameter_evaluation"?: (boolean) | null;
+              "startup_timeout_ms"?: number;
               "use_xbootclasspath"?: (boolean) | null;
               "vusers_per_jvm"?: number;
+            }) | null;
+            "jms"?: ({
+              "acknowledgement"?: string;
+              "broker_url"?: string;
+              "client_id"?: string;
+              "delivery_mode"?: string;
+              "destination"?: string;
+              "destination_type"?: string;
+              "message_vpn"?: string;
+              "mock"?: boolean;
+              "password"?: string;
+              "properties"?: Record<string, string>;
+              "provider"?: string;
+              "reply_to"?: string;
+              "subscription"?: string;
+              "timeout_ms"?: number;
+              "tls"?: (Record<string, unknown>) | null;
+              "username"?: string;
+            }) | null;
+            "kafka"?: ({
+              "acks"?: string;
+              "auto_offset_reset"?: string;
+              "brokers"?: Array<string>;
+              "client_id"?: string;
+              "compression"?: string;
+              "consumer_group"?: string;
+              "consumer_transactions"?: boolean;
+              "idempotence"?: string;
+              "isolation_level"?: string;
+              "max_message_bytes"?: number;
+              "mock"?: boolean;
+              "oauth"?: (Record<string, unknown>) | null;
+              "oauth_scope"?: string;
+              "partition_strategy"?: string;
+              "partitions"?: number;
+              "producer"?: (Record<string, unknown>) | null;
+              "profile"?: string;
+              "properties"?: Record<string, string>;
+              "sasl_mechanism"?: string;
+              "sasl_password"?: string;
+              "sasl_password_secret"?: string;
+              "sasl_username"?: string;
+              "schema"?: string;
+              "schema_id"?: number;
+              "schema_registry_url"?: string;
+              "security_protocol"?: string;
+              "serialization"?: string;
+              "subject"?: string;
+              "timeout_ms"?: number;
+              "tls"?: (Record<string, unknown>) | null;
+              "topic"?: string;
+              "transactional_id"?: string;
             }) | null;
             "log"?: ({
               "error_buffer_bytes"?: number;
@@ -43748,6 +44877,19 @@ export interface operations {
               "redact_run_evidence"?: (boolean) | null;
             }) | null;
             "log_level"?: string;
+            "network"?: ({
+              "address"?: string;
+              "base_dn"?: string;
+              "from"?: string;
+              "host"?: string;
+              "password"?: string;
+              "port"?: number;
+              "subprotocol"?: string;
+              "timeout_ms"?: number;
+              "tls"?: boolean;
+              "to"?: Array<string>;
+              "username"?: string;
+            }) | null;
             "override_fields"?: Array<string>;
             "pacing"?: ({
               "arrival_process"?: string;
@@ -44022,18 +45164,26 @@ export interface operations {
               "revision_source_group_index"?: (number) | null;
               "role"?: string;
               "runtime_settings"?: ({
+                "appium"?: (Record<string, unknown>) | null;
                 "auto_transactions"?: string;
                 "base_url"?: string;
                 "browser"?: (Record<string, unknown>) | null;
                 "browser_config"?: (Record<string, unknown>) | null;
                 "browser_emulation"?: (Record<string, unknown>) | null;
+                "database"?: (Record<string, unknown>) | null;
                 "env"?: Record<string, string>;
                 "error_handling"?: (Record<string, unknown>) | null;
+                "eventhubs"?: (Record<string, unknown>) | null;
+                "grpc"?: (Record<string, unknown>) | null;
                 "http"?: (Record<string, unknown>) | null;
                 "iterations"?: (number) | null;
+                "java_http"?: (Record<string, unknown>) | null;
                 "java_vuser"?: (Record<string, unknown>) | null;
+                "jms"?: (Record<string, unknown>) | null;
+                "kafka"?: (Record<string, unknown>) | null;
                 "log"?: (Record<string, unknown>) | null;
                 "log_level"?: string;
+                "network"?: (Record<string, unknown>) | null;
                 "override_fields"?: Array<string>;
                 "pacing"?: (Record<string, unknown>) | null;
                 "redaction_rules"?: Array<Record<string, unknown>>;
@@ -44067,6 +45217,12 @@ export interface operations {
             "resource_baseline"?: boolean;
             "revision_source_test_id"?: string;
             "runtime_settings"?: ({
+              "appium"?: ({
+                "capabilities"?: Record<string, unknown>;
+                "element_timeout_ms"?: number;
+                "server_url"?: string;
+                "session_timeout_ms"?: number;
+              }) | null;
               "auto_transactions"?: string;
               "base_url"?: string;
               "browser"?: ({
@@ -44123,6 +45279,18 @@ export interface operations {
                 "mode"?: string;
                 "platform"?: string;
               }) | null;
+              "database"?: ({
+                "conn_max_lifetime_ms"?: number;
+                "driver"?: string;
+                "dsn"?: string;
+                "dsn_secret"?: string;
+                "max_idle_conns"?: number;
+                "max_open_conns"?: number;
+                "max_rows"?: number;
+                "query_timeout_ms"?: number;
+                "read_only"?: boolean;
+                "rollback_on_teardown"?: boolean;
+              }) | null;
               "env"?: Record<string, string>;
               "error_handling"?: ({
                 "continue_on_error"?: (boolean) | null;
@@ -44134,6 +45302,34 @@ export interface operations {
                 "retry_delay_ms"?: number;
                 "retry_on"?: Array<string>;
                 "snapshot_on_error"?: boolean;
+              }) | null;
+              "eventhubs"?: ({
+                "auth_type"?: string;
+                "checkpoint_container_url"?: string;
+                "connection_string"?: string;
+                "connection_string_secret"?: string;
+                "consumer_group"?: string;
+                "consumer_mode"?: string;
+                "event_hub"?: string;
+                "mock"?: boolean;
+                "namespace"?: string;
+                "observe_partition_tail"?: boolean;
+                "owner_level"?: (number) | null;
+                "partition_id"?: string;
+                "partition_key"?: string;
+                "processor_max_partitions"?: number;
+                "start_position"?: string;
+                "tail_poll_interval_ms"?: number;
+                "timeout_ms"?: number;
+              }) | null;
+              "grpc"?: ({
+                "authority"?: string;
+                "max_recv_msg_size"?: number;
+                "metadata"?: Record<string, string>;
+                "plain_text"?: boolean;
+                "proto_files"?: Array<string>;
+                "timeout_ms"?: number;
+                "use_reflection"?: boolean;
               }) | null;
               "http"?: ({
                 "accept_encoding"?: string;
@@ -44178,16 +45374,84 @@ export interface operations {
                 "version"?: string;
               }) | null;
               "iterations"?: (number) | null;
+              "java_http"?: ({
+                "accept"?: string;
+                "body_encoding"?: string;
+                "codec"?: string;
+                "content_type"?: string;
+                "extractor_type"?: string;
+                "helper_mode"?: string;
+                "object_schema"?: string;
+                "preserve_binary_result"?: boolean;
+                "request_mapping"?: Record<string, string>;
+                "response_mapping"?: Record<string, string>;
+              }) | null;
               "java_vuser"?: ({
+                "action_timeout_ms"?: number;
                 "additional_vm_parameters"?: Array<string>;
                 "classpath"?: Array<string>;
                 "dedicated_class_loader"?: (boolean) | null;
                 "jdk_home"?: string;
                 "jdk_selection"?: string;
                 "jvm_sharing"?: string;
+                "param_left_brace"?: string;
+                "param_right_brace"?: string;
                 "skip_parameter_evaluation"?: (boolean) | null;
+                "startup_timeout_ms"?: number;
                 "use_xbootclasspath"?: (boolean) | null;
                 "vusers_per_jvm"?: number;
+              }) | null;
+              "jms"?: ({
+                "acknowledgement"?: string;
+                "broker_url"?: string;
+                "client_id"?: string;
+                "delivery_mode"?: string;
+                "destination"?: string;
+                "destination_type"?: string;
+                "message_vpn"?: string;
+                "mock"?: boolean;
+                "password"?: string;
+                "properties"?: Record<string, string>;
+                "provider"?: string;
+                "reply_to"?: string;
+                "subscription"?: string;
+                "timeout_ms"?: number;
+                "tls"?: (Record<string, unknown>) | null;
+                "username"?: string;
+              }) | null;
+              "kafka"?: ({
+                "acks"?: string;
+                "auto_offset_reset"?: string;
+                "brokers"?: Array<string>;
+                "client_id"?: string;
+                "compression"?: string;
+                "consumer_group"?: string;
+                "consumer_transactions"?: boolean;
+                "idempotence"?: string;
+                "isolation_level"?: string;
+                "max_message_bytes"?: number;
+                "mock"?: boolean;
+                "oauth"?: (Record<string, unknown>) | null;
+                "oauth_scope"?: string;
+                "partition_strategy"?: string;
+                "partitions"?: number;
+                "producer"?: (Record<string, unknown>) | null;
+                "profile"?: string;
+                "properties"?: Record<string, string>;
+                "sasl_mechanism"?: string;
+                "sasl_password"?: string;
+                "sasl_password_secret"?: string;
+                "sasl_username"?: string;
+                "schema"?: string;
+                "schema_id"?: number;
+                "schema_registry_url"?: string;
+                "security_protocol"?: string;
+                "serialization"?: string;
+                "subject"?: string;
+                "timeout_ms"?: number;
+                "tls"?: (Record<string, unknown>) | null;
+                "topic"?: string;
+                "transactional_id"?: string;
               }) | null;
               "log"?: ({
                 "error_buffer_bytes"?: number;
@@ -44198,6 +45462,19 @@ export interface operations {
                 "redact_run_evidence"?: (boolean) | null;
               }) | null;
               "log_level"?: string;
+              "network"?: ({
+                "address"?: string;
+                "base_dn"?: string;
+                "from"?: string;
+                "host"?: string;
+                "password"?: string;
+                "port"?: number;
+                "subprotocol"?: string;
+                "timeout_ms"?: number;
+                "tls"?: boolean;
+                "to"?: Array<string>;
+                "username"?: string;
+              }) | null;
               "override_fields"?: Array<string>;
               "pacing"?: ({
                 "arrival_process"?: string;
@@ -44980,18 +46257,26 @@ export interface operations {
                   "max_transactions"?: number;
                 }) | null;
                 "runtime_settings"?: ({
+                  "appium"?: (Record<string, unknown>) | null;
                   "auto_transactions"?: string;
                   "base_url"?: string;
                   "browser"?: (Record<string, unknown>) | null;
                   "browser_config"?: (Record<string, unknown>) | null;
                   "browser_emulation"?: (Record<string, unknown>) | null;
+                  "database"?: (Record<string, unknown>) | null;
                   "env"?: Record<string, string>;
                   "error_handling"?: (Record<string, unknown>) | null;
+                  "eventhubs"?: (Record<string, unknown>) | null;
+                  "grpc"?: (Record<string, unknown>) | null;
                   "http"?: (Record<string, unknown>) | null;
                   "iterations"?: (number) | null;
+                  "java_http"?: (Record<string, unknown>) | null;
                   "java_vuser"?: (Record<string, unknown>) | null;
+                  "jms"?: (Record<string, unknown>) | null;
+                  "kafka"?: (Record<string, unknown>) | null;
                   "log"?: (Record<string, unknown>) | null;
                   "log_level"?: string;
+                  "network"?: (Record<string, unknown>) | null;
                   "override_fields"?: Array<string>;
                   "pacing"?: (Record<string, unknown>) | null;
                   "redaction_rules"?: Array<Record<string, unknown>>;
@@ -46706,6 +47991,12 @@ export interface operations {
               "release_id"?: string;
               "resource_baseline"?: boolean;
               "runtime_settings"?: ({
+                "appium"?: ({
+                  "capabilities"?: Record<string, unknown>;
+                  "element_timeout_ms"?: number;
+                  "server_url"?: string;
+                  "session_timeout_ms"?: number;
+                }) | null;
                 "auto_transactions"?: string;
                 "base_url"?: string;
                 "browser"?: ({
@@ -46762,6 +48053,18 @@ export interface operations {
                   "mode"?: string;
                   "platform"?: string;
                 }) | null;
+                "database"?: ({
+                  "conn_max_lifetime_ms"?: number;
+                  "driver"?: string;
+                  "dsn"?: string;
+                  "dsn_secret"?: string;
+                  "max_idle_conns"?: number;
+                  "max_open_conns"?: number;
+                  "max_rows"?: number;
+                  "query_timeout_ms"?: number;
+                  "read_only"?: boolean;
+                  "rollback_on_teardown"?: boolean;
+                }) | null;
                 "env"?: Record<string, string>;
                 "error_handling"?: ({
                   "continue_on_error"?: (boolean) | null;
@@ -46773,6 +48076,34 @@ export interface operations {
                   "retry_delay_ms"?: number;
                   "retry_on"?: Array<string>;
                   "snapshot_on_error"?: boolean;
+                }) | null;
+                "eventhubs"?: ({
+                  "auth_type"?: string;
+                  "checkpoint_container_url"?: string;
+                  "connection_string"?: string;
+                  "connection_string_secret"?: string;
+                  "consumer_group"?: string;
+                  "consumer_mode"?: string;
+                  "event_hub"?: string;
+                  "mock"?: boolean;
+                  "namespace"?: string;
+                  "observe_partition_tail"?: boolean;
+                  "owner_level"?: (number) | null;
+                  "partition_id"?: string;
+                  "partition_key"?: string;
+                  "processor_max_partitions"?: number;
+                  "start_position"?: string;
+                  "tail_poll_interval_ms"?: number;
+                  "timeout_ms"?: number;
+                }) | null;
+                "grpc"?: ({
+                  "authority"?: string;
+                  "max_recv_msg_size"?: number;
+                  "metadata"?: Record<string, string>;
+                  "plain_text"?: boolean;
+                  "proto_files"?: Array<string>;
+                  "timeout_ms"?: number;
+                  "use_reflection"?: boolean;
                 }) | null;
                 "http"?: ({
                   "accept_encoding"?: string;
@@ -46817,16 +48148,84 @@ export interface operations {
                   "version"?: string;
                 }) | null;
                 "iterations"?: (number) | null;
+                "java_http"?: ({
+                  "accept"?: string;
+                  "body_encoding"?: string;
+                  "codec"?: string;
+                  "content_type"?: string;
+                  "extractor_type"?: string;
+                  "helper_mode"?: string;
+                  "object_schema"?: string;
+                  "preserve_binary_result"?: boolean;
+                  "request_mapping"?: Record<string, string>;
+                  "response_mapping"?: Record<string, string>;
+                }) | null;
                 "java_vuser"?: ({
+                  "action_timeout_ms"?: number;
                   "additional_vm_parameters"?: Array<string>;
                   "classpath"?: Array<string>;
                   "dedicated_class_loader"?: (boolean) | null;
                   "jdk_home"?: string;
                   "jdk_selection"?: string;
                   "jvm_sharing"?: string;
+                  "param_left_brace"?: string;
+                  "param_right_brace"?: string;
                   "skip_parameter_evaluation"?: (boolean) | null;
+                  "startup_timeout_ms"?: number;
                   "use_xbootclasspath"?: (boolean) | null;
                   "vusers_per_jvm"?: number;
+                }) | null;
+                "jms"?: ({
+                  "acknowledgement"?: string;
+                  "broker_url"?: string;
+                  "client_id"?: string;
+                  "delivery_mode"?: string;
+                  "destination"?: string;
+                  "destination_type"?: string;
+                  "message_vpn"?: string;
+                  "mock"?: boolean;
+                  "password"?: string;
+                  "properties"?: Record<string, string>;
+                  "provider"?: string;
+                  "reply_to"?: string;
+                  "subscription"?: string;
+                  "timeout_ms"?: number;
+                  "tls"?: (Record<string, unknown>) | null;
+                  "username"?: string;
+                }) | null;
+                "kafka"?: ({
+                  "acks"?: string;
+                  "auto_offset_reset"?: string;
+                  "brokers"?: Array<string>;
+                  "client_id"?: string;
+                  "compression"?: string;
+                  "consumer_group"?: string;
+                  "consumer_transactions"?: boolean;
+                  "idempotence"?: string;
+                  "isolation_level"?: string;
+                  "max_message_bytes"?: number;
+                  "mock"?: boolean;
+                  "oauth"?: (Record<string, unknown>) | null;
+                  "oauth_scope"?: string;
+                  "partition_strategy"?: string;
+                  "partitions"?: number;
+                  "producer"?: (Record<string, unknown>) | null;
+                  "profile"?: string;
+                  "properties"?: Record<string, string>;
+                  "sasl_mechanism"?: string;
+                  "sasl_password"?: string;
+                  "sasl_password_secret"?: string;
+                  "sasl_username"?: string;
+                  "schema"?: string;
+                  "schema_id"?: number;
+                  "schema_registry_url"?: string;
+                  "security_protocol"?: string;
+                  "serialization"?: string;
+                  "subject"?: string;
+                  "timeout_ms"?: number;
+                  "tls"?: (Record<string, unknown>) | null;
+                  "topic"?: string;
+                  "transactional_id"?: string;
                 }) | null;
                 "log"?: ({
                   "error_buffer_bytes"?: number;
@@ -46837,6 +48236,19 @@ export interface operations {
                   "redact_run_evidence"?: (boolean) | null;
                 }) | null;
                 "log_level"?: string;
+                "network"?: ({
+                  "address"?: string;
+                  "base_dn"?: string;
+                  "from"?: string;
+                  "host"?: string;
+                  "password"?: string;
+                  "port"?: number;
+                  "subprotocol"?: string;
+                  "timeout_ms"?: number;
+                  "tls"?: boolean;
+                  "to"?: Array<string>;
+                  "username"?: string;
+                }) | null;
                 "override_fields"?: Array<string>;
                 "pacing"?: ({
                   "arrival_process"?: string;
@@ -47841,6 +49253,12 @@ export interface operations {
             "revision_source_group_index"?: (number) | null;
             "role"?: string;
             "runtime_settings"?: ({
+              "appium"?: ({
+                "capabilities"?: Record<string, unknown>;
+                "element_timeout_ms"?: number;
+                "server_url"?: string;
+                "session_timeout_ms"?: number;
+              }) | null;
               "auto_transactions"?: string;
               "base_url"?: string;
               "browser"?: ({
@@ -47897,6 +49315,18 @@ export interface operations {
                 "mode"?: string;
                 "platform"?: string;
               }) | null;
+              "database"?: ({
+                "conn_max_lifetime_ms"?: number;
+                "driver"?: string;
+                "dsn"?: string;
+                "dsn_secret"?: string;
+                "max_idle_conns"?: number;
+                "max_open_conns"?: number;
+                "max_rows"?: number;
+                "query_timeout_ms"?: number;
+                "read_only"?: boolean;
+                "rollback_on_teardown"?: boolean;
+              }) | null;
               "env"?: Record<string, string>;
               "error_handling"?: ({
                 "continue_on_error"?: (boolean) | null;
@@ -47908,6 +49338,34 @@ export interface operations {
                 "retry_delay_ms"?: number;
                 "retry_on"?: Array<string>;
                 "snapshot_on_error"?: boolean;
+              }) | null;
+              "eventhubs"?: ({
+                "auth_type"?: string;
+                "checkpoint_container_url"?: string;
+                "connection_string"?: string;
+                "connection_string_secret"?: string;
+                "consumer_group"?: string;
+                "consumer_mode"?: string;
+                "event_hub"?: string;
+                "mock"?: boolean;
+                "namespace"?: string;
+                "observe_partition_tail"?: boolean;
+                "owner_level"?: (number) | null;
+                "partition_id"?: string;
+                "partition_key"?: string;
+                "processor_max_partitions"?: number;
+                "start_position"?: string;
+                "tail_poll_interval_ms"?: number;
+                "timeout_ms"?: number;
+              }) | null;
+              "grpc"?: ({
+                "authority"?: string;
+                "max_recv_msg_size"?: number;
+                "metadata"?: Record<string, string>;
+                "plain_text"?: boolean;
+                "proto_files"?: Array<string>;
+                "timeout_ms"?: number;
+                "use_reflection"?: boolean;
               }) | null;
               "http"?: ({
                 "accept_encoding"?: string;
@@ -47952,16 +49410,84 @@ export interface operations {
                 "version"?: string;
               }) | null;
               "iterations"?: (number) | null;
+              "java_http"?: ({
+                "accept"?: string;
+                "body_encoding"?: string;
+                "codec"?: string;
+                "content_type"?: string;
+                "extractor_type"?: string;
+                "helper_mode"?: string;
+                "object_schema"?: string;
+                "preserve_binary_result"?: boolean;
+                "request_mapping"?: Record<string, string>;
+                "response_mapping"?: Record<string, string>;
+              }) | null;
               "java_vuser"?: ({
+                "action_timeout_ms"?: number;
                 "additional_vm_parameters"?: Array<string>;
                 "classpath"?: Array<string>;
                 "dedicated_class_loader"?: (boolean) | null;
                 "jdk_home"?: string;
                 "jdk_selection"?: string;
                 "jvm_sharing"?: string;
+                "param_left_brace"?: string;
+                "param_right_brace"?: string;
                 "skip_parameter_evaluation"?: (boolean) | null;
+                "startup_timeout_ms"?: number;
                 "use_xbootclasspath"?: (boolean) | null;
                 "vusers_per_jvm"?: number;
+              }) | null;
+              "jms"?: ({
+                "acknowledgement"?: string;
+                "broker_url"?: string;
+                "client_id"?: string;
+                "delivery_mode"?: string;
+                "destination"?: string;
+                "destination_type"?: string;
+                "message_vpn"?: string;
+                "mock"?: boolean;
+                "password"?: string;
+                "properties"?: Record<string, string>;
+                "provider"?: string;
+                "reply_to"?: string;
+                "subscription"?: string;
+                "timeout_ms"?: number;
+                "tls"?: (Record<string, unknown>) | null;
+                "username"?: string;
+              }) | null;
+              "kafka"?: ({
+                "acks"?: string;
+                "auto_offset_reset"?: string;
+                "brokers"?: Array<string>;
+                "client_id"?: string;
+                "compression"?: string;
+                "consumer_group"?: string;
+                "consumer_transactions"?: boolean;
+                "idempotence"?: string;
+                "isolation_level"?: string;
+                "max_message_bytes"?: number;
+                "mock"?: boolean;
+                "oauth"?: (Record<string, unknown>) | null;
+                "oauth_scope"?: string;
+                "partition_strategy"?: string;
+                "partitions"?: number;
+                "producer"?: (Record<string, unknown>) | null;
+                "profile"?: string;
+                "properties"?: Record<string, string>;
+                "sasl_mechanism"?: string;
+                "sasl_password"?: string;
+                "sasl_password_secret"?: string;
+                "sasl_username"?: string;
+                "schema"?: string;
+                "schema_id"?: number;
+                "schema_registry_url"?: string;
+                "security_protocol"?: string;
+                "serialization"?: string;
+                "subject"?: string;
+                "timeout_ms"?: number;
+                "tls"?: (Record<string, unknown>) | null;
+                "topic"?: string;
+                "transactional_id"?: string;
               }) | null;
               "log"?: ({
                 "error_buffer_bytes"?: number;
@@ -47972,6 +49498,19 @@ export interface operations {
                 "redact_run_evidence"?: (boolean) | null;
               }) | null;
               "log_level"?: string;
+              "network"?: ({
+                "address"?: string;
+                "base_dn"?: string;
+                "from"?: string;
+                "host"?: string;
+                "password"?: string;
+                "port"?: number;
+                "subprotocol"?: string;
+                "timeout_ms"?: number;
+                "tls"?: boolean;
+                "to"?: Array<string>;
+                "username"?: string;
+              }) | null;
               "override_fields"?: Array<string>;
               "pacing"?: ({
                 "arrival_process"?: string;
@@ -48069,6 +49608,12 @@ export interface operations {
           "project_id"?: string;
           "resource_baseline"?: boolean;
           "runtime_settings"?: ({
+            "appium"?: ({
+              "capabilities"?: Record<string, unknown>;
+              "element_timeout_ms"?: number;
+              "server_url"?: string;
+              "session_timeout_ms"?: number;
+            }) | null;
             "auto_transactions"?: string;
             "base_url"?: string;
             "browser"?: ({
@@ -48165,6 +49710,18 @@ export interface operations {
               "mode"?: string;
               "platform"?: string;
             }) | null;
+            "database"?: ({
+              "conn_max_lifetime_ms"?: number;
+              "driver"?: string;
+              "dsn"?: string;
+              "dsn_secret"?: string;
+              "max_idle_conns"?: number;
+              "max_open_conns"?: number;
+              "max_rows"?: number;
+              "query_timeout_ms"?: number;
+              "read_only"?: boolean;
+              "rollback_on_teardown"?: boolean;
+            }) | null;
             "env"?: Record<string, string>;
             "error_handling"?: ({
               "continue_on_error"?: (boolean) | null;
@@ -48176,6 +49733,34 @@ export interface operations {
               "retry_delay_ms"?: number;
               "retry_on"?: Array<string>;
               "snapshot_on_error"?: boolean;
+            }) | null;
+            "eventhubs"?: ({
+              "auth_type"?: string;
+              "checkpoint_container_url"?: string;
+              "connection_string"?: string;
+              "connection_string_secret"?: string;
+              "consumer_group"?: string;
+              "consumer_mode"?: string;
+              "event_hub"?: string;
+              "mock"?: boolean;
+              "namespace"?: string;
+              "observe_partition_tail"?: boolean;
+              "owner_level"?: (number) | null;
+              "partition_id"?: string;
+              "partition_key"?: string;
+              "processor_max_partitions"?: number;
+              "start_position"?: string;
+              "tail_poll_interval_ms"?: number;
+              "timeout_ms"?: number;
+            }) | null;
+            "grpc"?: ({
+              "authority"?: string;
+              "max_recv_msg_size"?: number;
+              "metadata"?: Record<string, string>;
+              "plain_text"?: boolean;
+              "proto_files"?: Array<string>;
+              "timeout_ms"?: number;
+              "use_reflection"?: boolean;
             }) | null;
             "http"?: ({
               "accept_encoding"?: string;
@@ -48246,16 +49831,112 @@ export interface operations {
               "version"?: string;
             }) | null;
             "iterations"?: (number) | null;
+            "java_http"?: ({
+              "accept"?: string;
+              "body_encoding"?: string;
+              "codec"?: string;
+              "content_type"?: string;
+              "extractor_type"?: string;
+              "helper_mode"?: string;
+              "object_schema"?: string;
+              "preserve_binary_result"?: boolean;
+              "request_mapping"?: Record<string, string>;
+              "response_mapping"?: Record<string, string>;
+            }) | null;
             "java_vuser"?: ({
+              "action_timeout_ms"?: number;
               "additional_vm_parameters"?: Array<string>;
               "classpath"?: Array<string>;
               "dedicated_class_loader"?: (boolean) | null;
               "jdk_home"?: string;
               "jdk_selection"?: string;
               "jvm_sharing"?: string;
+              "param_left_brace"?: string;
+              "param_right_brace"?: string;
               "skip_parameter_evaluation"?: (boolean) | null;
+              "startup_timeout_ms"?: number;
               "use_xbootclasspath"?: (boolean) | null;
               "vusers_per_jvm"?: number;
+            }) | null;
+            "jms"?: ({
+              "acknowledgement"?: string;
+              "broker_url"?: string;
+              "client_id"?: string;
+              "delivery_mode"?: string;
+              "destination"?: string;
+              "destination_type"?: string;
+              "message_vpn"?: string;
+              "mock"?: boolean;
+              "password"?: string;
+              "properties"?: Record<string, string>;
+              "provider"?: string;
+              "reply_to"?: string;
+              "subscription"?: string;
+              "timeout_ms"?: number;
+              "tls"?: ({
+                "ca_cert_secret"?: string;
+                "insecure_skip_verify"?: boolean;
+                "trust_store_ref"?: string;
+              }) | null;
+              "username"?: string;
+            }) | null;
+            "kafka"?: ({
+              "acks"?: string;
+              "auto_offset_reset"?: string;
+              "brokers"?: Array<string>;
+              "client_id"?: string;
+              "compression"?: string;
+              "consumer_group"?: string;
+              "consumer_transactions"?: boolean;
+              "idempotence"?: string;
+              "isolation_level"?: string;
+              "max_message_bytes"?: number;
+              "mock"?: boolean;
+              "oauth"?: ({
+                "authentication_method"?: string;
+                "client_id"?: string;
+                "client_secret"?: string;
+                "client_secret_ref"?: string;
+                "mode"?: string;
+                "scope"?: string;
+                "token_url"?: string;
+              }) | null;
+              "oauth_scope"?: string;
+              "partition_strategy"?: string;
+              "partitions"?: number;
+              "producer"?: ({
+                "admission_timeout_ms"?: (number) | null;
+                "batch_bytes"?: (number) | null;
+                "buffer_bytes"?: (number) | null;
+                "delivery_timeout_ms"?: (number) | null;
+                "linger_ms"?: (number) | null;
+                "max_in_flight_requests"?: (number) | null;
+                "request_timeout_ms"?: (number) | null;
+                "retries"?: (number) | null;
+              }) | null;
+              "profile"?: string;
+              "properties"?: Record<string, string>;
+              "sasl_mechanism"?: string;
+              "sasl_password"?: string;
+              "sasl_password_secret"?: string;
+              "sasl_username"?: string;
+              "schema"?: string;
+              "schema_id"?: number;
+              "schema_registry_url"?: string;
+              "security_protocol"?: string;
+              "serialization"?: string;
+              "subject"?: string;
+              "timeout_ms"?: number;
+              "tls"?: ({
+                "ca_cert_file"?: string;
+                "client_cert_file"?: string;
+                "client_key_file"?: string;
+                "insecure_skip_verify"?: boolean;
+                "max_version"?: string;
+                "min_version"?: string;
+              }) | null;
+              "topic"?: string;
+              "transactional_id"?: string;
             }) | null;
             "log"?: ({
               "error_buffer_bytes"?: number;
@@ -48266,6 +49947,19 @@ export interface operations {
               "redact_run_evidence"?: (boolean) | null;
             }) | null;
             "log_level"?: string;
+            "network"?: ({
+              "address"?: string;
+              "base_dn"?: string;
+              "from"?: string;
+              "host"?: string;
+              "password"?: string;
+              "port"?: number;
+              "subprotocol"?: string;
+              "timeout_ms"?: number;
+              "tls"?: boolean;
+              "to"?: Array<string>;
+              "username"?: string;
+            }) | null;
             "override_fields"?: Array<string>;
             "pacing"?: ({
               "arrival_process"?: string;
@@ -48711,18 +50405,26 @@ export interface operations {
                 "ref_key"?: string;
                 "resource_baseline"?: boolean;
                 "runtime_settings"?: ({
+                  "appium"?: (Record<string, unknown>) | null;
                   "auto_transactions"?: string;
                   "base_url"?: string;
                   "browser"?: (Record<string, unknown>) | null;
                   "browser_config"?: (Record<string, unknown>) | null;
                   "browser_emulation"?: (Record<string, unknown>) | null;
+                  "database"?: (Record<string, unknown>) | null;
                   "env"?: Record<string, string>;
                   "error_handling"?: (Record<string, unknown>) | null;
+                  "eventhubs"?: (Record<string, unknown>) | null;
+                  "grpc"?: (Record<string, unknown>) | null;
                   "http"?: (Record<string, unknown>) | null;
                   "iterations"?: (number) | null;
+                  "java_http"?: (Record<string, unknown>) | null;
                   "java_vuser"?: (Record<string, unknown>) | null;
+                  "jms"?: (Record<string, unknown>) | null;
+                  "kafka"?: (Record<string, unknown>) | null;
                   "log"?: (Record<string, unknown>) | null;
                   "log_level"?: string;
+                  "network"?: (Record<string, unknown>) | null;
                   "override_fields"?: Array<string>;
                   "pacing"?: (Record<string, unknown>) | null;
                   "redaction_rules"?: Array<Record<string, unknown>>;
@@ -48921,6 +50623,12 @@ export interface operations {
             "resource_baseline"?: boolean;
             "result_count"?: number;
             "runtime_settings"?: ({
+              "appium"?: ({
+                "capabilities"?: Record<string, unknown>;
+                "element_timeout_ms"?: number;
+                "server_url"?: string;
+                "session_timeout_ms"?: number;
+              }) | null;
               "auto_transactions"?: string;
               "base_url"?: string;
               "browser"?: ({
@@ -49017,6 +50725,18 @@ export interface operations {
                 "mode"?: string;
                 "platform"?: string;
               }) | null;
+              "database"?: ({
+                "conn_max_lifetime_ms"?: number;
+                "driver"?: string;
+                "dsn"?: string;
+                "dsn_secret"?: string;
+                "max_idle_conns"?: number;
+                "max_open_conns"?: number;
+                "max_rows"?: number;
+                "query_timeout_ms"?: number;
+                "read_only"?: boolean;
+                "rollback_on_teardown"?: boolean;
+              }) | null;
               "env"?: Record<string, string>;
               "error_handling"?: ({
                 "continue_on_error"?: (boolean) | null;
@@ -49028,6 +50748,34 @@ export interface operations {
                 "retry_delay_ms"?: number;
                 "retry_on"?: Array<string>;
                 "snapshot_on_error"?: boolean;
+              }) | null;
+              "eventhubs"?: ({
+                "auth_type"?: string;
+                "checkpoint_container_url"?: string;
+                "connection_string"?: string;
+                "connection_string_secret"?: string;
+                "consumer_group"?: string;
+                "consumer_mode"?: string;
+                "event_hub"?: string;
+                "mock"?: boolean;
+                "namespace"?: string;
+                "observe_partition_tail"?: boolean;
+                "owner_level"?: (number) | null;
+                "partition_id"?: string;
+                "partition_key"?: string;
+                "processor_max_partitions"?: number;
+                "start_position"?: string;
+                "tail_poll_interval_ms"?: number;
+                "timeout_ms"?: number;
+              }) | null;
+              "grpc"?: ({
+                "authority"?: string;
+                "max_recv_msg_size"?: number;
+                "metadata"?: Record<string, string>;
+                "plain_text"?: boolean;
+                "proto_files"?: Array<string>;
+                "timeout_ms"?: number;
+                "use_reflection"?: boolean;
               }) | null;
               "http"?: ({
                 "accept_encoding"?: string;
@@ -49098,16 +50846,112 @@ export interface operations {
                 "version"?: string;
               }) | null;
               "iterations"?: (number) | null;
+              "java_http"?: ({
+                "accept"?: string;
+                "body_encoding"?: string;
+                "codec"?: string;
+                "content_type"?: string;
+                "extractor_type"?: string;
+                "helper_mode"?: string;
+                "object_schema"?: string;
+                "preserve_binary_result"?: boolean;
+                "request_mapping"?: Record<string, string>;
+                "response_mapping"?: Record<string, string>;
+              }) | null;
               "java_vuser"?: ({
+                "action_timeout_ms"?: number;
                 "additional_vm_parameters"?: Array<string>;
                 "classpath"?: Array<string>;
                 "dedicated_class_loader"?: (boolean) | null;
                 "jdk_home"?: string;
                 "jdk_selection"?: string;
                 "jvm_sharing"?: string;
+                "param_left_brace"?: string;
+                "param_right_brace"?: string;
                 "skip_parameter_evaluation"?: (boolean) | null;
+                "startup_timeout_ms"?: number;
                 "use_xbootclasspath"?: (boolean) | null;
                 "vusers_per_jvm"?: number;
+              }) | null;
+              "jms"?: ({
+                "acknowledgement"?: string;
+                "broker_url"?: string;
+                "client_id"?: string;
+                "delivery_mode"?: string;
+                "destination"?: string;
+                "destination_type"?: string;
+                "message_vpn"?: string;
+                "mock"?: boolean;
+                "password"?: string;
+                "properties"?: Record<string, string>;
+                "provider"?: string;
+                "reply_to"?: string;
+                "subscription"?: string;
+                "timeout_ms"?: number;
+                "tls"?: ({
+                  "ca_cert_secret"?: string;
+                  "insecure_skip_verify"?: boolean;
+                  "trust_store_ref"?: string;
+                }) | null;
+                "username"?: string;
+              }) | null;
+              "kafka"?: ({
+                "acks"?: string;
+                "auto_offset_reset"?: string;
+                "brokers"?: Array<string>;
+                "client_id"?: string;
+                "compression"?: string;
+                "consumer_group"?: string;
+                "consumer_transactions"?: boolean;
+                "idempotence"?: string;
+                "isolation_level"?: string;
+                "max_message_bytes"?: number;
+                "mock"?: boolean;
+                "oauth"?: ({
+                  "authentication_method"?: string;
+                  "client_id": string;
+                  "client_secret"?: string;
+                  "client_secret_ref"?: string;
+                  "mode": string;
+                  "scope"?: string;
+                  "token_url": string;
+                }) | null;
+                "oauth_scope"?: string;
+                "partition_strategy"?: string;
+                "partitions"?: number;
+                "producer"?: ({
+                  "admission_timeout_ms"?: (number) | null;
+                  "batch_bytes"?: (number) | null;
+                  "buffer_bytes"?: (number) | null;
+                  "delivery_timeout_ms"?: (number) | null;
+                  "linger_ms"?: (number) | null;
+                  "max_in_flight_requests"?: (number) | null;
+                  "request_timeout_ms"?: (number) | null;
+                  "retries"?: (number) | null;
+                }) | null;
+                "profile"?: string;
+                "properties"?: Record<string, string>;
+                "sasl_mechanism"?: string;
+                "sasl_password"?: string;
+                "sasl_password_secret"?: string;
+                "sasl_username"?: string;
+                "schema"?: string;
+                "schema_id"?: number;
+                "schema_registry_url"?: string;
+                "security_protocol"?: string;
+                "serialization"?: string;
+                "subject"?: string;
+                "timeout_ms"?: number;
+                "tls"?: ({
+                  "ca_cert_file"?: string;
+                  "client_cert_file"?: string;
+                  "client_key_file"?: string;
+                  "insecure_skip_verify"?: boolean;
+                  "max_version"?: string;
+                  "min_version"?: string;
+                }) | null;
+                "topic"?: string;
+                "transactional_id"?: string;
               }) | null;
               "log"?: ({
                 "error_buffer_bytes"?: number;
@@ -49118,6 +50962,19 @@ export interface operations {
                 "redact_run_evidence"?: (boolean) | null;
               }) | null;
               "log_level"?: string;
+              "network"?: ({
+                "address"?: string;
+                "base_dn"?: string;
+                "from"?: string;
+                "host"?: string;
+                "password"?: string;
+                "port"?: number;
+                "subprotocol"?: string;
+                "timeout_ms"?: number;
+                "tls"?: boolean;
+                "to"?: Array<string>;
+                "username"?: string;
+              }) | null;
               "override_fields"?: Array<string>;
               "pacing"?: ({
                 "arrival_process"?: string;
@@ -49385,6 +51242,12 @@ export interface operations {
               "ramp_up"?: string;
               "role"?: string;
               "runtime_settings"?: ({
+                "appium"?: ({
+                  "capabilities"?: Record<string, unknown>;
+                  "element_timeout_ms"?: number;
+                  "server_url"?: string;
+                  "session_timeout_ms"?: number;
+                }) | null;
                 "auto_transactions"?: string;
                 "base_url"?: string;
                 "browser"?: ({
@@ -49441,6 +51304,18 @@ export interface operations {
                   "mode"?: string;
                   "platform"?: string;
                 }) | null;
+                "database"?: ({
+                  "conn_max_lifetime_ms"?: number;
+                  "driver"?: string;
+                  "dsn"?: string;
+                  "dsn_secret"?: string;
+                  "max_idle_conns"?: number;
+                  "max_open_conns"?: number;
+                  "max_rows"?: number;
+                  "query_timeout_ms"?: number;
+                  "read_only"?: boolean;
+                  "rollback_on_teardown"?: boolean;
+                }) | null;
                 "env"?: Record<string, string>;
                 "error_handling"?: ({
                   "continue_on_error"?: (boolean) | null;
@@ -49452,6 +51327,34 @@ export interface operations {
                   "retry_delay_ms"?: number;
                   "retry_on"?: Array<string>;
                   "snapshot_on_error"?: boolean;
+                }) | null;
+                "eventhubs"?: ({
+                  "auth_type"?: string;
+                  "checkpoint_container_url"?: string;
+                  "connection_string"?: string;
+                  "connection_string_secret"?: string;
+                  "consumer_group"?: string;
+                  "consumer_mode"?: string;
+                  "event_hub"?: string;
+                  "mock"?: boolean;
+                  "namespace"?: string;
+                  "observe_partition_tail"?: boolean;
+                  "owner_level"?: (number) | null;
+                  "partition_id"?: string;
+                  "partition_key"?: string;
+                  "processor_max_partitions"?: number;
+                  "start_position"?: string;
+                  "tail_poll_interval_ms"?: number;
+                  "timeout_ms"?: number;
+                }) | null;
+                "grpc"?: ({
+                  "authority"?: string;
+                  "max_recv_msg_size"?: number;
+                  "metadata"?: Record<string, string>;
+                  "plain_text"?: boolean;
+                  "proto_files"?: Array<string>;
+                  "timeout_ms"?: number;
+                  "use_reflection"?: boolean;
                 }) | null;
                 "http"?: ({
                   "accept_encoding"?: string;
@@ -49496,16 +51399,84 @@ export interface operations {
                   "version"?: string;
                 }) | null;
                 "iterations"?: (number) | null;
+                "java_http"?: ({
+                  "accept"?: string;
+                  "body_encoding"?: string;
+                  "codec"?: string;
+                  "content_type"?: string;
+                  "extractor_type"?: string;
+                  "helper_mode"?: string;
+                  "object_schema"?: string;
+                  "preserve_binary_result"?: boolean;
+                  "request_mapping"?: Record<string, string>;
+                  "response_mapping"?: Record<string, string>;
+                }) | null;
                 "java_vuser"?: ({
+                  "action_timeout_ms"?: number;
                   "additional_vm_parameters"?: Array<string>;
                   "classpath"?: Array<string>;
                   "dedicated_class_loader"?: (boolean) | null;
                   "jdk_home"?: string;
                   "jdk_selection"?: string;
                   "jvm_sharing"?: string;
+                  "param_left_brace"?: string;
+                  "param_right_brace"?: string;
                   "skip_parameter_evaluation"?: (boolean) | null;
+                  "startup_timeout_ms"?: number;
                   "use_xbootclasspath"?: (boolean) | null;
                   "vusers_per_jvm"?: number;
+                }) | null;
+                "jms"?: ({
+                  "acknowledgement"?: string;
+                  "broker_url"?: string;
+                  "client_id"?: string;
+                  "delivery_mode"?: string;
+                  "destination"?: string;
+                  "destination_type"?: string;
+                  "message_vpn"?: string;
+                  "mock"?: boolean;
+                  "password"?: string;
+                  "properties"?: Record<string, string>;
+                  "provider"?: string;
+                  "reply_to"?: string;
+                  "subscription"?: string;
+                  "timeout_ms"?: number;
+                  "tls"?: (Record<string, unknown>) | null;
+                  "username"?: string;
+                }) | null;
+                "kafka"?: ({
+                  "acks"?: string;
+                  "auto_offset_reset"?: string;
+                  "brokers"?: Array<string>;
+                  "client_id"?: string;
+                  "compression"?: string;
+                  "consumer_group"?: string;
+                  "consumer_transactions"?: boolean;
+                  "idempotence"?: string;
+                  "isolation_level"?: string;
+                  "max_message_bytes"?: number;
+                  "mock"?: boolean;
+                  "oauth"?: (Record<string, unknown>) | null;
+                  "oauth_scope"?: string;
+                  "partition_strategy"?: string;
+                  "partitions"?: number;
+                  "producer"?: (Record<string, unknown>) | null;
+                  "profile"?: string;
+                  "properties"?: Record<string, string>;
+                  "sasl_mechanism"?: string;
+                  "sasl_password"?: string;
+                  "sasl_password_secret"?: string;
+                  "sasl_username"?: string;
+                  "schema"?: string;
+                  "schema_id"?: number;
+                  "schema_registry_url"?: string;
+                  "security_protocol"?: string;
+                  "serialization"?: string;
+                  "subject"?: string;
+                  "timeout_ms"?: number;
+                  "tls"?: (Record<string, unknown>) | null;
+                  "topic"?: string;
+                  "transactional_id"?: string;
                 }) | null;
                 "log"?: ({
                   "error_buffer_bytes"?: number;
@@ -49516,6 +51487,19 @@ export interface operations {
                   "redact_run_evidence"?: (boolean) | null;
                 }) | null;
                 "log_level"?: string;
+                "network"?: ({
+                  "address"?: string;
+                  "base_dn"?: string;
+                  "from"?: string;
+                  "host"?: string;
+                  "password"?: string;
+                  "port"?: number;
+                  "subprotocol"?: string;
+                  "timeout_ms"?: number;
+                  "tls"?: boolean;
+                  "to"?: Array<string>;
+                  "username"?: string;
+                }) | null;
                 "override_fields"?: Array<string>;
                 "pacing"?: ({
                   "arrival_process"?: string;
@@ -52388,6 +54372,12 @@ export interface operations {
             "revision_source_group_index"?: (number) | null;
             "role"?: string;
             "runtime_settings"?: ({
+              "appium"?: ({
+                "capabilities"?: Record<string, unknown>;
+                "element_timeout_ms"?: number;
+                "server_url"?: string;
+                "session_timeout_ms"?: number;
+              }) | null;
               "auto_transactions"?: string;
               "base_url"?: string;
               "browser"?: ({
@@ -52444,6 +54434,18 @@ export interface operations {
                 "mode"?: string;
                 "platform"?: string;
               }) | null;
+              "database"?: ({
+                "conn_max_lifetime_ms"?: number;
+                "driver"?: string;
+                "dsn"?: string;
+                "dsn_secret"?: string;
+                "max_idle_conns"?: number;
+                "max_open_conns"?: number;
+                "max_rows"?: number;
+                "query_timeout_ms"?: number;
+                "read_only"?: boolean;
+                "rollback_on_teardown"?: boolean;
+              }) | null;
               "env"?: Record<string, string>;
               "error_handling"?: ({
                 "continue_on_error"?: (boolean) | null;
@@ -52455,6 +54457,34 @@ export interface operations {
                 "retry_delay_ms"?: number;
                 "retry_on"?: Array<string>;
                 "snapshot_on_error"?: boolean;
+              }) | null;
+              "eventhubs"?: ({
+                "auth_type"?: string;
+                "checkpoint_container_url"?: string;
+                "connection_string"?: string;
+                "connection_string_secret"?: string;
+                "consumer_group"?: string;
+                "consumer_mode"?: string;
+                "event_hub"?: string;
+                "mock"?: boolean;
+                "namespace"?: string;
+                "observe_partition_tail"?: boolean;
+                "owner_level"?: (number) | null;
+                "partition_id"?: string;
+                "partition_key"?: string;
+                "processor_max_partitions"?: number;
+                "start_position"?: string;
+                "tail_poll_interval_ms"?: number;
+                "timeout_ms"?: number;
+              }) | null;
+              "grpc"?: ({
+                "authority"?: string;
+                "max_recv_msg_size"?: number;
+                "metadata"?: Record<string, string>;
+                "plain_text"?: boolean;
+                "proto_files"?: Array<string>;
+                "timeout_ms"?: number;
+                "use_reflection"?: boolean;
               }) | null;
               "http"?: ({
                 "accept_encoding"?: string;
@@ -52499,16 +54529,84 @@ export interface operations {
                 "version"?: string;
               }) | null;
               "iterations"?: (number) | null;
+              "java_http"?: ({
+                "accept"?: string;
+                "body_encoding"?: string;
+                "codec"?: string;
+                "content_type"?: string;
+                "extractor_type"?: string;
+                "helper_mode"?: string;
+                "object_schema"?: string;
+                "preserve_binary_result"?: boolean;
+                "request_mapping"?: Record<string, string>;
+                "response_mapping"?: Record<string, string>;
+              }) | null;
               "java_vuser"?: ({
+                "action_timeout_ms"?: number;
                 "additional_vm_parameters"?: Array<string>;
                 "classpath"?: Array<string>;
                 "dedicated_class_loader"?: (boolean) | null;
                 "jdk_home"?: string;
                 "jdk_selection"?: string;
                 "jvm_sharing"?: string;
+                "param_left_brace"?: string;
+                "param_right_brace"?: string;
                 "skip_parameter_evaluation"?: (boolean) | null;
+                "startup_timeout_ms"?: number;
                 "use_xbootclasspath"?: (boolean) | null;
                 "vusers_per_jvm"?: number;
+              }) | null;
+              "jms"?: ({
+                "acknowledgement"?: string;
+                "broker_url"?: string;
+                "client_id"?: string;
+                "delivery_mode"?: string;
+                "destination"?: string;
+                "destination_type"?: string;
+                "message_vpn"?: string;
+                "mock"?: boolean;
+                "password"?: string;
+                "properties"?: Record<string, string>;
+                "provider"?: string;
+                "reply_to"?: string;
+                "subscription"?: string;
+                "timeout_ms"?: number;
+                "tls"?: (Record<string, unknown>) | null;
+                "username"?: string;
+              }) | null;
+              "kafka"?: ({
+                "acks"?: string;
+                "auto_offset_reset"?: string;
+                "brokers"?: Array<string>;
+                "client_id"?: string;
+                "compression"?: string;
+                "consumer_group"?: string;
+                "consumer_transactions"?: boolean;
+                "idempotence"?: string;
+                "isolation_level"?: string;
+                "max_message_bytes"?: number;
+                "mock"?: boolean;
+                "oauth"?: (Record<string, unknown>) | null;
+                "oauth_scope"?: string;
+                "partition_strategy"?: string;
+                "partitions"?: number;
+                "producer"?: (Record<string, unknown>) | null;
+                "profile"?: string;
+                "properties"?: Record<string, string>;
+                "sasl_mechanism"?: string;
+                "sasl_password"?: string;
+                "sasl_password_secret"?: string;
+                "sasl_username"?: string;
+                "schema"?: string;
+                "schema_id"?: number;
+                "schema_registry_url"?: string;
+                "security_protocol"?: string;
+                "serialization"?: string;
+                "subject"?: string;
+                "timeout_ms"?: number;
+                "tls"?: (Record<string, unknown>) | null;
+                "topic"?: string;
+                "transactional_id"?: string;
               }) | null;
               "log"?: ({
                 "error_buffer_bytes"?: number;
@@ -52519,6 +54617,19 @@ export interface operations {
                 "redact_run_evidence"?: (boolean) | null;
               }) | null;
               "log_level"?: string;
+              "network"?: ({
+                "address"?: string;
+                "base_dn"?: string;
+                "from"?: string;
+                "host"?: string;
+                "password"?: string;
+                "port"?: number;
+                "subprotocol"?: string;
+                "timeout_ms"?: number;
+                "tls"?: boolean;
+                "to"?: Array<string>;
+                "username"?: string;
+              }) | null;
               "override_fields"?: Array<string>;
               "pacing"?: ({
                 "arrival_process"?: string;
@@ -52625,6 +54736,12 @@ export interface operations {
           "resource_baseline"?: boolean;
           "revision_source_test_id"?: string;
           "runtime_settings"?: ({
+            "appium"?: ({
+              "capabilities"?: Record<string, unknown>;
+              "element_timeout_ms"?: number;
+              "server_url"?: string;
+              "session_timeout_ms"?: number;
+            }) | null;
             "auto_transactions"?: string;
             "base_url"?: string;
             "browser"?: ({
@@ -52721,6 +54838,18 @@ export interface operations {
               "mode"?: string;
               "platform"?: string;
             }) | null;
+            "database"?: ({
+              "conn_max_lifetime_ms"?: number;
+              "driver"?: string;
+              "dsn"?: string;
+              "dsn_secret"?: string;
+              "max_idle_conns"?: number;
+              "max_open_conns"?: number;
+              "max_rows"?: number;
+              "query_timeout_ms"?: number;
+              "read_only"?: boolean;
+              "rollback_on_teardown"?: boolean;
+            }) | null;
             "env"?: Record<string, string>;
             "error_handling"?: ({
               "continue_on_error"?: (boolean) | null;
@@ -52732,6 +54861,34 @@ export interface operations {
               "retry_delay_ms"?: number;
               "retry_on"?: Array<string>;
               "snapshot_on_error"?: boolean;
+            }) | null;
+            "eventhubs"?: ({
+              "auth_type"?: string;
+              "checkpoint_container_url"?: string;
+              "connection_string"?: string;
+              "connection_string_secret"?: string;
+              "consumer_group"?: string;
+              "consumer_mode"?: string;
+              "event_hub"?: string;
+              "mock"?: boolean;
+              "namespace"?: string;
+              "observe_partition_tail"?: boolean;
+              "owner_level"?: (number) | null;
+              "partition_id"?: string;
+              "partition_key"?: string;
+              "processor_max_partitions"?: number;
+              "start_position"?: string;
+              "tail_poll_interval_ms"?: number;
+              "timeout_ms"?: number;
+            }) | null;
+            "grpc"?: ({
+              "authority"?: string;
+              "max_recv_msg_size"?: number;
+              "metadata"?: Record<string, string>;
+              "plain_text"?: boolean;
+              "proto_files"?: Array<string>;
+              "timeout_ms"?: number;
+              "use_reflection"?: boolean;
             }) | null;
             "http"?: ({
               "accept_encoding"?: string;
@@ -52802,16 +54959,112 @@ export interface operations {
               "version"?: string;
             }) | null;
             "iterations"?: (number) | null;
+            "java_http"?: ({
+              "accept"?: string;
+              "body_encoding"?: string;
+              "codec"?: string;
+              "content_type"?: string;
+              "extractor_type"?: string;
+              "helper_mode"?: string;
+              "object_schema"?: string;
+              "preserve_binary_result"?: boolean;
+              "request_mapping"?: Record<string, string>;
+              "response_mapping"?: Record<string, string>;
+            }) | null;
             "java_vuser"?: ({
+              "action_timeout_ms"?: number;
               "additional_vm_parameters"?: Array<string>;
               "classpath"?: Array<string>;
               "dedicated_class_loader"?: (boolean) | null;
               "jdk_home"?: string;
               "jdk_selection"?: string;
               "jvm_sharing"?: string;
+              "param_left_brace"?: string;
+              "param_right_brace"?: string;
               "skip_parameter_evaluation"?: (boolean) | null;
+              "startup_timeout_ms"?: number;
               "use_xbootclasspath"?: (boolean) | null;
               "vusers_per_jvm"?: number;
+            }) | null;
+            "jms"?: ({
+              "acknowledgement"?: string;
+              "broker_url"?: string;
+              "client_id"?: string;
+              "delivery_mode"?: string;
+              "destination"?: string;
+              "destination_type"?: string;
+              "message_vpn"?: string;
+              "mock"?: boolean;
+              "password"?: string;
+              "properties"?: Record<string, string>;
+              "provider"?: string;
+              "reply_to"?: string;
+              "subscription"?: string;
+              "timeout_ms"?: number;
+              "tls"?: ({
+                "ca_cert_secret"?: string;
+                "insecure_skip_verify"?: boolean;
+                "trust_store_ref"?: string;
+              }) | null;
+              "username"?: string;
+            }) | null;
+            "kafka"?: ({
+              "acks"?: string;
+              "auto_offset_reset"?: string;
+              "brokers"?: Array<string>;
+              "client_id"?: string;
+              "compression"?: string;
+              "consumer_group"?: string;
+              "consumer_transactions"?: boolean;
+              "idempotence"?: string;
+              "isolation_level"?: string;
+              "max_message_bytes"?: number;
+              "mock"?: boolean;
+              "oauth"?: ({
+                "authentication_method"?: string;
+                "client_id"?: string;
+                "client_secret"?: string;
+                "client_secret_ref"?: string;
+                "mode"?: string;
+                "scope"?: string;
+                "token_url"?: string;
+              }) | null;
+              "oauth_scope"?: string;
+              "partition_strategy"?: string;
+              "partitions"?: number;
+              "producer"?: ({
+                "admission_timeout_ms"?: (number) | null;
+                "batch_bytes"?: (number) | null;
+                "buffer_bytes"?: (number) | null;
+                "delivery_timeout_ms"?: (number) | null;
+                "linger_ms"?: (number) | null;
+                "max_in_flight_requests"?: (number) | null;
+                "request_timeout_ms"?: (number) | null;
+                "retries"?: (number) | null;
+              }) | null;
+              "profile"?: string;
+              "properties"?: Record<string, string>;
+              "sasl_mechanism"?: string;
+              "sasl_password"?: string;
+              "sasl_password_secret"?: string;
+              "sasl_username"?: string;
+              "schema"?: string;
+              "schema_id"?: number;
+              "schema_registry_url"?: string;
+              "security_protocol"?: string;
+              "serialization"?: string;
+              "subject"?: string;
+              "timeout_ms"?: number;
+              "tls"?: ({
+                "ca_cert_file"?: string;
+                "client_cert_file"?: string;
+                "client_key_file"?: string;
+                "insecure_skip_verify"?: boolean;
+                "max_version"?: string;
+                "min_version"?: string;
+              }) | null;
+              "topic"?: string;
+              "transactional_id"?: string;
             }) | null;
             "log"?: ({
               "error_buffer_bytes"?: number;
@@ -52822,6 +55075,19 @@ export interface operations {
               "redact_run_evidence"?: (boolean) | null;
             }) | null;
             "log_level"?: string;
+            "network"?: ({
+              "address"?: string;
+              "base_dn"?: string;
+              "from"?: string;
+              "host"?: string;
+              "password"?: string;
+              "port"?: number;
+              "subprotocol"?: string;
+              "timeout_ms"?: number;
+              "tls"?: boolean;
+              "to"?: Array<string>;
+              "username"?: string;
+            }) | null;
             "override_fields"?: Array<string>;
             "pacing"?: ({
               "arrival_process"?: string;
@@ -54347,6 +56613,12 @@ export interface operations {
                 "max_transactions"?: number;
               }) | null;
               "runtime_settings"?: ({
+                "appium"?: ({
+                  "capabilities"?: Record<string, unknown>;
+                  "element_timeout_ms"?: number;
+                  "server_url"?: string;
+                  "session_timeout_ms"?: number;
+                }) | null;
                 "auto_transactions"?: string;
                 "base_url"?: string;
                 "browser"?: ({
@@ -54403,6 +56675,18 @@ export interface operations {
                   "mode"?: string;
                   "platform"?: string;
                 }) | null;
+                "database"?: ({
+                  "conn_max_lifetime_ms"?: number;
+                  "driver"?: string;
+                  "dsn"?: string;
+                  "dsn_secret"?: string;
+                  "max_idle_conns"?: number;
+                  "max_open_conns"?: number;
+                  "max_rows"?: number;
+                  "query_timeout_ms"?: number;
+                  "read_only"?: boolean;
+                  "rollback_on_teardown"?: boolean;
+                }) | null;
                 "env"?: Record<string, string>;
                 "error_handling"?: ({
                   "continue_on_error"?: (boolean) | null;
@@ -54414,6 +56698,34 @@ export interface operations {
                   "retry_delay_ms"?: number;
                   "retry_on"?: Array<string>;
                   "snapshot_on_error"?: boolean;
+                }) | null;
+                "eventhubs"?: ({
+                  "auth_type"?: string;
+                  "checkpoint_container_url"?: string;
+                  "connection_string"?: string;
+                  "connection_string_secret"?: string;
+                  "consumer_group"?: string;
+                  "consumer_mode"?: string;
+                  "event_hub"?: string;
+                  "mock"?: boolean;
+                  "namespace"?: string;
+                  "observe_partition_tail"?: boolean;
+                  "owner_level"?: (number) | null;
+                  "partition_id"?: string;
+                  "partition_key"?: string;
+                  "processor_max_partitions"?: number;
+                  "start_position"?: string;
+                  "tail_poll_interval_ms"?: number;
+                  "timeout_ms"?: number;
+                }) | null;
+                "grpc"?: ({
+                  "authority"?: string;
+                  "max_recv_msg_size"?: number;
+                  "metadata"?: Record<string, string>;
+                  "plain_text"?: boolean;
+                  "proto_files"?: Array<string>;
+                  "timeout_ms"?: number;
+                  "use_reflection"?: boolean;
                 }) | null;
                 "http"?: ({
                   "accept_encoding"?: string;
@@ -54458,16 +56770,84 @@ export interface operations {
                   "version"?: string;
                 }) | null;
                 "iterations"?: (number) | null;
+                "java_http"?: ({
+                  "accept"?: string;
+                  "body_encoding"?: string;
+                  "codec"?: string;
+                  "content_type"?: string;
+                  "extractor_type"?: string;
+                  "helper_mode"?: string;
+                  "object_schema"?: string;
+                  "preserve_binary_result"?: boolean;
+                  "request_mapping"?: Record<string, string>;
+                  "response_mapping"?: Record<string, string>;
+                }) | null;
                 "java_vuser"?: ({
+                  "action_timeout_ms"?: number;
                   "additional_vm_parameters"?: Array<string>;
                   "classpath"?: Array<string>;
                   "dedicated_class_loader"?: (boolean) | null;
                   "jdk_home"?: string;
                   "jdk_selection"?: string;
                   "jvm_sharing"?: string;
+                  "param_left_brace"?: string;
+                  "param_right_brace"?: string;
                   "skip_parameter_evaluation"?: (boolean) | null;
+                  "startup_timeout_ms"?: number;
                   "use_xbootclasspath"?: (boolean) | null;
                   "vusers_per_jvm"?: number;
+                }) | null;
+                "jms"?: ({
+                  "acknowledgement"?: string;
+                  "broker_url"?: string;
+                  "client_id"?: string;
+                  "delivery_mode"?: string;
+                  "destination"?: string;
+                  "destination_type"?: string;
+                  "message_vpn"?: string;
+                  "mock"?: boolean;
+                  "password"?: string;
+                  "properties"?: Record<string, string>;
+                  "provider"?: string;
+                  "reply_to"?: string;
+                  "subscription"?: string;
+                  "timeout_ms"?: number;
+                  "tls"?: (Record<string, unknown>) | null;
+                  "username"?: string;
+                }) | null;
+                "kafka"?: ({
+                  "acks"?: string;
+                  "auto_offset_reset"?: string;
+                  "brokers"?: Array<string>;
+                  "client_id"?: string;
+                  "compression"?: string;
+                  "consumer_group"?: string;
+                  "consumer_transactions"?: boolean;
+                  "idempotence"?: string;
+                  "isolation_level"?: string;
+                  "max_message_bytes"?: number;
+                  "mock"?: boolean;
+                  "oauth"?: (Record<string, unknown>) | null;
+                  "oauth_scope"?: string;
+                  "partition_strategy"?: string;
+                  "partitions"?: number;
+                  "producer"?: (Record<string, unknown>) | null;
+                  "profile"?: string;
+                  "properties"?: Record<string, string>;
+                  "sasl_mechanism"?: string;
+                  "sasl_password"?: string;
+                  "sasl_password_secret"?: string;
+                  "sasl_username"?: string;
+                  "schema"?: string;
+                  "schema_id"?: number;
+                  "schema_registry_url"?: string;
+                  "security_protocol"?: string;
+                  "serialization"?: string;
+                  "subject"?: string;
+                  "timeout_ms"?: number;
+                  "tls"?: (Record<string, unknown>) | null;
+                  "topic"?: string;
+                  "transactional_id"?: string;
                 }) | null;
                 "log"?: ({
                   "error_buffer_bytes"?: number;
@@ -54478,6 +56858,19 @@ export interface operations {
                   "redact_run_evidence"?: (boolean) | null;
                 }) | null;
                 "log_level"?: string;
+                "network"?: ({
+                  "address"?: string;
+                  "base_dn"?: string;
+                  "from"?: string;
+                  "host"?: string;
+                  "password"?: string;
+                  "port"?: number;
+                  "subprotocol"?: string;
+                  "timeout_ms"?: number;
+                  "tls"?: boolean;
+                  "to"?: Array<string>;
+                  "username"?: string;
+                }) | null;
                 "override_fields"?: Array<string>;
                 "pacing"?: ({
                   "arrival_process"?: string;
@@ -59355,6 +61748,12 @@ export interface operations {
             "release_id"?: string;
             "resource_baseline"?: boolean;
             "runtime_settings"?: ({
+              "appium"?: ({
+                "capabilities"?: Record<string, unknown>;
+                "element_timeout_ms"?: number;
+                "server_url"?: string;
+                "session_timeout_ms"?: number;
+              }) | null;
               "auto_transactions"?: string;
               "base_url"?: string;
               "browser"?: ({
@@ -59451,6 +61850,18 @@ export interface operations {
                 "mode"?: string;
                 "platform"?: string;
               }) | null;
+              "database"?: ({
+                "conn_max_lifetime_ms"?: number;
+                "driver"?: string;
+                "dsn"?: string;
+                "dsn_secret"?: string;
+                "max_idle_conns"?: number;
+                "max_open_conns"?: number;
+                "max_rows"?: number;
+                "query_timeout_ms"?: number;
+                "read_only"?: boolean;
+                "rollback_on_teardown"?: boolean;
+              }) | null;
               "env"?: Record<string, string>;
               "error_handling"?: ({
                 "continue_on_error"?: (boolean) | null;
@@ -59462,6 +61873,34 @@ export interface operations {
                 "retry_delay_ms"?: number;
                 "retry_on"?: Array<string>;
                 "snapshot_on_error"?: boolean;
+              }) | null;
+              "eventhubs"?: ({
+                "auth_type"?: string;
+                "checkpoint_container_url"?: string;
+                "connection_string"?: string;
+                "connection_string_secret"?: string;
+                "consumer_group"?: string;
+                "consumer_mode"?: string;
+                "event_hub"?: string;
+                "mock"?: boolean;
+                "namespace"?: string;
+                "observe_partition_tail"?: boolean;
+                "owner_level"?: (number) | null;
+                "partition_id"?: string;
+                "partition_key"?: string;
+                "processor_max_partitions"?: number;
+                "start_position"?: string;
+                "tail_poll_interval_ms"?: number;
+                "timeout_ms"?: number;
+              }) | null;
+              "grpc"?: ({
+                "authority"?: string;
+                "max_recv_msg_size"?: number;
+                "metadata"?: Record<string, string>;
+                "plain_text"?: boolean;
+                "proto_files"?: Array<string>;
+                "timeout_ms"?: number;
+                "use_reflection"?: boolean;
               }) | null;
               "http"?: ({
                 "accept_encoding"?: string;
@@ -59532,16 +61971,112 @@ export interface operations {
                 "version"?: string;
               }) | null;
               "iterations"?: (number) | null;
+              "java_http"?: ({
+                "accept"?: string;
+                "body_encoding"?: string;
+                "codec"?: string;
+                "content_type"?: string;
+                "extractor_type"?: string;
+                "helper_mode"?: string;
+                "object_schema"?: string;
+                "preserve_binary_result"?: boolean;
+                "request_mapping"?: Record<string, string>;
+                "response_mapping"?: Record<string, string>;
+              }) | null;
               "java_vuser"?: ({
+                "action_timeout_ms"?: number;
                 "additional_vm_parameters"?: Array<string>;
                 "classpath"?: Array<string>;
                 "dedicated_class_loader"?: (boolean) | null;
                 "jdk_home"?: string;
                 "jdk_selection"?: string;
                 "jvm_sharing"?: string;
+                "param_left_brace"?: string;
+                "param_right_brace"?: string;
                 "skip_parameter_evaluation"?: (boolean) | null;
+                "startup_timeout_ms"?: number;
                 "use_xbootclasspath"?: (boolean) | null;
                 "vusers_per_jvm"?: number;
+              }) | null;
+              "jms"?: ({
+                "acknowledgement"?: string;
+                "broker_url"?: string;
+                "client_id"?: string;
+                "delivery_mode"?: string;
+                "destination"?: string;
+                "destination_type"?: string;
+                "message_vpn"?: string;
+                "mock"?: boolean;
+                "password"?: string;
+                "properties"?: Record<string, string>;
+                "provider"?: string;
+                "reply_to"?: string;
+                "subscription"?: string;
+                "timeout_ms"?: number;
+                "tls"?: ({
+                  "ca_cert_secret"?: string;
+                  "insecure_skip_verify"?: boolean;
+                  "trust_store_ref"?: string;
+                }) | null;
+                "username"?: string;
+              }) | null;
+              "kafka"?: ({
+                "acks"?: string;
+                "auto_offset_reset"?: string;
+                "brokers"?: Array<string>;
+                "client_id"?: string;
+                "compression"?: string;
+                "consumer_group"?: string;
+                "consumer_transactions"?: boolean;
+                "idempotence"?: string;
+                "isolation_level"?: string;
+                "max_message_bytes"?: number;
+                "mock"?: boolean;
+                "oauth"?: ({
+                  "authentication_method"?: string;
+                  "client_id": string;
+                  "client_secret"?: string;
+                  "client_secret_ref"?: string;
+                  "mode": string;
+                  "scope"?: string;
+                  "token_url": string;
+                }) | null;
+                "oauth_scope"?: string;
+                "partition_strategy"?: string;
+                "partitions"?: number;
+                "producer"?: ({
+                  "admission_timeout_ms"?: (number) | null;
+                  "batch_bytes"?: (number) | null;
+                  "buffer_bytes"?: (number) | null;
+                  "delivery_timeout_ms"?: (number) | null;
+                  "linger_ms"?: (number) | null;
+                  "max_in_flight_requests"?: (number) | null;
+                  "request_timeout_ms"?: (number) | null;
+                  "retries"?: (number) | null;
+                }) | null;
+                "profile"?: string;
+                "properties"?: Record<string, string>;
+                "sasl_mechanism"?: string;
+                "sasl_password"?: string;
+                "sasl_password_secret"?: string;
+                "sasl_username"?: string;
+                "schema"?: string;
+                "schema_id"?: number;
+                "schema_registry_url"?: string;
+                "security_protocol"?: string;
+                "serialization"?: string;
+                "subject"?: string;
+                "timeout_ms"?: number;
+                "tls"?: ({
+                  "ca_cert_file"?: string;
+                  "client_cert_file"?: string;
+                  "client_key_file"?: string;
+                  "insecure_skip_verify"?: boolean;
+                  "max_version"?: string;
+                  "min_version"?: string;
+                }) | null;
+                "topic"?: string;
+                "transactional_id"?: string;
               }) | null;
               "log"?: ({
                 "error_buffer_bytes"?: number;
@@ -59552,6 +62087,19 @@ export interface operations {
                 "redact_run_evidence"?: (boolean) | null;
               }) | null;
               "log_level"?: string;
+              "network"?: ({
+                "address"?: string;
+                "base_dn"?: string;
+                "from"?: string;
+                "host"?: string;
+                "password"?: string;
+                "port"?: number;
+                "subprotocol"?: string;
+                "timeout_ms"?: number;
+                "tls"?: boolean;
+                "to"?: Array<string>;
+                "username"?: string;
+              }) | null;
               "override_fields"?: Array<string>;
               "pacing"?: ({
                 "arrival_process"?: string;
@@ -62535,18 +65083,26 @@ export interface operations {
               "revision_source_group_index"?: (number) | null;
               "role"?: string;
               "runtime_settings"?: ({
+                "appium"?: (Record<string, unknown>) | null;
                 "auto_transactions"?: string;
                 "base_url"?: string;
                 "browser"?: (Record<string, unknown>) | null;
                 "browser_config"?: (Record<string, unknown>) | null;
                 "browser_emulation"?: (Record<string, unknown>) | null;
+                "database"?: (Record<string, unknown>) | null;
                 "env"?: Record<string, string>;
                 "error_handling"?: (Record<string, unknown>) | null;
+                "eventhubs"?: (Record<string, unknown>) | null;
+                "grpc"?: (Record<string, unknown>) | null;
                 "http"?: (Record<string, unknown>) | null;
                 "iterations"?: (number) | null;
+                "java_http"?: (Record<string, unknown>) | null;
                 "java_vuser"?: (Record<string, unknown>) | null;
+                "jms"?: (Record<string, unknown>) | null;
+                "kafka"?: (Record<string, unknown>) | null;
                 "log"?: (Record<string, unknown>) | null;
                 "log_level"?: string;
+                "network"?: (Record<string, unknown>) | null;
                 "override_fields"?: Array<string>;
                 "pacing"?: (Record<string, unknown>) | null;
                 "redaction_rules"?: Array<Record<string, unknown>>;
@@ -62571,6 +65127,12 @@ export interface operations {
             "project_id"?: string;
             "resource_baseline"?: boolean;
             "runtime_settings"?: ({
+              "appium"?: ({
+                "capabilities"?: Record<string, unknown>;
+                "element_timeout_ms"?: number;
+                "server_url"?: string;
+                "session_timeout_ms"?: number;
+              }) | null;
               "auto_transactions"?: string;
               "base_url"?: string;
               "browser"?: ({
@@ -62627,6 +65189,18 @@ export interface operations {
                 "mode"?: string;
                 "platform"?: string;
               }) | null;
+              "database"?: ({
+                "conn_max_lifetime_ms"?: number;
+                "driver"?: string;
+                "dsn"?: string;
+                "dsn_secret"?: string;
+                "max_idle_conns"?: number;
+                "max_open_conns"?: number;
+                "max_rows"?: number;
+                "query_timeout_ms"?: number;
+                "read_only"?: boolean;
+                "rollback_on_teardown"?: boolean;
+              }) | null;
               "env"?: Record<string, string>;
               "error_handling"?: ({
                 "continue_on_error"?: (boolean) | null;
@@ -62638,6 +65212,34 @@ export interface operations {
                 "retry_delay_ms"?: number;
                 "retry_on"?: Array<string>;
                 "snapshot_on_error"?: boolean;
+              }) | null;
+              "eventhubs"?: ({
+                "auth_type"?: string;
+                "checkpoint_container_url"?: string;
+                "connection_string"?: string;
+                "connection_string_secret"?: string;
+                "consumer_group"?: string;
+                "consumer_mode"?: string;
+                "event_hub"?: string;
+                "mock"?: boolean;
+                "namespace"?: string;
+                "observe_partition_tail"?: boolean;
+                "owner_level"?: (number) | null;
+                "partition_id"?: string;
+                "partition_key"?: string;
+                "processor_max_partitions"?: number;
+                "start_position"?: string;
+                "tail_poll_interval_ms"?: number;
+                "timeout_ms"?: number;
+              }) | null;
+              "grpc"?: ({
+                "authority"?: string;
+                "max_recv_msg_size"?: number;
+                "metadata"?: Record<string, string>;
+                "plain_text"?: boolean;
+                "proto_files"?: Array<string>;
+                "timeout_ms"?: number;
+                "use_reflection"?: boolean;
               }) | null;
               "http"?: ({
                 "accept_encoding"?: string;
@@ -62682,16 +65284,84 @@ export interface operations {
                 "version"?: string;
               }) | null;
               "iterations"?: (number) | null;
+              "java_http"?: ({
+                "accept"?: string;
+                "body_encoding"?: string;
+                "codec"?: string;
+                "content_type"?: string;
+                "extractor_type"?: string;
+                "helper_mode"?: string;
+                "object_schema"?: string;
+                "preserve_binary_result"?: boolean;
+                "request_mapping"?: Record<string, string>;
+                "response_mapping"?: Record<string, string>;
+              }) | null;
               "java_vuser"?: ({
+                "action_timeout_ms"?: number;
                 "additional_vm_parameters"?: Array<string>;
                 "classpath"?: Array<string>;
                 "dedicated_class_loader"?: (boolean) | null;
                 "jdk_home"?: string;
                 "jdk_selection"?: string;
                 "jvm_sharing"?: string;
+                "param_left_brace"?: string;
+                "param_right_brace"?: string;
                 "skip_parameter_evaluation"?: (boolean) | null;
+                "startup_timeout_ms"?: number;
                 "use_xbootclasspath"?: (boolean) | null;
                 "vusers_per_jvm"?: number;
+              }) | null;
+              "jms"?: ({
+                "acknowledgement"?: string;
+                "broker_url"?: string;
+                "client_id"?: string;
+                "delivery_mode"?: string;
+                "destination"?: string;
+                "destination_type"?: string;
+                "message_vpn"?: string;
+                "mock"?: boolean;
+                "password"?: string;
+                "properties"?: Record<string, string>;
+                "provider"?: string;
+                "reply_to"?: string;
+                "subscription"?: string;
+                "timeout_ms"?: number;
+                "tls"?: (Record<string, unknown>) | null;
+                "username"?: string;
+              }) | null;
+              "kafka"?: ({
+                "acks"?: string;
+                "auto_offset_reset"?: string;
+                "brokers"?: Array<string>;
+                "client_id"?: string;
+                "compression"?: string;
+                "consumer_group"?: string;
+                "consumer_transactions"?: boolean;
+                "idempotence"?: string;
+                "isolation_level"?: string;
+                "max_message_bytes"?: number;
+                "mock"?: boolean;
+                "oauth"?: (Record<string, unknown>) | null;
+                "oauth_scope"?: string;
+                "partition_strategy"?: string;
+                "partitions"?: number;
+                "producer"?: (Record<string, unknown>) | null;
+                "profile"?: string;
+                "properties"?: Record<string, string>;
+                "sasl_mechanism"?: string;
+                "sasl_password"?: string;
+                "sasl_password_secret"?: string;
+                "sasl_username"?: string;
+                "schema"?: string;
+                "schema_id"?: number;
+                "schema_registry_url"?: string;
+                "security_protocol"?: string;
+                "serialization"?: string;
+                "subject"?: string;
+                "timeout_ms"?: number;
+                "tls"?: (Record<string, unknown>) | null;
+                "topic"?: string;
+                "transactional_id"?: string;
               }) | null;
               "log"?: ({
                 "error_buffer_bytes"?: number;
@@ -62702,6 +65372,19 @@ export interface operations {
                 "redact_run_evidence"?: (boolean) | null;
               }) | null;
               "log_level"?: string;
+              "network"?: ({
+                "address"?: string;
+                "base_dn"?: string;
+                "from"?: string;
+                "host"?: string;
+                "password"?: string;
+                "port"?: number;
+                "subprotocol"?: string;
+                "timeout_ms"?: number;
+                "tls"?: boolean;
+                "to"?: Array<string>;
+                "username"?: string;
+              }) | null;
               "override_fields"?: Array<string>;
               "pacing"?: ({
                 "arrival_process"?: string;
@@ -63285,18 +65968,26 @@ export interface operations {
                 "revision_source_group_index"?: (number) | null;
                 "role"?: string;
                 "runtime_settings"?: ({
+                  "appium"?: (Record<string, unknown>) | null;
                   "auto_transactions"?: string;
                   "base_url"?: string;
                   "browser"?: (Record<string, unknown>) | null;
                   "browser_config"?: (Record<string, unknown>) | null;
                   "browser_emulation"?: (Record<string, unknown>) | null;
+                  "database"?: (Record<string, unknown>) | null;
                   "env"?: Record<string, string>;
                   "error_handling"?: (Record<string, unknown>) | null;
+                  "eventhubs"?: (Record<string, unknown>) | null;
+                  "grpc"?: (Record<string, unknown>) | null;
                   "http"?: (Record<string, unknown>) | null;
                   "iterations"?: (number) | null;
+                  "java_http"?: (Record<string, unknown>) | null;
                   "java_vuser"?: (Record<string, unknown>) | null;
+                  "jms"?: (Record<string, unknown>) | null;
+                  "kafka"?: (Record<string, unknown>) | null;
                   "log"?: (Record<string, unknown>) | null;
                   "log_level"?: string;
+                  "network"?: (Record<string, unknown>) | null;
                   "override_fields"?: Array<string>;
                   "pacing"?: (Record<string, unknown>) | null;
                   "redaction_rules"?: Array<Record<string, unknown>>;
@@ -63321,6 +66012,12 @@ export interface operations {
               "project_id"?: string;
               "resource_baseline"?: boolean;
               "runtime_settings"?: ({
+                "appium"?: ({
+                  "capabilities"?: Record<string, unknown>;
+                  "element_timeout_ms"?: number;
+                  "server_url"?: string;
+                  "session_timeout_ms"?: number;
+                }) | null;
                 "auto_transactions"?: string;
                 "base_url"?: string;
                 "browser"?: ({
@@ -63377,6 +66074,18 @@ export interface operations {
                   "mode"?: string;
                   "platform"?: string;
                 }) | null;
+                "database"?: ({
+                  "conn_max_lifetime_ms"?: number;
+                  "driver"?: string;
+                  "dsn"?: string;
+                  "dsn_secret"?: string;
+                  "max_idle_conns"?: number;
+                  "max_open_conns"?: number;
+                  "max_rows"?: number;
+                  "query_timeout_ms"?: number;
+                  "read_only"?: boolean;
+                  "rollback_on_teardown"?: boolean;
+                }) | null;
                 "env"?: Record<string, string>;
                 "error_handling"?: ({
                   "continue_on_error"?: (boolean) | null;
@@ -63388,6 +66097,34 @@ export interface operations {
                   "retry_delay_ms"?: number;
                   "retry_on"?: Array<string>;
                   "snapshot_on_error"?: boolean;
+                }) | null;
+                "eventhubs"?: ({
+                  "auth_type"?: string;
+                  "checkpoint_container_url"?: string;
+                  "connection_string"?: string;
+                  "connection_string_secret"?: string;
+                  "consumer_group"?: string;
+                  "consumer_mode"?: string;
+                  "event_hub"?: string;
+                  "mock"?: boolean;
+                  "namespace"?: string;
+                  "observe_partition_tail"?: boolean;
+                  "owner_level"?: (number) | null;
+                  "partition_id"?: string;
+                  "partition_key"?: string;
+                  "processor_max_partitions"?: number;
+                  "start_position"?: string;
+                  "tail_poll_interval_ms"?: number;
+                  "timeout_ms"?: number;
+                }) | null;
+                "grpc"?: ({
+                  "authority"?: string;
+                  "max_recv_msg_size"?: number;
+                  "metadata"?: Record<string, string>;
+                  "plain_text"?: boolean;
+                  "proto_files"?: Array<string>;
+                  "timeout_ms"?: number;
+                  "use_reflection"?: boolean;
                 }) | null;
                 "http"?: ({
                   "accept_encoding"?: string;
@@ -63432,16 +66169,84 @@ export interface operations {
                   "version"?: string;
                 }) | null;
                 "iterations"?: (number) | null;
+                "java_http"?: ({
+                  "accept"?: string;
+                  "body_encoding"?: string;
+                  "codec"?: string;
+                  "content_type"?: string;
+                  "extractor_type"?: string;
+                  "helper_mode"?: string;
+                  "object_schema"?: string;
+                  "preserve_binary_result"?: boolean;
+                  "request_mapping"?: Record<string, string>;
+                  "response_mapping"?: Record<string, string>;
+                }) | null;
                 "java_vuser"?: ({
+                  "action_timeout_ms"?: number;
                   "additional_vm_parameters"?: Array<string>;
                   "classpath"?: Array<string>;
                   "dedicated_class_loader"?: (boolean) | null;
                   "jdk_home"?: string;
                   "jdk_selection"?: string;
                   "jvm_sharing"?: string;
+                  "param_left_brace"?: string;
+                  "param_right_brace"?: string;
                   "skip_parameter_evaluation"?: (boolean) | null;
+                  "startup_timeout_ms"?: number;
                   "use_xbootclasspath"?: (boolean) | null;
                   "vusers_per_jvm"?: number;
+                }) | null;
+                "jms"?: ({
+                  "acknowledgement"?: string;
+                  "broker_url"?: string;
+                  "client_id"?: string;
+                  "delivery_mode"?: string;
+                  "destination"?: string;
+                  "destination_type"?: string;
+                  "message_vpn"?: string;
+                  "mock"?: boolean;
+                  "password"?: string;
+                  "properties"?: Record<string, string>;
+                  "provider"?: string;
+                  "reply_to"?: string;
+                  "subscription"?: string;
+                  "timeout_ms"?: number;
+                  "tls"?: (Record<string, unknown>) | null;
+                  "username"?: string;
+                }) | null;
+                "kafka"?: ({
+                  "acks"?: string;
+                  "auto_offset_reset"?: string;
+                  "brokers"?: Array<string>;
+                  "client_id"?: string;
+                  "compression"?: string;
+                  "consumer_group"?: string;
+                  "consumer_transactions"?: boolean;
+                  "idempotence"?: string;
+                  "isolation_level"?: string;
+                  "max_message_bytes"?: number;
+                  "mock"?: boolean;
+                  "oauth"?: (Record<string, unknown>) | null;
+                  "oauth_scope"?: string;
+                  "partition_strategy"?: string;
+                  "partitions"?: number;
+                  "producer"?: (Record<string, unknown>) | null;
+                  "profile"?: string;
+                  "properties"?: Record<string, string>;
+                  "sasl_mechanism"?: string;
+                  "sasl_password"?: string;
+                  "sasl_password_secret"?: string;
+                  "sasl_username"?: string;
+                  "schema"?: string;
+                  "schema_id"?: number;
+                  "schema_registry_url"?: string;
+                  "security_protocol"?: string;
+                  "serialization"?: string;
+                  "subject"?: string;
+                  "timeout_ms"?: number;
+                  "tls"?: (Record<string, unknown>) | null;
+                  "topic"?: string;
+                  "transactional_id"?: string;
                 }) | null;
                 "log"?: ({
                   "error_buffer_bytes"?: number;
@@ -63452,6 +66257,19 @@ export interface operations {
                   "redact_run_evidence"?: (boolean) | null;
                 }) | null;
                 "log_level"?: string;
+                "network"?: ({
+                  "address"?: string;
+                  "base_dn"?: string;
+                  "from"?: string;
+                  "host"?: string;
+                  "password"?: string;
+                  "port"?: number;
+                  "subprotocol"?: string;
+                  "timeout_ms"?: number;
+                  "tls"?: boolean;
+                  "to"?: Array<string>;
+                  "username"?: string;
+                }) | null;
                 "override_fields"?: Array<string>;
                 "pacing"?: ({
                   "arrival_process"?: string;
@@ -63939,18 +66757,26 @@ export interface operations {
               "revision_source_group_index"?: (number) | null;
               "role"?: string;
               "runtime_settings"?: ({
+                "appium"?: (Record<string, unknown>) | null;
                 "auto_transactions"?: string;
                 "base_url"?: string;
                 "browser"?: (Record<string, unknown>) | null;
                 "browser_config"?: (Record<string, unknown>) | null;
                 "browser_emulation"?: (Record<string, unknown>) | null;
+                "database"?: (Record<string, unknown>) | null;
                 "env"?: Record<string, string>;
                 "error_handling"?: (Record<string, unknown>) | null;
+                "eventhubs"?: (Record<string, unknown>) | null;
+                "grpc"?: (Record<string, unknown>) | null;
                 "http"?: (Record<string, unknown>) | null;
                 "iterations"?: (number) | null;
+                "java_http"?: (Record<string, unknown>) | null;
                 "java_vuser"?: (Record<string, unknown>) | null;
+                "jms"?: (Record<string, unknown>) | null;
+                "kafka"?: (Record<string, unknown>) | null;
                 "log"?: (Record<string, unknown>) | null;
                 "log_level"?: string;
+                "network"?: (Record<string, unknown>) | null;
                 "override_fields"?: Array<string>;
                 "pacing"?: (Record<string, unknown>) | null;
                 "redaction_rules"?: Array<Record<string, unknown>>;
@@ -63975,6 +66801,12 @@ export interface operations {
             "project_id"?: string;
             "resource_baseline"?: boolean;
             "runtime_settings"?: ({
+              "appium"?: ({
+                "capabilities"?: Record<string, unknown>;
+                "element_timeout_ms"?: number;
+                "server_url"?: string;
+                "session_timeout_ms"?: number;
+              }) | null;
               "auto_transactions"?: string;
               "base_url"?: string;
               "browser"?: ({
@@ -64031,6 +66863,18 @@ export interface operations {
                 "mode"?: string;
                 "platform"?: string;
               }) | null;
+              "database"?: ({
+                "conn_max_lifetime_ms"?: number;
+                "driver"?: string;
+                "dsn"?: string;
+                "dsn_secret"?: string;
+                "max_idle_conns"?: number;
+                "max_open_conns"?: number;
+                "max_rows"?: number;
+                "query_timeout_ms"?: number;
+                "read_only"?: boolean;
+                "rollback_on_teardown"?: boolean;
+              }) | null;
               "env"?: Record<string, string>;
               "error_handling"?: ({
                 "continue_on_error"?: (boolean) | null;
@@ -64042,6 +66886,34 @@ export interface operations {
                 "retry_delay_ms"?: number;
                 "retry_on"?: Array<string>;
                 "snapshot_on_error"?: boolean;
+              }) | null;
+              "eventhubs"?: ({
+                "auth_type"?: string;
+                "checkpoint_container_url"?: string;
+                "connection_string"?: string;
+                "connection_string_secret"?: string;
+                "consumer_group"?: string;
+                "consumer_mode"?: string;
+                "event_hub"?: string;
+                "mock"?: boolean;
+                "namespace"?: string;
+                "observe_partition_tail"?: boolean;
+                "owner_level"?: (number) | null;
+                "partition_id"?: string;
+                "partition_key"?: string;
+                "processor_max_partitions"?: number;
+                "start_position"?: string;
+                "tail_poll_interval_ms"?: number;
+                "timeout_ms"?: number;
+              }) | null;
+              "grpc"?: ({
+                "authority"?: string;
+                "max_recv_msg_size"?: number;
+                "metadata"?: Record<string, string>;
+                "plain_text"?: boolean;
+                "proto_files"?: Array<string>;
+                "timeout_ms"?: number;
+                "use_reflection"?: boolean;
               }) | null;
               "http"?: ({
                 "accept_encoding"?: string;
@@ -64086,16 +66958,84 @@ export interface operations {
                 "version"?: string;
               }) | null;
               "iterations"?: (number) | null;
+              "java_http"?: ({
+                "accept"?: string;
+                "body_encoding"?: string;
+                "codec"?: string;
+                "content_type"?: string;
+                "extractor_type"?: string;
+                "helper_mode"?: string;
+                "object_schema"?: string;
+                "preserve_binary_result"?: boolean;
+                "request_mapping"?: Record<string, string>;
+                "response_mapping"?: Record<string, string>;
+              }) | null;
               "java_vuser"?: ({
+                "action_timeout_ms"?: number;
                 "additional_vm_parameters"?: Array<string>;
                 "classpath"?: Array<string>;
                 "dedicated_class_loader"?: (boolean) | null;
                 "jdk_home"?: string;
                 "jdk_selection"?: string;
                 "jvm_sharing"?: string;
+                "param_left_brace"?: string;
+                "param_right_brace"?: string;
                 "skip_parameter_evaluation"?: (boolean) | null;
+                "startup_timeout_ms"?: number;
                 "use_xbootclasspath"?: (boolean) | null;
                 "vusers_per_jvm"?: number;
+              }) | null;
+              "jms"?: ({
+                "acknowledgement"?: string;
+                "broker_url"?: string;
+                "client_id"?: string;
+                "delivery_mode"?: string;
+                "destination"?: string;
+                "destination_type"?: string;
+                "message_vpn"?: string;
+                "mock"?: boolean;
+                "password"?: string;
+                "properties"?: Record<string, string>;
+                "provider"?: string;
+                "reply_to"?: string;
+                "subscription"?: string;
+                "timeout_ms"?: number;
+                "tls"?: (Record<string, unknown>) | null;
+                "username"?: string;
+              }) | null;
+              "kafka"?: ({
+                "acks"?: string;
+                "auto_offset_reset"?: string;
+                "brokers"?: Array<string>;
+                "client_id"?: string;
+                "compression"?: string;
+                "consumer_group"?: string;
+                "consumer_transactions"?: boolean;
+                "idempotence"?: string;
+                "isolation_level"?: string;
+                "max_message_bytes"?: number;
+                "mock"?: boolean;
+                "oauth"?: (Record<string, unknown>) | null;
+                "oauth_scope"?: string;
+                "partition_strategy"?: string;
+                "partitions"?: number;
+                "producer"?: (Record<string, unknown>) | null;
+                "profile"?: string;
+                "properties"?: Record<string, string>;
+                "sasl_mechanism"?: string;
+                "sasl_password"?: string;
+                "sasl_password_secret"?: string;
+                "sasl_username"?: string;
+                "schema"?: string;
+                "schema_id"?: number;
+                "schema_registry_url"?: string;
+                "security_protocol"?: string;
+                "serialization"?: string;
+                "subject"?: string;
+                "timeout_ms"?: number;
+                "tls"?: (Record<string, unknown>) | null;
+                "topic"?: string;
+                "transactional_id"?: string;
               }) | null;
               "log"?: ({
                 "error_buffer_bytes"?: number;
@@ -64106,6 +67046,19 @@ export interface operations {
                 "redact_run_evidence"?: (boolean) | null;
               }) | null;
               "log_level"?: string;
+              "network"?: ({
+                "address"?: string;
+                "base_dn"?: string;
+                "from"?: string;
+                "host"?: string;
+                "password"?: string;
+                "port"?: number;
+                "subprotocol"?: string;
+                "timeout_ms"?: number;
+                "tls"?: boolean;
+                "to"?: Array<string>;
+                "username"?: string;
+              }) | null;
               "override_fields"?: Array<string>;
               "pacing"?: ({
                 "arrival_process"?: string;
@@ -64689,18 +67642,26 @@ export interface operations {
                 "revision_source_group_index"?: (number) | null;
                 "role"?: string;
                 "runtime_settings"?: ({
+                  "appium"?: (Record<string, unknown>) | null;
                   "auto_transactions"?: string;
                   "base_url"?: string;
                   "browser"?: (Record<string, unknown>) | null;
                   "browser_config"?: (Record<string, unknown>) | null;
                   "browser_emulation"?: (Record<string, unknown>) | null;
+                  "database"?: (Record<string, unknown>) | null;
                   "env"?: Record<string, string>;
                   "error_handling"?: (Record<string, unknown>) | null;
+                  "eventhubs"?: (Record<string, unknown>) | null;
+                  "grpc"?: (Record<string, unknown>) | null;
                   "http"?: (Record<string, unknown>) | null;
                   "iterations"?: (number) | null;
+                  "java_http"?: (Record<string, unknown>) | null;
                   "java_vuser"?: (Record<string, unknown>) | null;
+                  "jms"?: (Record<string, unknown>) | null;
+                  "kafka"?: (Record<string, unknown>) | null;
                   "log"?: (Record<string, unknown>) | null;
                   "log_level"?: string;
+                  "network"?: (Record<string, unknown>) | null;
                   "override_fields"?: Array<string>;
                   "pacing"?: (Record<string, unknown>) | null;
                   "redaction_rules"?: Array<Record<string, unknown>>;
@@ -64725,6 +67686,12 @@ export interface operations {
               "project_id"?: string;
               "resource_baseline"?: boolean;
               "runtime_settings"?: ({
+                "appium"?: ({
+                  "capabilities"?: Record<string, unknown>;
+                  "element_timeout_ms"?: number;
+                  "server_url"?: string;
+                  "session_timeout_ms"?: number;
+                }) | null;
                 "auto_transactions"?: string;
                 "base_url"?: string;
                 "browser"?: ({
@@ -64781,6 +67748,18 @@ export interface operations {
                   "mode"?: string;
                   "platform"?: string;
                 }) | null;
+                "database"?: ({
+                  "conn_max_lifetime_ms"?: number;
+                  "driver"?: string;
+                  "dsn"?: string;
+                  "dsn_secret"?: string;
+                  "max_idle_conns"?: number;
+                  "max_open_conns"?: number;
+                  "max_rows"?: number;
+                  "query_timeout_ms"?: number;
+                  "read_only"?: boolean;
+                  "rollback_on_teardown"?: boolean;
+                }) | null;
                 "env"?: Record<string, string>;
                 "error_handling"?: ({
                   "continue_on_error"?: (boolean) | null;
@@ -64792,6 +67771,34 @@ export interface operations {
                   "retry_delay_ms"?: number;
                   "retry_on"?: Array<string>;
                   "snapshot_on_error"?: boolean;
+                }) | null;
+                "eventhubs"?: ({
+                  "auth_type"?: string;
+                  "checkpoint_container_url"?: string;
+                  "connection_string"?: string;
+                  "connection_string_secret"?: string;
+                  "consumer_group"?: string;
+                  "consumer_mode"?: string;
+                  "event_hub"?: string;
+                  "mock"?: boolean;
+                  "namespace"?: string;
+                  "observe_partition_tail"?: boolean;
+                  "owner_level"?: (number) | null;
+                  "partition_id"?: string;
+                  "partition_key"?: string;
+                  "processor_max_partitions"?: number;
+                  "start_position"?: string;
+                  "tail_poll_interval_ms"?: number;
+                  "timeout_ms"?: number;
+                }) | null;
+                "grpc"?: ({
+                  "authority"?: string;
+                  "max_recv_msg_size"?: number;
+                  "metadata"?: Record<string, string>;
+                  "plain_text"?: boolean;
+                  "proto_files"?: Array<string>;
+                  "timeout_ms"?: number;
+                  "use_reflection"?: boolean;
                 }) | null;
                 "http"?: ({
                   "accept_encoding"?: string;
@@ -64836,16 +67843,84 @@ export interface operations {
                   "version"?: string;
                 }) | null;
                 "iterations"?: (number) | null;
+                "java_http"?: ({
+                  "accept"?: string;
+                  "body_encoding"?: string;
+                  "codec"?: string;
+                  "content_type"?: string;
+                  "extractor_type"?: string;
+                  "helper_mode"?: string;
+                  "object_schema"?: string;
+                  "preserve_binary_result"?: boolean;
+                  "request_mapping"?: Record<string, string>;
+                  "response_mapping"?: Record<string, string>;
+                }) | null;
                 "java_vuser"?: ({
+                  "action_timeout_ms"?: number;
                   "additional_vm_parameters"?: Array<string>;
                   "classpath"?: Array<string>;
                   "dedicated_class_loader"?: (boolean) | null;
                   "jdk_home"?: string;
                   "jdk_selection"?: string;
                   "jvm_sharing"?: string;
+                  "param_left_brace"?: string;
+                  "param_right_brace"?: string;
                   "skip_parameter_evaluation"?: (boolean) | null;
+                  "startup_timeout_ms"?: number;
                   "use_xbootclasspath"?: (boolean) | null;
                   "vusers_per_jvm"?: number;
+                }) | null;
+                "jms"?: ({
+                  "acknowledgement"?: string;
+                  "broker_url"?: string;
+                  "client_id"?: string;
+                  "delivery_mode"?: string;
+                  "destination"?: string;
+                  "destination_type"?: string;
+                  "message_vpn"?: string;
+                  "mock"?: boolean;
+                  "password"?: string;
+                  "properties"?: Record<string, string>;
+                  "provider"?: string;
+                  "reply_to"?: string;
+                  "subscription"?: string;
+                  "timeout_ms"?: number;
+                  "tls"?: (Record<string, unknown>) | null;
+                  "username"?: string;
+                }) | null;
+                "kafka"?: ({
+                  "acks"?: string;
+                  "auto_offset_reset"?: string;
+                  "brokers"?: Array<string>;
+                  "client_id"?: string;
+                  "compression"?: string;
+                  "consumer_group"?: string;
+                  "consumer_transactions"?: boolean;
+                  "idempotence"?: string;
+                  "isolation_level"?: string;
+                  "max_message_bytes"?: number;
+                  "mock"?: boolean;
+                  "oauth"?: (Record<string, unknown>) | null;
+                  "oauth_scope"?: string;
+                  "partition_strategy"?: string;
+                  "partitions"?: number;
+                  "producer"?: (Record<string, unknown>) | null;
+                  "profile"?: string;
+                  "properties"?: Record<string, string>;
+                  "sasl_mechanism"?: string;
+                  "sasl_password"?: string;
+                  "sasl_password_secret"?: string;
+                  "sasl_username"?: string;
+                  "schema"?: string;
+                  "schema_id"?: number;
+                  "schema_registry_url"?: string;
+                  "security_protocol"?: string;
+                  "serialization"?: string;
+                  "subject"?: string;
+                  "timeout_ms"?: number;
+                  "tls"?: (Record<string, unknown>) | null;
+                  "topic"?: string;
+                  "transactional_id"?: string;
                 }) | null;
                 "log"?: ({
                   "error_buffer_bytes"?: number;
@@ -64856,6 +67931,19 @@ export interface operations {
                   "redact_run_evidence"?: (boolean) | null;
                 }) | null;
                 "log_level"?: string;
+                "network"?: ({
+                  "address"?: string;
+                  "base_dn"?: string;
+                  "from"?: string;
+                  "host"?: string;
+                  "password"?: string;
+                  "port"?: number;
+                  "subprotocol"?: string;
+                  "timeout_ms"?: number;
+                  "tls"?: boolean;
+                  "to"?: Array<string>;
+                  "username"?: string;
+                }) | null;
                 "override_fields"?: Array<string>;
                 "pacing"?: ({
                   "arrival_process"?: string;
@@ -67228,6 +70316,12 @@ export interface operations {
             "revision_source_group_index"?: (number) | null;
             "role"?: string;
             "runtime_settings"?: ({
+              "appium"?: ({
+                "capabilities"?: Record<string, unknown>;
+                "element_timeout_ms"?: number;
+                "server_url"?: string;
+                "session_timeout_ms"?: number;
+              }) | null;
               "auto_transactions"?: string;
               "base_url"?: string;
               "browser"?: ({
@@ -67284,6 +70378,18 @@ export interface operations {
                 "mode"?: string;
                 "platform"?: string;
               }) | null;
+              "database"?: ({
+                "conn_max_lifetime_ms"?: number;
+                "driver"?: string;
+                "dsn"?: string;
+                "dsn_secret"?: string;
+                "max_idle_conns"?: number;
+                "max_open_conns"?: number;
+                "max_rows"?: number;
+                "query_timeout_ms"?: number;
+                "read_only"?: boolean;
+                "rollback_on_teardown"?: boolean;
+              }) | null;
               "env"?: Record<string, string>;
               "error_handling"?: ({
                 "continue_on_error"?: (boolean) | null;
@@ -67295,6 +70401,34 @@ export interface operations {
                 "retry_delay_ms"?: number;
                 "retry_on"?: Array<string>;
                 "snapshot_on_error"?: boolean;
+              }) | null;
+              "eventhubs"?: ({
+                "auth_type"?: string;
+                "checkpoint_container_url"?: string;
+                "connection_string"?: string;
+                "connection_string_secret"?: string;
+                "consumer_group"?: string;
+                "consumer_mode"?: string;
+                "event_hub"?: string;
+                "mock"?: boolean;
+                "namespace"?: string;
+                "observe_partition_tail"?: boolean;
+                "owner_level"?: (number) | null;
+                "partition_id"?: string;
+                "partition_key"?: string;
+                "processor_max_partitions"?: number;
+                "start_position"?: string;
+                "tail_poll_interval_ms"?: number;
+                "timeout_ms"?: number;
+              }) | null;
+              "grpc"?: ({
+                "authority"?: string;
+                "max_recv_msg_size"?: number;
+                "metadata"?: Record<string, string>;
+                "plain_text"?: boolean;
+                "proto_files"?: Array<string>;
+                "timeout_ms"?: number;
+                "use_reflection"?: boolean;
               }) | null;
               "http"?: ({
                 "accept_encoding"?: string;
@@ -67339,16 +70473,84 @@ export interface operations {
                 "version"?: string;
               }) | null;
               "iterations"?: (number) | null;
+              "java_http"?: ({
+                "accept"?: string;
+                "body_encoding"?: string;
+                "codec"?: string;
+                "content_type"?: string;
+                "extractor_type"?: string;
+                "helper_mode"?: string;
+                "object_schema"?: string;
+                "preserve_binary_result"?: boolean;
+                "request_mapping"?: Record<string, string>;
+                "response_mapping"?: Record<string, string>;
+              }) | null;
               "java_vuser"?: ({
+                "action_timeout_ms"?: number;
                 "additional_vm_parameters"?: Array<string>;
                 "classpath"?: Array<string>;
                 "dedicated_class_loader"?: (boolean) | null;
                 "jdk_home"?: string;
                 "jdk_selection"?: string;
                 "jvm_sharing"?: string;
+                "param_left_brace"?: string;
+                "param_right_brace"?: string;
                 "skip_parameter_evaluation"?: (boolean) | null;
+                "startup_timeout_ms"?: number;
                 "use_xbootclasspath"?: (boolean) | null;
                 "vusers_per_jvm"?: number;
+              }) | null;
+              "jms"?: ({
+                "acknowledgement"?: string;
+                "broker_url"?: string;
+                "client_id"?: string;
+                "delivery_mode"?: string;
+                "destination"?: string;
+                "destination_type"?: string;
+                "message_vpn"?: string;
+                "mock"?: boolean;
+                "password"?: string;
+                "properties"?: Record<string, string>;
+                "provider"?: string;
+                "reply_to"?: string;
+                "subscription"?: string;
+                "timeout_ms"?: number;
+                "tls"?: (Record<string, unknown>) | null;
+                "username"?: string;
+              }) | null;
+              "kafka"?: ({
+                "acks"?: string;
+                "auto_offset_reset"?: string;
+                "brokers"?: Array<string>;
+                "client_id"?: string;
+                "compression"?: string;
+                "consumer_group"?: string;
+                "consumer_transactions"?: boolean;
+                "idempotence"?: string;
+                "isolation_level"?: string;
+                "max_message_bytes"?: number;
+                "mock"?: boolean;
+                "oauth"?: (Record<string, unknown>) | null;
+                "oauth_scope"?: string;
+                "partition_strategy"?: string;
+                "partitions"?: number;
+                "producer"?: (Record<string, unknown>) | null;
+                "profile"?: string;
+                "properties"?: Record<string, string>;
+                "sasl_mechanism"?: string;
+                "sasl_password"?: string;
+                "sasl_password_secret"?: string;
+                "sasl_username"?: string;
+                "schema"?: string;
+                "schema_id"?: number;
+                "schema_registry_url"?: string;
+                "security_protocol"?: string;
+                "serialization"?: string;
+                "subject"?: string;
+                "timeout_ms"?: number;
+                "tls"?: (Record<string, unknown>) | null;
+                "topic"?: string;
+                "transactional_id"?: string;
               }) | null;
               "log"?: ({
                 "error_buffer_bytes"?: number;
@@ -67359,6 +70561,19 @@ export interface operations {
                 "redact_run_evidence"?: (boolean) | null;
               }) | null;
               "log_level"?: string;
+              "network"?: ({
+                "address"?: string;
+                "base_dn"?: string;
+                "from"?: string;
+                "host"?: string;
+                "password"?: string;
+                "port"?: number;
+                "subprotocol"?: string;
+                "timeout_ms"?: number;
+                "tls"?: boolean;
+                "to"?: Array<string>;
+                "username"?: string;
+              }) | null;
               "override_fields"?: Array<string>;
               "pacing"?: ({
                 "arrival_process"?: string;
@@ -67465,6 +70680,12 @@ export interface operations {
           "resource_baseline"?: boolean;
           "revision_source_test_id"?: string;
           "runtime_settings"?: ({
+            "appium"?: ({
+              "capabilities"?: Record<string, unknown>;
+              "element_timeout_ms"?: number;
+              "server_url"?: string;
+              "session_timeout_ms"?: number;
+            }) | null;
             "auto_transactions"?: string;
             "base_url"?: string;
             "browser"?: ({
@@ -67561,6 +70782,18 @@ export interface operations {
               "mode"?: string;
               "platform"?: string;
             }) | null;
+            "database"?: ({
+              "conn_max_lifetime_ms"?: number;
+              "driver"?: string;
+              "dsn"?: string;
+              "dsn_secret"?: string;
+              "max_idle_conns"?: number;
+              "max_open_conns"?: number;
+              "max_rows"?: number;
+              "query_timeout_ms"?: number;
+              "read_only"?: boolean;
+              "rollback_on_teardown"?: boolean;
+            }) | null;
             "env"?: Record<string, string>;
             "error_handling"?: ({
               "continue_on_error"?: (boolean) | null;
@@ -67572,6 +70805,34 @@ export interface operations {
               "retry_delay_ms"?: number;
               "retry_on"?: Array<string>;
               "snapshot_on_error"?: boolean;
+            }) | null;
+            "eventhubs"?: ({
+              "auth_type"?: string;
+              "checkpoint_container_url"?: string;
+              "connection_string"?: string;
+              "connection_string_secret"?: string;
+              "consumer_group"?: string;
+              "consumer_mode"?: string;
+              "event_hub"?: string;
+              "mock"?: boolean;
+              "namespace"?: string;
+              "observe_partition_tail"?: boolean;
+              "owner_level"?: (number) | null;
+              "partition_id"?: string;
+              "partition_key"?: string;
+              "processor_max_partitions"?: number;
+              "start_position"?: string;
+              "tail_poll_interval_ms"?: number;
+              "timeout_ms"?: number;
+            }) | null;
+            "grpc"?: ({
+              "authority"?: string;
+              "max_recv_msg_size"?: number;
+              "metadata"?: Record<string, string>;
+              "plain_text"?: boolean;
+              "proto_files"?: Array<string>;
+              "timeout_ms"?: number;
+              "use_reflection"?: boolean;
             }) | null;
             "http"?: ({
               "accept_encoding"?: string;
@@ -67642,16 +70903,112 @@ export interface operations {
               "version"?: string;
             }) | null;
             "iterations"?: (number) | null;
+            "java_http"?: ({
+              "accept"?: string;
+              "body_encoding"?: string;
+              "codec"?: string;
+              "content_type"?: string;
+              "extractor_type"?: string;
+              "helper_mode"?: string;
+              "object_schema"?: string;
+              "preserve_binary_result"?: boolean;
+              "request_mapping"?: Record<string, string>;
+              "response_mapping"?: Record<string, string>;
+            }) | null;
             "java_vuser"?: ({
+              "action_timeout_ms"?: number;
               "additional_vm_parameters"?: Array<string>;
               "classpath"?: Array<string>;
               "dedicated_class_loader"?: (boolean) | null;
               "jdk_home"?: string;
               "jdk_selection"?: string;
               "jvm_sharing"?: string;
+              "param_left_brace"?: string;
+              "param_right_brace"?: string;
               "skip_parameter_evaluation"?: (boolean) | null;
+              "startup_timeout_ms"?: number;
               "use_xbootclasspath"?: (boolean) | null;
               "vusers_per_jvm"?: number;
+            }) | null;
+            "jms"?: ({
+              "acknowledgement"?: string;
+              "broker_url"?: string;
+              "client_id"?: string;
+              "delivery_mode"?: string;
+              "destination"?: string;
+              "destination_type"?: string;
+              "message_vpn"?: string;
+              "mock"?: boolean;
+              "password"?: string;
+              "properties"?: Record<string, string>;
+              "provider"?: string;
+              "reply_to"?: string;
+              "subscription"?: string;
+              "timeout_ms"?: number;
+              "tls"?: ({
+                "ca_cert_secret"?: string;
+                "insecure_skip_verify"?: boolean;
+                "trust_store_ref"?: string;
+              }) | null;
+              "username"?: string;
+            }) | null;
+            "kafka"?: ({
+              "acks"?: string;
+              "auto_offset_reset"?: string;
+              "brokers"?: Array<string>;
+              "client_id"?: string;
+              "compression"?: string;
+              "consumer_group"?: string;
+              "consumer_transactions"?: boolean;
+              "idempotence"?: string;
+              "isolation_level"?: string;
+              "max_message_bytes"?: number;
+              "mock"?: boolean;
+              "oauth"?: ({
+                "authentication_method"?: string;
+                "client_id"?: string;
+                "client_secret"?: string;
+                "client_secret_ref"?: string;
+                "mode"?: string;
+                "scope"?: string;
+                "token_url"?: string;
+              }) | null;
+              "oauth_scope"?: string;
+              "partition_strategy"?: string;
+              "partitions"?: number;
+              "producer"?: ({
+                "admission_timeout_ms"?: (number) | null;
+                "batch_bytes"?: (number) | null;
+                "buffer_bytes"?: (number) | null;
+                "delivery_timeout_ms"?: (number) | null;
+                "linger_ms"?: (number) | null;
+                "max_in_flight_requests"?: (number) | null;
+                "request_timeout_ms"?: (number) | null;
+                "retries"?: (number) | null;
+              }) | null;
+              "profile"?: string;
+              "properties"?: Record<string, string>;
+              "sasl_mechanism"?: string;
+              "sasl_password"?: string;
+              "sasl_password_secret"?: string;
+              "sasl_username"?: string;
+              "schema"?: string;
+              "schema_id"?: number;
+              "schema_registry_url"?: string;
+              "security_protocol"?: string;
+              "serialization"?: string;
+              "subject"?: string;
+              "timeout_ms"?: number;
+              "tls"?: ({
+                "ca_cert_file"?: string;
+                "client_cert_file"?: string;
+                "client_key_file"?: string;
+                "insecure_skip_verify"?: boolean;
+                "max_version"?: string;
+                "min_version"?: string;
+              }) | null;
+              "topic"?: string;
+              "transactional_id"?: string;
             }) | null;
             "log"?: ({
               "error_buffer_bytes"?: number;
@@ -67662,6 +71019,19 @@ export interface operations {
               "redact_run_evidence"?: (boolean) | null;
             }) | null;
             "log_level"?: string;
+            "network"?: ({
+              "address"?: string;
+              "base_dn"?: string;
+              "from"?: string;
+              "host"?: string;
+              "password"?: string;
+              "port"?: number;
+              "subprotocol"?: string;
+              "timeout_ms"?: number;
+              "tls"?: boolean;
+              "to"?: Array<string>;
+              "username"?: string;
+            }) | null;
             "override_fields"?: Array<string>;
             "pacing"?: ({
               "arrival_process"?: string;
@@ -68091,6 +71461,12 @@ export interface operations {
                 "max_transactions"?: number;
               }) | null;
               "runtime_settings"?: ({
+                "appium"?: ({
+                  "capabilities"?: Record<string, unknown>;
+                  "element_timeout_ms"?: number;
+                  "server_url"?: string;
+                  "session_timeout_ms"?: number;
+                }) | null;
                 "auto_transactions"?: string;
                 "base_url"?: string;
                 "browser"?: ({
@@ -68147,6 +71523,18 @@ export interface operations {
                   "mode"?: string;
                   "platform"?: string;
                 }) | null;
+                "database"?: ({
+                  "conn_max_lifetime_ms"?: number;
+                  "driver"?: string;
+                  "dsn"?: string;
+                  "dsn_secret"?: string;
+                  "max_idle_conns"?: number;
+                  "max_open_conns"?: number;
+                  "max_rows"?: number;
+                  "query_timeout_ms"?: number;
+                  "read_only"?: boolean;
+                  "rollback_on_teardown"?: boolean;
+                }) | null;
                 "env"?: Record<string, string>;
                 "error_handling"?: ({
                   "continue_on_error"?: (boolean) | null;
@@ -68158,6 +71546,34 @@ export interface operations {
                   "retry_delay_ms"?: number;
                   "retry_on"?: Array<string>;
                   "snapshot_on_error"?: boolean;
+                }) | null;
+                "eventhubs"?: ({
+                  "auth_type"?: string;
+                  "checkpoint_container_url"?: string;
+                  "connection_string"?: string;
+                  "connection_string_secret"?: string;
+                  "consumer_group"?: string;
+                  "consumer_mode"?: string;
+                  "event_hub"?: string;
+                  "mock"?: boolean;
+                  "namespace"?: string;
+                  "observe_partition_tail"?: boolean;
+                  "owner_level"?: (number) | null;
+                  "partition_id"?: string;
+                  "partition_key"?: string;
+                  "processor_max_partitions"?: number;
+                  "start_position"?: string;
+                  "tail_poll_interval_ms"?: number;
+                  "timeout_ms"?: number;
+                }) | null;
+                "grpc"?: ({
+                  "authority"?: string;
+                  "max_recv_msg_size"?: number;
+                  "metadata"?: Record<string, string>;
+                  "plain_text"?: boolean;
+                  "proto_files"?: Array<string>;
+                  "timeout_ms"?: number;
+                  "use_reflection"?: boolean;
                 }) | null;
                 "http"?: ({
                   "accept_encoding"?: string;
@@ -68202,16 +71618,84 @@ export interface operations {
                   "version"?: string;
                 }) | null;
                 "iterations"?: (number) | null;
+                "java_http"?: ({
+                  "accept"?: string;
+                  "body_encoding"?: string;
+                  "codec"?: string;
+                  "content_type"?: string;
+                  "extractor_type"?: string;
+                  "helper_mode"?: string;
+                  "object_schema"?: string;
+                  "preserve_binary_result"?: boolean;
+                  "request_mapping"?: Record<string, string>;
+                  "response_mapping"?: Record<string, string>;
+                }) | null;
                 "java_vuser"?: ({
+                  "action_timeout_ms"?: number;
                   "additional_vm_parameters"?: Array<string>;
                   "classpath"?: Array<string>;
                   "dedicated_class_loader"?: (boolean) | null;
                   "jdk_home"?: string;
                   "jdk_selection"?: string;
                   "jvm_sharing"?: string;
+                  "param_left_brace"?: string;
+                  "param_right_brace"?: string;
                   "skip_parameter_evaluation"?: (boolean) | null;
+                  "startup_timeout_ms"?: number;
                   "use_xbootclasspath"?: (boolean) | null;
                   "vusers_per_jvm"?: number;
+                }) | null;
+                "jms"?: ({
+                  "acknowledgement"?: string;
+                  "broker_url"?: string;
+                  "client_id"?: string;
+                  "delivery_mode"?: string;
+                  "destination"?: string;
+                  "destination_type"?: string;
+                  "message_vpn"?: string;
+                  "mock"?: boolean;
+                  "password"?: string;
+                  "properties"?: Record<string, string>;
+                  "provider"?: string;
+                  "reply_to"?: string;
+                  "subscription"?: string;
+                  "timeout_ms"?: number;
+                  "tls"?: (Record<string, unknown>) | null;
+                  "username"?: string;
+                }) | null;
+                "kafka"?: ({
+                  "acks"?: string;
+                  "auto_offset_reset"?: string;
+                  "brokers"?: Array<string>;
+                  "client_id"?: string;
+                  "compression"?: string;
+                  "consumer_group"?: string;
+                  "consumer_transactions"?: boolean;
+                  "idempotence"?: string;
+                  "isolation_level"?: string;
+                  "max_message_bytes"?: number;
+                  "mock"?: boolean;
+                  "oauth"?: (Record<string, unknown>) | null;
+                  "oauth_scope"?: string;
+                  "partition_strategy"?: string;
+                  "partitions"?: number;
+                  "producer"?: (Record<string, unknown>) | null;
+                  "profile"?: string;
+                  "properties"?: Record<string, string>;
+                  "sasl_mechanism"?: string;
+                  "sasl_password"?: string;
+                  "sasl_password_secret"?: string;
+                  "sasl_username"?: string;
+                  "schema"?: string;
+                  "schema_id"?: number;
+                  "schema_registry_url"?: string;
+                  "security_protocol"?: string;
+                  "serialization"?: string;
+                  "subject"?: string;
+                  "timeout_ms"?: number;
+                  "tls"?: (Record<string, unknown>) | null;
+                  "topic"?: string;
+                  "transactional_id"?: string;
                 }) | null;
                 "log"?: ({
                   "error_buffer_bytes"?: number;
@@ -68222,6 +71706,19 @@ export interface operations {
                   "redact_run_evidence"?: (boolean) | null;
                 }) | null;
                 "log_level"?: string;
+                "network"?: ({
+                  "address"?: string;
+                  "base_dn"?: string;
+                  "from"?: string;
+                  "host"?: string;
+                  "password"?: string;
+                  "port"?: number;
+                  "subprotocol"?: string;
+                  "timeout_ms"?: number;
+                  "tls"?: boolean;
+                  "to"?: Array<string>;
+                  "username"?: string;
+                }) | null;
                 "override_fields"?: Array<string>;
                 "pacing"?: ({
                   "arrival_process"?: string;
@@ -77842,6 +81339,7 @@ export interface operations {
               "failure_policy"?: string;
               "order": number;
               "runtime_overrides"?: unknown;
+              "runtime_overrides_schema"?: number;
               "scenario_id": string;
               "scenario_name"?: string;
               "timeslot_id"?: (string) | null;
@@ -86745,18 +90243,26 @@ export interface operations {
                   "max_transactions"?: number;
                 }) | null;
                 "runtime_settings"?: ({
+                  "appium"?: (Record<string, unknown>) | null;
                   "auto_transactions"?: string;
                   "base_url"?: string;
                   "browser"?: (Record<string, unknown>) | null;
                   "browser_config"?: (Record<string, unknown>) | null;
                   "browser_emulation"?: (Record<string, unknown>) | null;
+                  "database"?: (Record<string, unknown>) | null;
                   "env"?: Record<string, string>;
                   "error_handling"?: (Record<string, unknown>) | null;
+                  "eventhubs"?: (Record<string, unknown>) | null;
+                  "grpc"?: (Record<string, unknown>) | null;
                   "http"?: (Record<string, unknown>) | null;
                   "iterations"?: (number) | null;
+                  "java_http"?: (Record<string, unknown>) | null;
                   "java_vuser"?: (Record<string, unknown>) | null;
+                  "jms"?: (Record<string, unknown>) | null;
+                  "kafka"?: (Record<string, unknown>) | null;
                   "log"?: (Record<string, unknown>) | null;
                   "log_level"?: string;
+                  "network"?: (Record<string, unknown>) | null;
                   "override_fields"?: Array<string>;
                   "pacing"?: (Record<string, unknown>) | null;
                   "redaction_rules"?: Array<Record<string, unknown>>;
@@ -88471,6 +91977,12 @@ export interface operations {
               "release_id"?: string;
               "resource_baseline"?: boolean;
               "runtime_settings"?: ({
+                "appium"?: ({
+                  "capabilities"?: Record<string, unknown>;
+                  "element_timeout_ms"?: number;
+                  "server_url"?: string;
+                  "session_timeout_ms"?: number;
+                }) | null;
                 "auto_transactions"?: string;
                 "base_url"?: string;
                 "browser"?: ({
@@ -88527,6 +92039,18 @@ export interface operations {
                   "mode"?: string;
                   "platform"?: string;
                 }) | null;
+                "database"?: ({
+                  "conn_max_lifetime_ms"?: number;
+                  "driver"?: string;
+                  "dsn"?: string;
+                  "dsn_secret"?: string;
+                  "max_idle_conns"?: number;
+                  "max_open_conns"?: number;
+                  "max_rows"?: number;
+                  "query_timeout_ms"?: number;
+                  "read_only"?: boolean;
+                  "rollback_on_teardown"?: boolean;
+                }) | null;
                 "env"?: Record<string, string>;
                 "error_handling"?: ({
                   "continue_on_error"?: (boolean) | null;
@@ -88538,6 +92062,34 @@ export interface operations {
                   "retry_delay_ms"?: number;
                   "retry_on"?: Array<string>;
                   "snapshot_on_error"?: boolean;
+                }) | null;
+                "eventhubs"?: ({
+                  "auth_type"?: string;
+                  "checkpoint_container_url"?: string;
+                  "connection_string"?: string;
+                  "connection_string_secret"?: string;
+                  "consumer_group"?: string;
+                  "consumer_mode"?: string;
+                  "event_hub"?: string;
+                  "mock"?: boolean;
+                  "namespace"?: string;
+                  "observe_partition_tail"?: boolean;
+                  "owner_level"?: (number) | null;
+                  "partition_id"?: string;
+                  "partition_key"?: string;
+                  "processor_max_partitions"?: number;
+                  "start_position"?: string;
+                  "tail_poll_interval_ms"?: number;
+                  "timeout_ms"?: number;
+                }) | null;
+                "grpc"?: ({
+                  "authority"?: string;
+                  "max_recv_msg_size"?: number;
+                  "metadata"?: Record<string, string>;
+                  "plain_text"?: boolean;
+                  "proto_files"?: Array<string>;
+                  "timeout_ms"?: number;
+                  "use_reflection"?: boolean;
                 }) | null;
                 "http"?: ({
                   "accept_encoding"?: string;
@@ -88582,16 +92134,84 @@ export interface operations {
                   "version"?: string;
                 }) | null;
                 "iterations"?: (number) | null;
+                "java_http"?: ({
+                  "accept"?: string;
+                  "body_encoding"?: string;
+                  "codec"?: string;
+                  "content_type"?: string;
+                  "extractor_type"?: string;
+                  "helper_mode"?: string;
+                  "object_schema"?: string;
+                  "preserve_binary_result"?: boolean;
+                  "request_mapping"?: Record<string, string>;
+                  "response_mapping"?: Record<string, string>;
+                }) | null;
                 "java_vuser"?: ({
+                  "action_timeout_ms"?: number;
                   "additional_vm_parameters"?: Array<string>;
                   "classpath"?: Array<string>;
                   "dedicated_class_loader"?: (boolean) | null;
                   "jdk_home"?: string;
                   "jdk_selection"?: string;
                   "jvm_sharing"?: string;
+                  "param_left_brace"?: string;
+                  "param_right_brace"?: string;
                   "skip_parameter_evaluation"?: (boolean) | null;
+                  "startup_timeout_ms"?: number;
                   "use_xbootclasspath"?: (boolean) | null;
                   "vusers_per_jvm"?: number;
+                }) | null;
+                "jms"?: ({
+                  "acknowledgement"?: string;
+                  "broker_url"?: string;
+                  "client_id"?: string;
+                  "delivery_mode"?: string;
+                  "destination"?: string;
+                  "destination_type"?: string;
+                  "message_vpn"?: string;
+                  "mock"?: boolean;
+                  "password"?: string;
+                  "properties"?: Record<string, string>;
+                  "provider"?: string;
+                  "reply_to"?: string;
+                  "subscription"?: string;
+                  "timeout_ms"?: number;
+                  "tls"?: (Record<string, unknown>) | null;
+                  "username"?: string;
+                }) | null;
+                "kafka"?: ({
+                  "acks"?: string;
+                  "auto_offset_reset"?: string;
+                  "brokers"?: Array<string>;
+                  "client_id"?: string;
+                  "compression"?: string;
+                  "consumer_group"?: string;
+                  "consumer_transactions"?: boolean;
+                  "idempotence"?: string;
+                  "isolation_level"?: string;
+                  "max_message_bytes"?: number;
+                  "mock"?: boolean;
+                  "oauth"?: (Record<string, unknown>) | null;
+                  "oauth_scope"?: string;
+                  "partition_strategy"?: string;
+                  "partitions"?: number;
+                  "producer"?: (Record<string, unknown>) | null;
+                  "profile"?: string;
+                  "properties"?: Record<string, string>;
+                  "sasl_mechanism"?: string;
+                  "sasl_password"?: string;
+                  "sasl_password_secret"?: string;
+                  "sasl_username"?: string;
+                  "schema"?: string;
+                  "schema_id"?: number;
+                  "schema_registry_url"?: string;
+                  "security_protocol"?: string;
+                  "serialization"?: string;
+                  "subject"?: string;
+                  "timeout_ms"?: number;
+                  "tls"?: (Record<string, unknown>) | null;
+                  "topic"?: string;
+                  "transactional_id"?: string;
                 }) | null;
                 "log"?: ({
                   "error_buffer_bytes"?: number;
@@ -88602,6 +92222,19 @@ export interface operations {
                   "redact_run_evidence"?: (boolean) | null;
                 }) | null;
                 "log_level"?: string;
+                "network"?: ({
+                  "address"?: string;
+                  "base_dn"?: string;
+                  "from"?: string;
+                  "host"?: string;
+                  "password"?: string;
+                  "port"?: number;
+                  "subprotocol"?: string;
+                  "timeout_ms"?: number;
+                  "tls"?: boolean;
+                  "to"?: Array<string>;
+                  "username"?: string;
+                }) | null;
                 "override_fields"?: Array<string>;
                 "pacing"?: ({
                   "arrival_process"?: string;
@@ -90901,18 +94534,26 @@ export interface operations {
                   "max_transactions"?: number;
                 }) | null;
                 "runtime_settings"?: ({
+                  "appium"?: (Record<string, unknown>) | null;
                   "auto_transactions"?: string;
                   "base_url"?: string;
                   "browser"?: (Record<string, unknown>) | null;
                   "browser_config"?: (Record<string, unknown>) | null;
                   "browser_emulation"?: (Record<string, unknown>) | null;
+                  "database"?: (Record<string, unknown>) | null;
                   "env"?: Record<string, string>;
                   "error_handling"?: (Record<string, unknown>) | null;
+                  "eventhubs"?: (Record<string, unknown>) | null;
+                  "grpc"?: (Record<string, unknown>) | null;
                   "http"?: (Record<string, unknown>) | null;
                   "iterations"?: (number) | null;
+                  "java_http"?: (Record<string, unknown>) | null;
                   "java_vuser"?: (Record<string, unknown>) | null;
+                  "jms"?: (Record<string, unknown>) | null;
+                  "kafka"?: (Record<string, unknown>) | null;
                   "log"?: (Record<string, unknown>) | null;
                   "log_level"?: string;
+                  "network"?: (Record<string, unknown>) | null;
                   "override_fields"?: Array<string>;
                   "pacing"?: (Record<string, unknown>) | null;
                   "redaction_rules"?: Array<Record<string, unknown>>;
@@ -91038,6 +94679,12 @@ export interface operations {
               "resource_baseline"?: boolean;
               "run_incarnation"?: string;
               "runtime_settings"?: ({
+                "appium"?: ({
+                  "capabilities"?: Record<string, unknown>;
+                  "element_timeout_ms"?: number;
+                  "server_url"?: string;
+                  "session_timeout_ms"?: number;
+                }) | null;
                 "auto_transactions"?: string;
                 "base_url"?: string;
                 "browser"?: ({
@@ -91094,6 +94741,18 @@ export interface operations {
                   "mode"?: string;
                   "platform"?: string;
                 }) | null;
+                "database"?: ({
+                  "conn_max_lifetime_ms"?: number;
+                  "driver"?: string;
+                  "dsn"?: string;
+                  "dsn_secret"?: string;
+                  "max_idle_conns"?: number;
+                  "max_open_conns"?: number;
+                  "max_rows"?: number;
+                  "query_timeout_ms"?: number;
+                  "read_only"?: boolean;
+                  "rollback_on_teardown"?: boolean;
+                }) | null;
                 "env"?: Record<string, string>;
                 "error_handling"?: ({
                   "continue_on_error"?: (boolean) | null;
@@ -91105,6 +94764,34 @@ export interface operations {
                   "retry_delay_ms"?: number;
                   "retry_on"?: Array<string>;
                   "snapshot_on_error"?: boolean;
+                }) | null;
+                "eventhubs"?: ({
+                  "auth_type"?: string;
+                  "checkpoint_container_url"?: string;
+                  "connection_string"?: string;
+                  "connection_string_secret"?: string;
+                  "consumer_group"?: string;
+                  "consumer_mode"?: string;
+                  "event_hub"?: string;
+                  "mock"?: boolean;
+                  "namespace"?: string;
+                  "observe_partition_tail"?: boolean;
+                  "owner_level"?: (number) | null;
+                  "partition_id"?: string;
+                  "partition_key"?: string;
+                  "processor_max_partitions"?: number;
+                  "start_position"?: string;
+                  "tail_poll_interval_ms"?: number;
+                  "timeout_ms"?: number;
+                }) | null;
+                "grpc"?: ({
+                  "authority"?: string;
+                  "max_recv_msg_size"?: number;
+                  "metadata"?: Record<string, string>;
+                  "plain_text"?: boolean;
+                  "proto_files"?: Array<string>;
+                  "timeout_ms"?: number;
+                  "use_reflection"?: boolean;
                 }) | null;
                 "http"?: ({
                   "accept_encoding"?: string;
@@ -91149,16 +94836,84 @@ export interface operations {
                   "version"?: string;
                 }) | null;
                 "iterations"?: (number) | null;
+                "java_http"?: ({
+                  "accept"?: string;
+                  "body_encoding"?: string;
+                  "codec"?: string;
+                  "content_type"?: string;
+                  "extractor_type"?: string;
+                  "helper_mode"?: string;
+                  "object_schema"?: string;
+                  "preserve_binary_result"?: boolean;
+                  "request_mapping"?: Record<string, string>;
+                  "response_mapping"?: Record<string, string>;
+                }) | null;
                 "java_vuser"?: ({
+                  "action_timeout_ms"?: number;
                   "additional_vm_parameters"?: Array<string>;
                   "classpath"?: Array<string>;
                   "dedicated_class_loader"?: (boolean) | null;
                   "jdk_home"?: string;
                   "jdk_selection"?: string;
                   "jvm_sharing"?: string;
+                  "param_left_brace"?: string;
+                  "param_right_brace"?: string;
                   "skip_parameter_evaluation"?: (boolean) | null;
+                  "startup_timeout_ms"?: number;
                   "use_xbootclasspath"?: (boolean) | null;
                   "vusers_per_jvm"?: number;
+                }) | null;
+                "jms"?: ({
+                  "acknowledgement"?: string;
+                  "broker_url"?: string;
+                  "client_id"?: string;
+                  "delivery_mode"?: string;
+                  "destination"?: string;
+                  "destination_type"?: string;
+                  "message_vpn"?: string;
+                  "mock"?: boolean;
+                  "password"?: string;
+                  "properties"?: Record<string, string>;
+                  "provider"?: string;
+                  "reply_to"?: string;
+                  "subscription"?: string;
+                  "timeout_ms"?: number;
+                  "tls"?: (Record<string, unknown>) | null;
+                  "username"?: string;
+                }) | null;
+                "kafka"?: ({
+                  "acks"?: string;
+                  "auto_offset_reset"?: string;
+                  "brokers"?: Array<string>;
+                  "client_id"?: string;
+                  "compression"?: string;
+                  "consumer_group"?: string;
+                  "consumer_transactions"?: boolean;
+                  "idempotence"?: string;
+                  "isolation_level"?: string;
+                  "max_message_bytes"?: number;
+                  "mock"?: boolean;
+                  "oauth"?: (Record<string, unknown>) | null;
+                  "oauth_scope"?: string;
+                  "partition_strategy"?: string;
+                  "partitions"?: number;
+                  "producer"?: (Record<string, unknown>) | null;
+                  "profile"?: string;
+                  "properties"?: Record<string, string>;
+                  "sasl_mechanism"?: string;
+                  "sasl_password"?: string;
+                  "sasl_password_secret"?: string;
+                  "sasl_username"?: string;
+                  "schema"?: string;
+                  "schema_id"?: number;
+                  "schema_registry_url"?: string;
+                  "security_protocol"?: string;
+                  "serialization"?: string;
+                  "subject"?: string;
+                  "timeout_ms"?: number;
+                  "tls"?: (Record<string, unknown>) | null;
+                  "topic"?: string;
+                  "transactional_id"?: string;
                 }) | null;
                 "log"?: ({
                   "error_buffer_bytes"?: number;
@@ -91169,6 +94924,19 @@ export interface operations {
                   "redact_run_evidence"?: (boolean) | null;
                 }) | null;
                 "log_level"?: string;
+                "network"?: ({
+                  "address"?: string;
+                  "base_dn"?: string;
+                  "from"?: string;
+                  "host"?: string;
+                  "password"?: string;
+                  "port"?: number;
+                  "subprotocol"?: string;
+                  "timeout_ms"?: number;
+                  "tls"?: boolean;
+                  "to"?: Array<string>;
+                  "username"?: string;
+                }) | null;
                 "override_fields"?: Array<string>;
                 "pacing"?: ({
                   "arrival_process"?: string;
@@ -91967,18 +95735,26 @@ export interface operations {
                   "max_transactions"?: number;
                 }) | null;
                 "runtime_settings"?: ({
+                  "appium"?: (Record<string, unknown>) | null;
                   "auto_transactions"?: string;
                   "base_url"?: string;
                   "browser"?: (Record<string, unknown>) | null;
                   "browser_config"?: (Record<string, unknown>) | null;
                   "browser_emulation"?: (Record<string, unknown>) | null;
+                  "database"?: (Record<string, unknown>) | null;
                   "env"?: Record<string, string>;
                   "error_handling"?: (Record<string, unknown>) | null;
+                  "eventhubs"?: (Record<string, unknown>) | null;
+                  "grpc"?: (Record<string, unknown>) | null;
                   "http"?: (Record<string, unknown>) | null;
                   "iterations"?: (number) | null;
+                  "java_http"?: (Record<string, unknown>) | null;
                   "java_vuser"?: (Record<string, unknown>) | null;
+                  "jms"?: (Record<string, unknown>) | null;
+                  "kafka"?: (Record<string, unknown>) | null;
                   "log"?: (Record<string, unknown>) | null;
                   "log_level"?: string;
+                  "network"?: (Record<string, unknown>) | null;
                   "override_fields"?: Array<string>;
                   "pacing"?: (Record<string, unknown>) | null;
                   "redaction_rules"?: Array<Record<string, unknown>>;
@@ -92104,6 +95880,12 @@ export interface operations {
               "resource_baseline"?: boolean;
               "run_incarnation"?: string;
               "runtime_settings"?: ({
+                "appium"?: ({
+                  "capabilities"?: Record<string, unknown>;
+                  "element_timeout_ms"?: number;
+                  "server_url"?: string;
+                  "session_timeout_ms"?: number;
+                }) | null;
                 "auto_transactions"?: string;
                 "base_url"?: string;
                 "browser"?: ({
@@ -92160,6 +95942,18 @@ export interface operations {
                   "mode"?: string;
                   "platform"?: string;
                 }) | null;
+                "database"?: ({
+                  "conn_max_lifetime_ms"?: number;
+                  "driver"?: string;
+                  "dsn"?: string;
+                  "dsn_secret"?: string;
+                  "max_idle_conns"?: number;
+                  "max_open_conns"?: number;
+                  "max_rows"?: number;
+                  "query_timeout_ms"?: number;
+                  "read_only"?: boolean;
+                  "rollback_on_teardown"?: boolean;
+                }) | null;
                 "env"?: Record<string, string>;
                 "error_handling"?: ({
                   "continue_on_error"?: (boolean) | null;
@@ -92171,6 +95965,34 @@ export interface operations {
                   "retry_delay_ms"?: number;
                   "retry_on"?: Array<string>;
                   "snapshot_on_error"?: boolean;
+                }) | null;
+                "eventhubs"?: ({
+                  "auth_type"?: string;
+                  "checkpoint_container_url"?: string;
+                  "connection_string"?: string;
+                  "connection_string_secret"?: string;
+                  "consumer_group"?: string;
+                  "consumer_mode"?: string;
+                  "event_hub"?: string;
+                  "mock"?: boolean;
+                  "namespace"?: string;
+                  "observe_partition_tail"?: boolean;
+                  "owner_level"?: (number) | null;
+                  "partition_id"?: string;
+                  "partition_key"?: string;
+                  "processor_max_partitions"?: number;
+                  "start_position"?: string;
+                  "tail_poll_interval_ms"?: number;
+                  "timeout_ms"?: number;
+                }) | null;
+                "grpc"?: ({
+                  "authority"?: string;
+                  "max_recv_msg_size"?: number;
+                  "metadata"?: Record<string, string>;
+                  "plain_text"?: boolean;
+                  "proto_files"?: Array<string>;
+                  "timeout_ms"?: number;
+                  "use_reflection"?: boolean;
                 }) | null;
                 "http"?: ({
                   "accept_encoding"?: string;
@@ -92215,16 +96037,84 @@ export interface operations {
                   "version"?: string;
                 }) | null;
                 "iterations"?: (number) | null;
+                "java_http"?: ({
+                  "accept"?: string;
+                  "body_encoding"?: string;
+                  "codec"?: string;
+                  "content_type"?: string;
+                  "extractor_type"?: string;
+                  "helper_mode"?: string;
+                  "object_schema"?: string;
+                  "preserve_binary_result"?: boolean;
+                  "request_mapping"?: Record<string, string>;
+                  "response_mapping"?: Record<string, string>;
+                }) | null;
                 "java_vuser"?: ({
+                  "action_timeout_ms"?: number;
                   "additional_vm_parameters"?: Array<string>;
                   "classpath"?: Array<string>;
                   "dedicated_class_loader"?: (boolean) | null;
                   "jdk_home"?: string;
                   "jdk_selection"?: string;
                   "jvm_sharing"?: string;
+                  "param_left_brace"?: string;
+                  "param_right_brace"?: string;
                   "skip_parameter_evaluation"?: (boolean) | null;
+                  "startup_timeout_ms"?: number;
                   "use_xbootclasspath"?: (boolean) | null;
                   "vusers_per_jvm"?: number;
+                }) | null;
+                "jms"?: ({
+                  "acknowledgement"?: string;
+                  "broker_url"?: string;
+                  "client_id"?: string;
+                  "delivery_mode"?: string;
+                  "destination"?: string;
+                  "destination_type"?: string;
+                  "message_vpn"?: string;
+                  "mock"?: boolean;
+                  "password"?: string;
+                  "properties"?: Record<string, string>;
+                  "provider"?: string;
+                  "reply_to"?: string;
+                  "subscription"?: string;
+                  "timeout_ms"?: number;
+                  "tls"?: (Record<string, unknown>) | null;
+                  "username"?: string;
+                }) | null;
+                "kafka"?: ({
+                  "acks"?: string;
+                  "auto_offset_reset"?: string;
+                  "brokers"?: Array<string>;
+                  "client_id"?: string;
+                  "compression"?: string;
+                  "consumer_group"?: string;
+                  "consumer_transactions"?: boolean;
+                  "idempotence"?: string;
+                  "isolation_level"?: string;
+                  "max_message_bytes"?: number;
+                  "mock"?: boolean;
+                  "oauth"?: (Record<string, unknown>) | null;
+                  "oauth_scope"?: string;
+                  "partition_strategy"?: string;
+                  "partitions"?: number;
+                  "producer"?: (Record<string, unknown>) | null;
+                  "profile"?: string;
+                  "properties"?: Record<string, string>;
+                  "sasl_mechanism"?: string;
+                  "sasl_password"?: string;
+                  "sasl_password_secret"?: string;
+                  "sasl_username"?: string;
+                  "schema"?: string;
+                  "schema_id"?: number;
+                  "schema_registry_url"?: string;
+                  "security_protocol"?: string;
+                  "serialization"?: string;
+                  "subject"?: string;
+                  "timeout_ms"?: number;
+                  "tls"?: (Record<string, unknown>) | null;
+                  "topic"?: string;
+                  "transactional_id"?: string;
                 }) | null;
                 "log"?: ({
                   "error_buffer_bytes"?: number;
@@ -92235,6 +96125,19 @@ export interface operations {
                   "redact_run_evidence"?: (boolean) | null;
                 }) | null;
                 "log_level"?: string;
+                "network"?: ({
+                  "address"?: string;
+                  "base_dn"?: string;
+                  "from"?: string;
+                  "host"?: string;
+                  "password"?: string;
+                  "port"?: number;
+                  "subprotocol"?: string;
+                  "timeout_ms"?: number;
+                  "tls"?: boolean;
+                  "to"?: Array<string>;
+                  "username"?: string;
+                }) | null;
                 "override_fields"?: Array<string>;
                 "pacing"?: ({
                   "arrival_process"?: string;
@@ -98718,18 +102621,26 @@ export interface operations {
                 "resource_baseline"?: boolean;
                 "run_incarnation"?: string;
                 "runtime_settings"?: ({
+                  "appium"?: (Record<string, unknown>) | null;
                   "auto_transactions"?: string;
                   "base_url"?: string;
                   "browser"?: (Record<string, unknown>) | null;
                   "browser_config"?: (Record<string, unknown>) | null;
                   "browser_emulation"?: (Record<string, unknown>) | null;
+                  "database"?: (Record<string, unknown>) | null;
                   "env"?: Record<string, string>;
                   "error_handling"?: (Record<string, unknown>) | null;
+                  "eventhubs"?: (Record<string, unknown>) | null;
+                  "grpc"?: (Record<string, unknown>) | null;
                   "http"?: (Record<string, unknown>) | null;
                   "iterations"?: (number) | null;
+                  "java_http"?: (Record<string, unknown>) | null;
                   "java_vuser"?: (Record<string, unknown>) | null;
+                  "jms"?: (Record<string, unknown>) | null;
+                  "kafka"?: (Record<string, unknown>) | null;
                   "log"?: (Record<string, unknown>) | null;
                   "log_level"?: string;
+                  "network"?: (Record<string, unknown>) | null;
                   "override_fields"?: Array<string>;
                   "pacing"?: (Record<string, unknown>) | null;
                   "redaction_rules"?: Array<Record<string, unknown>>;
@@ -99253,18 +103164,26 @@ export interface operations {
                 "resource_baseline"?: boolean;
                 "run_incarnation"?: string;
                 "runtime_settings"?: ({
+                  "appium"?: (Record<string, unknown>) | null;
                   "auto_transactions"?: string;
                   "base_url"?: string;
                   "browser"?: (Record<string, unknown>) | null;
                   "browser_config"?: (Record<string, unknown>) | null;
                   "browser_emulation"?: (Record<string, unknown>) | null;
+                  "database"?: (Record<string, unknown>) | null;
                   "env"?: Record<string, string>;
                   "error_handling"?: (Record<string, unknown>) | null;
+                  "eventhubs"?: (Record<string, unknown>) | null;
+                  "grpc"?: (Record<string, unknown>) | null;
                   "http"?: (Record<string, unknown>) | null;
                   "iterations"?: (number) | null;
+                  "java_http"?: (Record<string, unknown>) | null;
                   "java_vuser"?: (Record<string, unknown>) | null;
+                  "jms"?: (Record<string, unknown>) | null;
+                  "kafka"?: (Record<string, unknown>) | null;
                   "log"?: (Record<string, unknown>) | null;
                   "log_level"?: string;
+                  "network"?: (Record<string, unknown>) | null;
                   "override_fields"?: Array<string>;
                   "pacing"?: (Record<string, unknown>) | null;
                   "redaction_rules"?: Array<Record<string, unknown>>;
@@ -101952,18 +105871,26 @@ export interface operations {
                 "ref_key"?: string;
                 "resource_baseline"?: boolean;
                 "runtime_settings"?: ({
+                  "appium"?: (Record<string, unknown>) | null;
                   "auto_transactions"?: string;
                   "base_url"?: string;
                   "browser"?: (Record<string, unknown>) | null;
                   "browser_config"?: (Record<string, unknown>) | null;
                   "browser_emulation"?: (Record<string, unknown>) | null;
+                  "database"?: (Record<string, unknown>) | null;
                   "env"?: Record<string, string>;
                   "error_handling"?: (Record<string, unknown>) | null;
+                  "eventhubs"?: (Record<string, unknown>) | null;
+                  "grpc"?: (Record<string, unknown>) | null;
                   "http"?: (Record<string, unknown>) | null;
                   "iterations"?: (number) | null;
+                  "java_http"?: (Record<string, unknown>) | null;
                   "java_vuser"?: (Record<string, unknown>) | null;
+                  "jms"?: (Record<string, unknown>) | null;
+                  "kafka"?: (Record<string, unknown>) | null;
                   "log"?: (Record<string, unknown>) | null;
                   "log_level"?: string;
+                  "network"?: (Record<string, unknown>) | null;
                   "override_fields"?: Array<string>;
                   "pacing"?: (Record<string, unknown>) | null;
                   "redaction_rules"?: Array<Record<string, unknown>>;
@@ -102162,6 +106089,12 @@ export interface operations {
             "resource_baseline"?: boolean;
             "result_count"?: number;
             "runtime_settings"?: ({
+              "appium"?: ({
+                "capabilities"?: Record<string, unknown>;
+                "element_timeout_ms"?: number;
+                "server_url"?: string;
+                "session_timeout_ms"?: number;
+              }) | null;
               "auto_transactions"?: string;
               "base_url"?: string;
               "browser"?: ({
@@ -102258,6 +106191,18 @@ export interface operations {
                 "mode"?: string;
                 "platform"?: string;
               }) | null;
+              "database"?: ({
+                "conn_max_lifetime_ms"?: number;
+                "driver"?: string;
+                "dsn"?: string;
+                "dsn_secret"?: string;
+                "max_idle_conns"?: number;
+                "max_open_conns"?: number;
+                "max_rows"?: number;
+                "query_timeout_ms"?: number;
+                "read_only"?: boolean;
+                "rollback_on_teardown"?: boolean;
+              }) | null;
               "env"?: Record<string, string>;
               "error_handling"?: ({
                 "continue_on_error"?: (boolean) | null;
@@ -102269,6 +106214,34 @@ export interface operations {
                 "retry_delay_ms"?: number;
                 "retry_on"?: Array<string>;
                 "snapshot_on_error"?: boolean;
+              }) | null;
+              "eventhubs"?: ({
+                "auth_type"?: string;
+                "checkpoint_container_url"?: string;
+                "connection_string"?: string;
+                "connection_string_secret"?: string;
+                "consumer_group"?: string;
+                "consumer_mode"?: string;
+                "event_hub"?: string;
+                "mock"?: boolean;
+                "namespace"?: string;
+                "observe_partition_tail"?: boolean;
+                "owner_level"?: (number) | null;
+                "partition_id"?: string;
+                "partition_key"?: string;
+                "processor_max_partitions"?: number;
+                "start_position"?: string;
+                "tail_poll_interval_ms"?: number;
+                "timeout_ms"?: number;
+              }) | null;
+              "grpc"?: ({
+                "authority"?: string;
+                "max_recv_msg_size"?: number;
+                "metadata"?: Record<string, string>;
+                "plain_text"?: boolean;
+                "proto_files"?: Array<string>;
+                "timeout_ms"?: number;
+                "use_reflection"?: boolean;
               }) | null;
               "http"?: ({
                 "accept_encoding"?: string;
@@ -102339,16 +106312,112 @@ export interface operations {
                 "version"?: string;
               }) | null;
               "iterations"?: (number) | null;
+              "java_http"?: ({
+                "accept"?: string;
+                "body_encoding"?: string;
+                "codec"?: string;
+                "content_type"?: string;
+                "extractor_type"?: string;
+                "helper_mode"?: string;
+                "object_schema"?: string;
+                "preserve_binary_result"?: boolean;
+                "request_mapping"?: Record<string, string>;
+                "response_mapping"?: Record<string, string>;
+              }) | null;
               "java_vuser"?: ({
+                "action_timeout_ms"?: number;
                 "additional_vm_parameters"?: Array<string>;
                 "classpath"?: Array<string>;
                 "dedicated_class_loader"?: (boolean) | null;
                 "jdk_home"?: string;
                 "jdk_selection"?: string;
                 "jvm_sharing"?: string;
+                "param_left_brace"?: string;
+                "param_right_brace"?: string;
                 "skip_parameter_evaluation"?: (boolean) | null;
+                "startup_timeout_ms"?: number;
                 "use_xbootclasspath"?: (boolean) | null;
                 "vusers_per_jvm"?: number;
+              }) | null;
+              "jms"?: ({
+                "acknowledgement"?: string;
+                "broker_url"?: string;
+                "client_id"?: string;
+                "delivery_mode"?: string;
+                "destination"?: string;
+                "destination_type"?: string;
+                "message_vpn"?: string;
+                "mock"?: boolean;
+                "password"?: string;
+                "properties"?: Record<string, string>;
+                "provider"?: string;
+                "reply_to"?: string;
+                "subscription"?: string;
+                "timeout_ms"?: number;
+                "tls"?: ({
+                  "ca_cert_secret"?: string;
+                  "insecure_skip_verify"?: boolean;
+                  "trust_store_ref"?: string;
+                }) | null;
+                "username"?: string;
+              }) | null;
+              "kafka"?: ({
+                "acks"?: string;
+                "auto_offset_reset"?: string;
+                "brokers"?: Array<string>;
+                "client_id"?: string;
+                "compression"?: string;
+                "consumer_group"?: string;
+                "consumer_transactions"?: boolean;
+                "idempotence"?: string;
+                "isolation_level"?: string;
+                "max_message_bytes"?: number;
+                "mock"?: boolean;
+                "oauth"?: ({
+                  "authentication_method"?: string;
+                  "client_id": string;
+                  "client_secret"?: string;
+                  "client_secret_ref"?: string;
+                  "mode": string;
+                  "scope"?: string;
+                  "token_url": string;
+                }) | null;
+                "oauth_scope"?: string;
+                "partition_strategy"?: string;
+                "partitions"?: number;
+                "producer"?: ({
+                  "admission_timeout_ms"?: (number) | null;
+                  "batch_bytes"?: (number) | null;
+                  "buffer_bytes"?: (number) | null;
+                  "delivery_timeout_ms"?: (number) | null;
+                  "linger_ms"?: (number) | null;
+                  "max_in_flight_requests"?: (number) | null;
+                  "request_timeout_ms"?: (number) | null;
+                  "retries"?: (number) | null;
+                }) | null;
+                "profile"?: string;
+                "properties"?: Record<string, string>;
+                "sasl_mechanism"?: string;
+                "sasl_password"?: string;
+                "sasl_password_secret"?: string;
+                "sasl_username"?: string;
+                "schema"?: string;
+                "schema_id"?: number;
+                "schema_registry_url"?: string;
+                "security_protocol"?: string;
+                "serialization"?: string;
+                "subject"?: string;
+                "timeout_ms"?: number;
+                "tls"?: ({
+                  "ca_cert_file"?: string;
+                  "client_cert_file"?: string;
+                  "client_key_file"?: string;
+                  "insecure_skip_verify"?: boolean;
+                  "max_version"?: string;
+                  "min_version"?: string;
+                }) | null;
+                "topic"?: string;
+                "transactional_id"?: string;
               }) | null;
               "log"?: ({
                 "error_buffer_bytes"?: number;
@@ -102359,6 +106428,19 @@ export interface operations {
                 "redact_run_evidence"?: (boolean) | null;
               }) | null;
               "log_level"?: string;
+              "network"?: ({
+                "address"?: string;
+                "base_dn"?: string;
+                "from"?: string;
+                "host"?: string;
+                "password"?: string;
+                "port"?: number;
+                "subprotocol"?: string;
+                "timeout_ms"?: number;
+                "tls"?: boolean;
+                "to"?: Array<string>;
+                "username"?: string;
+              }) | null;
               "override_fields"?: Array<string>;
               "pacing"?: ({
                 "arrival_process"?: string;
@@ -102626,6 +106708,12 @@ export interface operations {
               "ramp_up"?: string;
               "role"?: string;
               "runtime_settings"?: ({
+                "appium"?: ({
+                  "capabilities"?: Record<string, unknown>;
+                  "element_timeout_ms"?: number;
+                  "server_url"?: string;
+                  "session_timeout_ms"?: number;
+                }) | null;
                 "auto_transactions"?: string;
                 "base_url"?: string;
                 "browser"?: ({
@@ -102682,6 +106770,18 @@ export interface operations {
                   "mode"?: string;
                   "platform"?: string;
                 }) | null;
+                "database"?: ({
+                  "conn_max_lifetime_ms"?: number;
+                  "driver"?: string;
+                  "dsn"?: string;
+                  "dsn_secret"?: string;
+                  "max_idle_conns"?: number;
+                  "max_open_conns"?: number;
+                  "max_rows"?: number;
+                  "query_timeout_ms"?: number;
+                  "read_only"?: boolean;
+                  "rollback_on_teardown"?: boolean;
+                }) | null;
                 "env"?: Record<string, string>;
                 "error_handling"?: ({
                   "continue_on_error"?: (boolean) | null;
@@ -102693,6 +106793,34 @@ export interface operations {
                   "retry_delay_ms"?: number;
                   "retry_on"?: Array<string>;
                   "snapshot_on_error"?: boolean;
+                }) | null;
+                "eventhubs"?: ({
+                  "auth_type"?: string;
+                  "checkpoint_container_url"?: string;
+                  "connection_string"?: string;
+                  "connection_string_secret"?: string;
+                  "consumer_group"?: string;
+                  "consumer_mode"?: string;
+                  "event_hub"?: string;
+                  "mock"?: boolean;
+                  "namespace"?: string;
+                  "observe_partition_tail"?: boolean;
+                  "owner_level"?: (number) | null;
+                  "partition_id"?: string;
+                  "partition_key"?: string;
+                  "processor_max_partitions"?: number;
+                  "start_position"?: string;
+                  "tail_poll_interval_ms"?: number;
+                  "timeout_ms"?: number;
+                }) | null;
+                "grpc"?: ({
+                  "authority"?: string;
+                  "max_recv_msg_size"?: number;
+                  "metadata"?: Record<string, string>;
+                  "plain_text"?: boolean;
+                  "proto_files"?: Array<string>;
+                  "timeout_ms"?: number;
+                  "use_reflection"?: boolean;
                 }) | null;
                 "http"?: ({
                   "accept_encoding"?: string;
@@ -102737,16 +106865,84 @@ export interface operations {
                   "version"?: string;
                 }) | null;
                 "iterations"?: (number) | null;
+                "java_http"?: ({
+                  "accept"?: string;
+                  "body_encoding"?: string;
+                  "codec"?: string;
+                  "content_type"?: string;
+                  "extractor_type"?: string;
+                  "helper_mode"?: string;
+                  "object_schema"?: string;
+                  "preserve_binary_result"?: boolean;
+                  "request_mapping"?: Record<string, string>;
+                  "response_mapping"?: Record<string, string>;
+                }) | null;
                 "java_vuser"?: ({
+                  "action_timeout_ms"?: number;
                   "additional_vm_parameters"?: Array<string>;
                   "classpath"?: Array<string>;
                   "dedicated_class_loader"?: (boolean) | null;
                   "jdk_home"?: string;
                   "jdk_selection"?: string;
                   "jvm_sharing"?: string;
+                  "param_left_brace"?: string;
+                  "param_right_brace"?: string;
                   "skip_parameter_evaluation"?: (boolean) | null;
+                  "startup_timeout_ms"?: number;
                   "use_xbootclasspath"?: (boolean) | null;
                   "vusers_per_jvm"?: number;
+                }) | null;
+                "jms"?: ({
+                  "acknowledgement"?: string;
+                  "broker_url"?: string;
+                  "client_id"?: string;
+                  "delivery_mode"?: string;
+                  "destination"?: string;
+                  "destination_type"?: string;
+                  "message_vpn"?: string;
+                  "mock"?: boolean;
+                  "password"?: string;
+                  "properties"?: Record<string, string>;
+                  "provider"?: string;
+                  "reply_to"?: string;
+                  "subscription"?: string;
+                  "timeout_ms"?: number;
+                  "tls"?: (Record<string, unknown>) | null;
+                  "username"?: string;
+                }) | null;
+                "kafka"?: ({
+                  "acks"?: string;
+                  "auto_offset_reset"?: string;
+                  "brokers"?: Array<string>;
+                  "client_id"?: string;
+                  "compression"?: string;
+                  "consumer_group"?: string;
+                  "consumer_transactions"?: boolean;
+                  "idempotence"?: string;
+                  "isolation_level"?: string;
+                  "max_message_bytes"?: number;
+                  "mock"?: boolean;
+                  "oauth"?: (Record<string, unknown>) | null;
+                  "oauth_scope"?: string;
+                  "partition_strategy"?: string;
+                  "partitions"?: number;
+                  "producer"?: (Record<string, unknown>) | null;
+                  "profile"?: string;
+                  "properties"?: Record<string, string>;
+                  "sasl_mechanism"?: string;
+                  "sasl_password"?: string;
+                  "sasl_password_secret"?: string;
+                  "sasl_username"?: string;
+                  "schema"?: string;
+                  "schema_id"?: number;
+                  "schema_registry_url"?: string;
+                  "security_protocol"?: string;
+                  "serialization"?: string;
+                  "subject"?: string;
+                  "timeout_ms"?: number;
+                  "tls"?: (Record<string, unknown>) | null;
+                  "topic"?: string;
+                  "transactional_id"?: string;
                 }) | null;
                 "log"?: ({
                   "error_buffer_bytes"?: number;
@@ -102757,6 +106953,19 @@ export interface operations {
                   "redact_run_evidence"?: (boolean) | null;
                 }) | null;
                 "log_level"?: string;
+                "network"?: ({
+                  "address"?: string;
+                  "base_dn"?: string;
+                  "from"?: string;
+                  "host"?: string;
+                  "password"?: string;
+                  "port"?: number;
+                  "subprotocol"?: string;
+                  "timeout_ms"?: number;
+                  "tls"?: boolean;
+                  "to"?: Array<string>;
+                  "username"?: string;
+                }) | null;
                 "override_fields"?: Array<string>;
                 "pacing"?: ({
                   "arrival_process"?: string;
@@ -103118,18 +107327,26 @@ export interface operations {
                 "ramp_up"?: string;
                 "role"?: string;
                 "runtime_settings"?: ({
+                  "appium"?: (Record<string, unknown>) | null;
                   "auto_transactions"?: string;
                   "base_url"?: string;
                   "browser"?: (Record<string, unknown>) | null;
                   "browser_config"?: (Record<string, unknown>) | null;
                   "browser_emulation"?: (Record<string, unknown>) | null;
+                  "database"?: (Record<string, unknown>) | null;
                   "env"?: Record<string, string>;
                   "error_handling"?: (Record<string, unknown>) | null;
+                  "eventhubs"?: (Record<string, unknown>) | null;
+                  "grpc"?: (Record<string, unknown>) | null;
                   "http"?: (Record<string, unknown>) | null;
                   "iterations"?: (number) | null;
+                  "java_http"?: (Record<string, unknown>) | null;
                   "java_vuser"?: (Record<string, unknown>) | null;
+                  "jms"?: (Record<string, unknown>) | null;
+                  "kafka"?: (Record<string, unknown>) | null;
                   "log"?: (Record<string, unknown>) | null;
                   "log_level"?: string;
+                  "network"?: (Record<string, unknown>) | null;
                   "override_fields"?: Array<string>;
                   "pacing"?: (Record<string, unknown>) | null;
                   "redaction_rules"?: Array<Record<string, unknown>>;
@@ -103156,6 +107373,12 @@ export interface operations {
               "ref_key"?: string;
               "resource_baseline"?: boolean;
               "runtime_settings"?: ({
+                "appium"?: ({
+                  "capabilities"?: Record<string, unknown>;
+                  "element_timeout_ms"?: number;
+                  "server_url"?: string;
+                  "session_timeout_ms"?: number;
+                }) | null;
                 "auto_transactions"?: string;
                 "base_url"?: string;
                 "browser"?: ({
@@ -103212,6 +107435,18 @@ export interface operations {
                   "mode"?: string;
                   "platform"?: string;
                 }) | null;
+                "database"?: ({
+                  "conn_max_lifetime_ms"?: number;
+                  "driver"?: string;
+                  "dsn"?: string;
+                  "dsn_secret"?: string;
+                  "max_idle_conns"?: number;
+                  "max_open_conns"?: number;
+                  "max_rows"?: number;
+                  "query_timeout_ms"?: number;
+                  "read_only"?: boolean;
+                  "rollback_on_teardown"?: boolean;
+                }) | null;
                 "env"?: Record<string, string>;
                 "error_handling"?: ({
                   "continue_on_error"?: (boolean) | null;
@@ -103223,6 +107458,34 @@ export interface operations {
                   "retry_delay_ms"?: number;
                   "retry_on"?: Array<string>;
                   "snapshot_on_error"?: boolean;
+                }) | null;
+                "eventhubs"?: ({
+                  "auth_type"?: string;
+                  "checkpoint_container_url"?: string;
+                  "connection_string"?: string;
+                  "connection_string_secret"?: string;
+                  "consumer_group"?: string;
+                  "consumer_mode"?: string;
+                  "event_hub"?: string;
+                  "mock"?: boolean;
+                  "namespace"?: string;
+                  "observe_partition_tail"?: boolean;
+                  "owner_level"?: (number) | null;
+                  "partition_id"?: string;
+                  "partition_key"?: string;
+                  "processor_max_partitions"?: number;
+                  "start_position"?: string;
+                  "tail_poll_interval_ms"?: number;
+                  "timeout_ms"?: number;
+                }) | null;
+                "grpc"?: ({
+                  "authority"?: string;
+                  "max_recv_msg_size"?: number;
+                  "metadata"?: Record<string, string>;
+                  "plain_text"?: boolean;
+                  "proto_files"?: Array<string>;
+                  "timeout_ms"?: number;
+                  "use_reflection"?: boolean;
                 }) | null;
                 "http"?: ({
                   "accept_encoding"?: string;
@@ -103267,16 +107530,84 @@ export interface operations {
                   "version"?: string;
                 }) | null;
                 "iterations"?: (number) | null;
+                "java_http"?: ({
+                  "accept"?: string;
+                  "body_encoding"?: string;
+                  "codec"?: string;
+                  "content_type"?: string;
+                  "extractor_type"?: string;
+                  "helper_mode"?: string;
+                  "object_schema"?: string;
+                  "preserve_binary_result"?: boolean;
+                  "request_mapping"?: Record<string, string>;
+                  "response_mapping"?: Record<string, string>;
+                }) | null;
                 "java_vuser"?: ({
+                  "action_timeout_ms"?: number;
                   "additional_vm_parameters"?: Array<string>;
                   "classpath"?: Array<string>;
                   "dedicated_class_loader"?: (boolean) | null;
                   "jdk_home"?: string;
                   "jdk_selection"?: string;
                   "jvm_sharing"?: string;
+                  "param_left_brace"?: string;
+                  "param_right_brace"?: string;
                   "skip_parameter_evaluation"?: (boolean) | null;
+                  "startup_timeout_ms"?: number;
                   "use_xbootclasspath"?: (boolean) | null;
                   "vusers_per_jvm"?: number;
+                }) | null;
+                "jms"?: ({
+                  "acknowledgement"?: string;
+                  "broker_url"?: string;
+                  "client_id"?: string;
+                  "delivery_mode"?: string;
+                  "destination"?: string;
+                  "destination_type"?: string;
+                  "message_vpn"?: string;
+                  "mock"?: boolean;
+                  "password"?: string;
+                  "properties"?: Record<string, string>;
+                  "provider"?: string;
+                  "reply_to"?: string;
+                  "subscription"?: string;
+                  "timeout_ms"?: number;
+                  "tls"?: (Record<string, unknown>) | null;
+                  "username"?: string;
+                }) | null;
+                "kafka"?: ({
+                  "acks"?: string;
+                  "auto_offset_reset"?: string;
+                  "brokers"?: Array<string>;
+                  "client_id"?: string;
+                  "compression"?: string;
+                  "consumer_group"?: string;
+                  "consumer_transactions"?: boolean;
+                  "idempotence"?: string;
+                  "isolation_level"?: string;
+                  "max_message_bytes"?: number;
+                  "mock"?: boolean;
+                  "oauth"?: (Record<string, unknown>) | null;
+                  "oauth_scope"?: string;
+                  "partition_strategy"?: string;
+                  "partitions"?: number;
+                  "producer"?: (Record<string, unknown>) | null;
+                  "profile"?: string;
+                  "properties"?: Record<string, string>;
+                  "sasl_mechanism"?: string;
+                  "sasl_password"?: string;
+                  "sasl_password_secret"?: string;
+                  "sasl_username"?: string;
+                  "schema"?: string;
+                  "schema_id"?: number;
+                  "schema_registry_url"?: string;
+                  "security_protocol"?: string;
+                  "serialization"?: string;
+                  "subject"?: string;
+                  "timeout_ms"?: number;
+                  "tls"?: (Record<string, unknown>) | null;
+                  "topic"?: string;
+                  "transactional_id"?: string;
                 }) | null;
                 "log"?: ({
                   "error_buffer_bytes"?: number;
@@ -103287,6 +107618,19 @@ export interface operations {
                   "redact_run_evidence"?: (boolean) | null;
                 }) | null;
                 "log_level"?: string;
+                "network"?: ({
+                  "address"?: string;
+                  "base_dn"?: string;
+                  "from"?: string;
+                  "host"?: string;
+                  "password"?: string;
+                  "port"?: number;
+                  "subprotocol"?: string;
+                  "timeout_ms"?: number;
+                  "tls"?: boolean;
+                  "to"?: Array<string>;
+                  "username"?: string;
+                }) | null;
                 "override_fields"?: Array<string>;
                 "pacing"?: ({
                   "arrival_process"?: string;
@@ -108871,6 +113215,12 @@ export interface operations {
                 "max_transactions"?: number;
               }) | null;
               "runtime_settings"?: ({
+                "appium"?: ({
+                  "capabilities"?: Record<string, unknown>;
+                  "element_timeout_ms"?: number;
+                  "server_url"?: string;
+                  "session_timeout_ms"?: number;
+                }) | null;
                 "auto_transactions"?: string;
                 "base_url"?: string;
                 "browser"?: ({
@@ -108927,6 +113277,18 @@ export interface operations {
                   "mode"?: string;
                   "platform"?: string;
                 }) | null;
+                "database"?: ({
+                  "conn_max_lifetime_ms"?: number;
+                  "driver"?: string;
+                  "dsn"?: string;
+                  "dsn_secret"?: string;
+                  "max_idle_conns"?: number;
+                  "max_open_conns"?: number;
+                  "max_rows"?: number;
+                  "query_timeout_ms"?: number;
+                  "read_only"?: boolean;
+                  "rollback_on_teardown"?: boolean;
+                }) | null;
                 "env"?: Record<string, string>;
                 "error_handling"?: ({
                   "continue_on_error"?: (boolean) | null;
@@ -108938,6 +113300,34 @@ export interface operations {
                   "retry_delay_ms"?: number;
                   "retry_on"?: Array<string>;
                   "snapshot_on_error"?: boolean;
+                }) | null;
+                "eventhubs"?: ({
+                  "auth_type"?: string;
+                  "checkpoint_container_url"?: string;
+                  "connection_string"?: string;
+                  "connection_string_secret"?: string;
+                  "consumer_group"?: string;
+                  "consumer_mode"?: string;
+                  "event_hub"?: string;
+                  "mock"?: boolean;
+                  "namespace"?: string;
+                  "observe_partition_tail"?: boolean;
+                  "owner_level"?: (number) | null;
+                  "partition_id"?: string;
+                  "partition_key"?: string;
+                  "processor_max_partitions"?: number;
+                  "start_position"?: string;
+                  "tail_poll_interval_ms"?: number;
+                  "timeout_ms"?: number;
+                }) | null;
+                "grpc"?: ({
+                  "authority"?: string;
+                  "max_recv_msg_size"?: number;
+                  "metadata"?: Record<string, string>;
+                  "plain_text"?: boolean;
+                  "proto_files"?: Array<string>;
+                  "timeout_ms"?: number;
+                  "use_reflection"?: boolean;
                 }) | null;
                 "http"?: ({
                   "accept_encoding"?: string;
@@ -108982,16 +113372,84 @@ export interface operations {
                   "version"?: string;
                 }) | null;
                 "iterations"?: (number) | null;
+                "java_http"?: ({
+                  "accept"?: string;
+                  "body_encoding"?: string;
+                  "codec"?: string;
+                  "content_type"?: string;
+                  "extractor_type"?: string;
+                  "helper_mode"?: string;
+                  "object_schema"?: string;
+                  "preserve_binary_result"?: boolean;
+                  "request_mapping"?: Record<string, string>;
+                  "response_mapping"?: Record<string, string>;
+                }) | null;
                 "java_vuser"?: ({
+                  "action_timeout_ms"?: number;
                   "additional_vm_parameters"?: Array<string>;
                   "classpath"?: Array<string>;
                   "dedicated_class_loader"?: (boolean) | null;
                   "jdk_home"?: string;
                   "jdk_selection"?: string;
                   "jvm_sharing"?: string;
+                  "param_left_brace"?: string;
+                  "param_right_brace"?: string;
                   "skip_parameter_evaluation"?: (boolean) | null;
+                  "startup_timeout_ms"?: number;
                   "use_xbootclasspath"?: (boolean) | null;
                   "vusers_per_jvm"?: number;
+                }) | null;
+                "jms"?: ({
+                  "acknowledgement"?: string;
+                  "broker_url"?: string;
+                  "client_id"?: string;
+                  "delivery_mode"?: string;
+                  "destination"?: string;
+                  "destination_type"?: string;
+                  "message_vpn"?: string;
+                  "mock"?: boolean;
+                  "password"?: string;
+                  "properties"?: Record<string, string>;
+                  "provider"?: string;
+                  "reply_to"?: string;
+                  "subscription"?: string;
+                  "timeout_ms"?: number;
+                  "tls"?: (Record<string, unknown>) | null;
+                  "username"?: string;
+                }) | null;
+                "kafka"?: ({
+                  "acks"?: string;
+                  "auto_offset_reset"?: string;
+                  "brokers"?: Array<string>;
+                  "client_id"?: string;
+                  "compression"?: string;
+                  "consumer_group"?: string;
+                  "consumer_transactions"?: boolean;
+                  "idempotence"?: string;
+                  "isolation_level"?: string;
+                  "max_message_bytes"?: number;
+                  "mock"?: boolean;
+                  "oauth"?: (Record<string, unknown>) | null;
+                  "oauth_scope"?: string;
+                  "partition_strategy"?: string;
+                  "partitions"?: number;
+                  "producer"?: (Record<string, unknown>) | null;
+                  "profile"?: string;
+                  "properties"?: Record<string, string>;
+                  "sasl_mechanism"?: string;
+                  "sasl_password"?: string;
+                  "sasl_password_secret"?: string;
+                  "sasl_username"?: string;
+                  "schema"?: string;
+                  "schema_id"?: number;
+                  "schema_registry_url"?: string;
+                  "security_protocol"?: string;
+                  "serialization"?: string;
+                  "subject"?: string;
+                  "timeout_ms"?: number;
+                  "tls"?: (Record<string, unknown>) | null;
+                  "topic"?: string;
+                  "transactional_id"?: string;
                 }) | null;
                 "log"?: ({
                   "error_buffer_bytes"?: number;
@@ -109002,6 +113460,19 @@ export interface operations {
                   "redact_run_evidence"?: (boolean) | null;
                 }) | null;
                 "log_level"?: string;
+                "network"?: ({
+                  "address"?: string;
+                  "base_dn"?: string;
+                  "from"?: string;
+                  "host"?: string;
+                  "password"?: string;
+                  "port"?: number;
+                  "subprotocol"?: string;
+                  "timeout_ms"?: number;
+                  "tls"?: boolean;
+                  "to"?: Array<string>;
+                  "username"?: string;
+                }) | null;
                 "override_fields"?: Array<string>;
                 "pacing"?: ({
                   "arrival_process"?: string;
@@ -113879,6 +118350,12 @@ export interface operations {
             "release_id"?: string;
             "resource_baseline"?: boolean;
             "runtime_settings"?: ({
+              "appium"?: ({
+                "capabilities"?: Record<string, unknown>;
+                "element_timeout_ms"?: number;
+                "server_url"?: string;
+                "session_timeout_ms"?: number;
+              }) | null;
               "auto_transactions"?: string;
               "base_url"?: string;
               "browser"?: ({
@@ -113975,6 +118452,18 @@ export interface operations {
                 "mode"?: string;
                 "platform"?: string;
               }) | null;
+              "database"?: ({
+                "conn_max_lifetime_ms"?: number;
+                "driver"?: string;
+                "dsn"?: string;
+                "dsn_secret"?: string;
+                "max_idle_conns"?: number;
+                "max_open_conns"?: number;
+                "max_rows"?: number;
+                "query_timeout_ms"?: number;
+                "read_only"?: boolean;
+                "rollback_on_teardown"?: boolean;
+              }) | null;
               "env"?: Record<string, string>;
               "error_handling"?: ({
                 "continue_on_error"?: (boolean) | null;
@@ -113986,6 +118475,34 @@ export interface operations {
                 "retry_delay_ms"?: number;
                 "retry_on"?: Array<string>;
                 "snapshot_on_error"?: boolean;
+              }) | null;
+              "eventhubs"?: ({
+                "auth_type"?: string;
+                "checkpoint_container_url"?: string;
+                "connection_string"?: string;
+                "connection_string_secret"?: string;
+                "consumer_group"?: string;
+                "consumer_mode"?: string;
+                "event_hub"?: string;
+                "mock"?: boolean;
+                "namespace"?: string;
+                "observe_partition_tail"?: boolean;
+                "owner_level"?: (number) | null;
+                "partition_id"?: string;
+                "partition_key"?: string;
+                "processor_max_partitions"?: number;
+                "start_position"?: string;
+                "tail_poll_interval_ms"?: number;
+                "timeout_ms"?: number;
+              }) | null;
+              "grpc"?: ({
+                "authority"?: string;
+                "max_recv_msg_size"?: number;
+                "metadata"?: Record<string, string>;
+                "plain_text"?: boolean;
+                "proto_files"?: Array<string>;
+                "timeout_ms"?: number;
+                "use_reflection"?: boolean;
               }) | null;
               "http"?: ({
                 "accept_encoding"?: string;
@@ -114056,16 +118573,112 @@ export interface operations {
                 "version"?: string;
               }) | null;
               "iterations"?: (number) | null;
+              "java_http"?: ({
+                "accept"?: string;
+                "body_encoding"?: string;
+                "codec"?: string;
+                "content_type"?: string;
+                "extractor_type"?: string;
+                "helper_mode"?: string;
+                "object_schema"?: string;
+                "preserve_binary_result"?: boolean;
+                "request_mapping"?: Record<string, string>;
+                "response_mapping"?: Record<string, string>;
+              }) | null;
               "java_vuser"?: ({
+                "action_timeout_ms"?: number;
                 "additional_vm_parameters"?: Array<string>;
                 "classpath"?: Array<string>;
                 "dedicated_class_loader"?: (boolean) | null;
                 "jdk_home"?: string;
                 "jdk_selection"?: string;
                 "jvm_sharing"?: string;
+                "param_left_brace"?: string;
+                "param_right_brace"?: string;
                 "skip_parameter_evaluation"?: (boolean) | null;
+                "startup_timeout_ms"?: number;
                 "use_xbootclasspath"?: (boolean) | null;
                 "vusers_per_jvm"?: number;
+              }) | null;
+              "jms"?: ({
+                "acknowledgement"?: string;
+                "broker_url"?: string;
+                "client_id"?: string;
+                "delivery_mode"?: string;
+                "destination"?: string;
+                "destination_type"?: string;
+                "message_vpn"?: string;
+                "mock"?: boolean;
+                "password"?: string;
+                "properties"?: Record<string, string>;
+                "provider"?: string;
+                "reply_to"?: string;
+                "subscription"?: string;
+                "timeout_ms"?: number;
+                "tls"?: ({
+                  "ca_cert_secret"?: string;
+                  "insecure_skip_verify"?: boolean;
+                  "trust_store_ref"?: string;
+                }) | null;
+                "username"?: string;
+              }) | null;
+              "kafka"?: ({
+                "acks"?: string;
+                "auto_offset_reset"?: string;
+                "brokers"?: Array<string>;
+                "client_id"?: string;
+                "compression"?: string;
+                "consumer_group"?: string;
+                "consumer_transactions"?: boolean;
+                "idempotence"?: string;
+                "isolation_level"?: string;
+                "max_message_bytes"?: number;
+                "mock"?: boolean;
+                "oauth"?: ({
+                  "authentication_method"?: string;
+                  "client_id": string;
+                  "client_secret"?: string;
+                  "client_secret_ref"?: string;
+                  "mode": string;
+                  "scope"?: string;
+                  "token_url": string;
+                }) | null;
+                "oauth_scope"?: string;
+                "partition_strategy"?: string;
+                "partitions"?: number;
+                "producer"?: ({
+                  "admission_timeout_ms"?: (number) | null;
+                  "batch_bytes"?: (number) | null;
+                  "buffer_bytes"?: (number) | null;
+                  "delivery_timeout_ms"?: (number) | null;
+                  "linger_ms"?: (number) | null;
+                  "max_in_flight_requests"?: (number) | null;
+                  "request_timeout_ms"?: (number) | null;
+                  "retries"?: (number) | null;
+                }) | null;
+                "profile"?: string;
+                "properties"?: Record<string, string>;
+                "sasl_mechanism"?: string;
+                "sasl_password"?: string;
+                "sasl_password_secret"?: string;
+                "sasl_username"?: string;
+                "schema"?: string;
+                "schema_id"?: number;
+                "schema_registry_url"?: string;
+                "security_protocol"?: string;
+                "serialization"?: string;
+                "subject"?: string;
+                "timeout_ms"?: number;
+                "tls"?: ({
+                  "ca_cert_file"?: string;
+                  "client_cert_file"?: string;
+                  "client_key_file"?: string;
+                  "insecure_skip_verify"?: boolean;
+                  "max_version"?: string;
+                  "min_version"?: string;
+                }) | null;
+                "topic"?: string;
+                "transactional_id"?: string;
               }) | null;
               "log"?: ({
                 "error_buffer_bytes"?: number;
@@ -114076,6 +118689,19 @@ export interface operations {
                 "redact_run_evidence"?: (boolean) | null;
               }) | null;
               "log_level"?: string;
+              "network"?: ({
+                "address"?: string;
+                "base_dn"?: string;
+                "from"?: string;
+                "host"?: string;
+                "password"?: string;
+                "port"?: number;
+                "subprotocol"?: string;
+                "timeout_ms"?: number;
+                "tls"?: boolean;
+                "to"?: Array<string>;
+                "username"?: string;
+              }) | null;
               "override_fields"?: Array<string>;
               "pacing"?: ({
                 "arrival_process"?: string;
@@ -114593,6 +119219,12 @@ export interface operations {
             "editable_fields": Array<string>;
             "editable_reason"?: string;
             "effective_settings"?: ({
+              "appium"?: ({
+                "capabilities"?: Record<string, unknown>;
+                "element_timeout_ms"?: number;
+                "server_url"?: string;
+                "session_timeout_ms"?: number;
+              }) | null;
               "auto_transactions"?: string;
               "base_url"?: string;
               "browser"?: ({
@@ -114689,6 +119321,18 @@ export interface operations {
                 "mode"?: string;
                 "platform"?: string;
               }) | null;
+              "database"?: ({
+                "conn_max_lifetime_ms"?: number;
+                "driver"?: string;
+                "dsn"?: string;
+                "dsn_secret"?: string;
+                "max_idle_conns"?: number;
+                "max_open_conns"?: number;
+                "max_rows"?: number;
+                "query_timeout_ms"?: number;
+                "read_only"?: boolean;
+                "rollback_on_teardown"?: boolean;
+              }) | null;
               "env"?: Record<string, string>;
               "error_handling"?: ({
                 "continue_on_error"?: (boolean) | null;
@@ -114700,6 +119344,34 @@ export interface operations {
                 "retry_delay_ms"?: number;
                 "retry_on"?: Array<string>;
                 "snapshot_on_error"?: boolean;
+              }) | null;
+              "eventhubs"?: ({
+                "auth_type"?: string;
+                "checkpoint_container_url"?: string;
+                "connection_string"?: string;
+                "connection_string_secret"?: string;
+                "consumer_group"?: string;
+                "consumer_mode"?: string;
+                "event_hub"?: string;
+                "mock"?: boolean;
+                "namespace"?: string;
+                "observe_partition_tail"?: boolean;
+                "owner_level"?: (number) | null;
+                "partition_id"?: string;
+                "partition_key"?: string;
+                "processor_max_partitions"?: number;
+                "start_position"?: string;
+                "tail_poll_interval_ms"?: number;
+                "timeout_ms"?: number;
+              }) | null;
+              "grpc"?: ({
+                "authority"?: string;
+                "max_recv_msg_size"?: number;
+                "metadata"?: Record<string, string>;
+                "plain_text"?: boolean;
+                "proto_files"?: Array<string>;
+                "timeout_ms"?: number;
+                "use_reflection"?: boolean;
               }) | null;
               "http"?: ({
                 "accept_encoding"?: string;
@@ -114770,16 +119442,112 @@ export interface operations {
                 "version"?: string;
               }) | null;
               "iterations"?: (number) | null;
+              "java_http"?: ({
+                "accept"?: string;
+                "body_encoding"?: string;
+                "codec"?: string;
+                "content_type"?: string;
+                "extractor_type"?: string;
+                "helper_mode"?: string;
+                "object_schema"?: string;
+                "preserve_binary_result"?: boolean;
+                "request_mapping"?: Record<string, string>;
+                "response_mapping"?: Record<string, string>;
+              }) | null;
               "java_vuser"?: ({
+                "action_timeout_ms"?: number;
                 "additional_vm_parameters"?: Array<string>;
                 "classpath"?: Array<string>;
                 "dedicated_class_loader"?: (boolean) | null;
                 "jdk_home"?: string;
                 "jdk_selection"?: string;
                 "jvm_sharing"?: string;
+                "param_left_brace"?: string;
+                "param_right_brace"?: string;
                 "skip_parameter_evaluation"?: (boolean) | null;
+                "startup_timeout_ms"?: number;
                 "use_xbootclasspath"?: (boolean) | null;
                 "vusers_per_jvm"?: number;
+              }) | null;
+              "jms"?: ({
+                "acknowledgement"?: string;
+                "broker_url"?: string;
+                "client_id"?: string;
+                "delivery_mode"?: string;
+                "destination"?: string;
+                "destination_type"?: string;
+                "message_vpn"?: string;
+                "mock"?: boolean;
+                "password"?: string;
+                "properties"?: Record<string, string>;
+                "provider"?: string;
+                "reply_to"?: string;
+                "subscription"?: string;
+                "timeout_ms"?: number;
+                "tls"?: ({
+                  "ca_cert_secret"?: string;
+                  "insecure_skip_verify"?: boolean;
+                  "trust_store_ref"?: string;
+                }) | null;
+                "username"?: string;
+              }) | null;
+              "kafka"?: ({
+                "acks"?: string;
+                "auto_offset_reset"?: string;
+                "brokers"?: Array<string>;
+                "client_id"?: string;
+                "compression"?: string;
+                "consumer_group"?: string;
+                "consumer_transactions"?: boolean;
+                "idempotence"?: string;
+                "isolation_level"?: string;
+                "max_message_bytes"?: number;
+                "mock"?: boolean;
+                "oauth"?: ({
+                  "authentication_method"?: string;
+                  "client_id": string;
+                  "client_secret"?: string;
+                  "client_secret_ref"?: string;
+                  "mode": string;
+                  "scope"?: string;
+                  "token_url": string;
+                }) | null;
+                "oauth_scope"?: string;
+                "partition_strategy"?: string;
+                "partitions"?: number;
+                "producer"?: ({
+                  "admission_timeout_ms"?: (number) | null;
+                  "batch_bytes"?: (number) | null;
+                  "buffer_bytes"?: (number) | null;
+                  "delivery_timeout_ms"?: (number) | null;
+                  "linger_ms"?: (number) | null;
+                  "max_in_flight_requests"?: (number) | null;
+                  "request_timeout_ms"?: (number) | null;
+                  "retries"?: (number) | null;
+                }) | null;
+                "profile"?: string;
+                "properties"?: Record<string, string>;
+                "sasl_mechanism"?: string;
+                "sasl_password"?: string;
+                "sasl_password_secret"?: string;
+                "sasl_username"?: string;
+                "schema"?: string;
+                "schema_id"?: number;
+                "schema_registry_url"?: string;
+                "security_protocol"?: string;
+                "serialization"?: string;
+                "subject"?: string;
+                "timeout_ms"?: number;
+                "tls"?: ({
+                  "ca_cert_file"?: string;
+                  "client_cert_file"?: string;
+                  "client_key_file"?: string;
+                  "insecure_skip_verify"?: boolean;
+                  "max_version"?: string;
+                  "min_version"?: string;
+                }) | null;
+                "topic"?: string;
+                "transactional_id"?: string;
               }) | null;
               "log"?: ({
                 "error_buffer_bytes"?: number;
@@ -114790,6 +119558,19 @@ export interface operations {
                 "redact_run_evidence"?: (boolean) | null;
               }) | null;
               "log_level"?: string;
+              "network"?: ({
+                "address"?: string;
+                "base_dn"?: string;
+                "from"?: string;
+                "host"?: string;
+                "password"?: string;
+                "port"?: number;
+                "subprotocol"?: string;
+                "timeout_ms"?: number;
+                "tls"?: boolean;
+                "to"?: Array<string>;
+                "username"?: string;
+              }) | null;
               "override_fields"?: Array<string>;
               "pacing"?: ({
                 "arrival_process"?: string;
@@ -114958,6 +119739,12 @@ export interface operations {
             "ref_key"?: string;
             "revision": string;
             "runtime_settings"?: ({
+              "appium"?: ({
+                "capabilities"?: Record<string, unknown>;
+                "element_timeout_ms"?: number;
+                "server_url"?: string;
+                "session_timeout_ms"?: number;
+              }) | null;
               "auto_transactions"?: string;
               "base_url"?: string;
               "browser"?: ({
@@ -115054,6 +119841,18 @@ export interface operations {
                 "mode"?: string;
                 "platform"?: string;
               }) | null;
+              "database"?: ({
+                "conn_max_lifetime_ms"?: number;
+                "driver"?: string;
+                "dsn"?: string;
+                "dsn_secret"?: string;
+                "max_idle_conns"?: number;
+                "max_open_conns"?: number;
+                "max_rows"?: number;
+                "query_timeout_ms"?: number;
+                "read_only"?: boolean;
+                "rollback_on_teardown"?: boolean;
+              }) | null;
               "env"?: Record<string, string>;
               "error_handling"?: ({
                 "continue_on_error"?: (boolean) | null;
@@ -115065,6 +119864,34 @@ export interface operations {
                 "retry_delay_ms"?: number;
                 "retry_on"?: Array<string>;
                 "snapshot_on_error"?: boolean;
+              }) | null;
+              "eventhubs"?: ({
+                "auth_type"?: string;
+                "checkpoint_container_url"?: string;
+                "connection_string"?: string;
+                "connection_string_secret"?: string;
+                "consumer_group"?: string;
+                "consumer_mode"?: string;
+                "event_hub"?: string;
+                "mock"?: boolean;
+                "namespace"?: string;
+                "observe_partition_tail"?: boolean;
+                "owner_level"?: (number) | null;
+                "partition_id"?: string;
+                "partition_key"?: string;
+                "processor_max_partitions"?: number;
+                "start_position"?: string;
+                "tail_poll_interval_ms"?: number;
+                "timeout_ms"?: number;
+              }) | null;
+              "grpc"?: ({
+                "authority"?: string;
+                "max_recv_msg_size"?: number;
+                "metadata"?: Record<string, string>;
+                "plain_text"?: boolean;
+                "proto_files"?: Array<string>;
+                "timeout_ms"?: number;
+                "use_reflection"?: boolean;
               }) | null;
               "http"?: ({
                 "accept_encoding"?: string;
@@ -115135,16 +119962,112 @@ export interface operations {
                 "version"?: string;
               }) | null;
               "iterations"?: (number) | null;
+              "java_http"?: ({
+                "accept"?: string;
+                "body_encoding"?: string;
+                "codec"?: string;
+                "content_type"?: string;
+                "extractor_type"?: string;
+                "helper_mode"?: string;
+                "object_schema"?: string;
+                "preserve_binary_result"?: boolean;
+                "request_mapping"?: Record<string, string>;
+                "response_mapping"?: Record<string, string>;
+              }) | null;
               "java_vuser"?: ({
+                "action_timeout_ms"?: number;
                 "additional_vm_parameters"?: Array<string>;
                 "classpath"?: Array<string>;
                 "dedicated_class_loader"?: (boolean) | null;
                 "jdk_home"?: string;
                 "jdk_selection"?: string;
                 "jvm_sharing"?: string;
+                "param_left_brace"?: string;
+                "param_right_brace"?: string;
                 "skip_parameter_evaluation"?: (boolean) | null;
+                "startup_timeout_ms"?: number;
                 "use_xbootclasspath"?: (boolean) | null;
                 "vusers_per_jvm"?: number;
+              }) | null;
+              "jms"?: ({
+                "acknowledgement"?: string;
+                "broker_url"?: string;
+                "client_id"?: string;
+                "delivery_mode"?: string;
+                "destination"?: string;
+                "destination_type"?: string;
+                "message_vpn"?: string;
+                "mock"?: boolean;
+                "password"?: string;
+                "properties"?: Record<string, string>;
+                "provider"?: string;
+                "reply_to"?: string;
+                "subscription"?: string;
+                "timeout_ms"?: number;
+                "tls"?: ({
+                  "ca_cert_secret"?: string;
+                  "insecure_skip_verify"?: boolean;
+                  "trust_store_ref"?: string;
+                }) | null;
+                "username"?: string;
+              }) | null;
+              "kafka"?: ({
+                "acks"?: string;
+                "auto_offset_reset"?: string;
+                "brokers"?: Array<string>;
+                "client_id"?: string;
+                "compression"?: string;
+                "consumer_group"?: string;
+                "consumer_transactions"?: boolean;
+                "idempotence"?: string;
+                "isolation_level"?: string;
+                "max_message_bytes"?: number;
+                "mock"?: boolean;
+                "oauth"?: ({
+                  "authentication_method"?: string;
+                  "client_id": string;
+                  "client_secret"?: string;
+                  "client_secret_ref"?: string;
+                  "mode": string;
+                  "scope"?: string;
+                  "token_url": string;
+                }) | null;
+                "oauth_scope"?: string;
+                "partition_strategy"?: string;
+                "partitions"?: number;
+                "producer"?: ({
+                  "admission_timeout_ms"?: (number) | null;
+                  "batch_bytes"?: (number) | null;
+                  "buffer_bytes"?: (number) | null;
+                  "delivery_timeout_ms"?: (number) | null;
+                  "linger_ms"?: (number) | null;
+                  "max_in_flight_requests"?: (number) | null;
+                  "request_timeout_ms"?: (number) | null;
+                  "retries"?: (number) | null;
+                }) | null;
+                "profile"?: string;
+                "properties"?: Record<string, string>;
+                "sasl_mechanism"?: string;
+                "sasl_password"?: string;
+                "sasl_password_secret"?: string;
+                "sasl_username"?: string;
+                "schema"?: string;
+                "schema_id"?: number;
+                "schema_registry_url"?: string;
+                "security_protocol"?: string;
+                "serialization"?: string;
+                "subject"?: string;
+                "timeout_ms"?: number;
+                "tls"?: ({
+                  "ca_cert_file"?: string;
+                  "client_cert_file"?: string;
+                  "client_key_file"?: string;
+                  "insecure_skip_verify"?: boolean;
+                  "max_version"?: string;
+                  "min_version"?: string;
+                }) | null;
+                "topic"?: string;
+                "transactional_id"?: string;
               }) | null;
               "log"?: ({
                 "error_buffer_bytes"?: number;
@@ -115155,6 +120078,19 @@ export interface operations {
                 "redact_run_evidence"?: (boolean) | null;
               }) | null;
               "log_level"?: string;
+              "network"?: ({
+                "address"?: string;
+                "base_dn"?: string;
+                "from"?: string;
+                "host"?: string;
+                "password"?: string;
+                "port"?: number;
+                "subprotocol"?: string;
+                "timeout_ms"?: number;
+                "tls"?: boolean;
+                "to"?: Array<string>;
+                "username"?: string;
+              }) | null;
               "override_fields"?: Array<string>;
               "pacing"?: ({
                 "arrival_process"?: string;
@@ -115309,6 +120245,12 @@ export interface operations {
             "script_id"?: string;
             "script_name"?: string;
             "script_settings"?: ({
+              "appium"?: ({
+                "capabilities"?: Record<string, unknown>;
+                "element_timeout_ms"?: number;
+                "server_url"?: string;
+                "session_timeout_ms"?: number;
+              }) | null;
               "auto_transactions"?: string;
               "base_url"?: string;
               "browser"?: ({
@@ -115405,6 +120347,18 @@ export interface operations {
                 "mode"?: string;
                 "platform"?: string;
               }) | null;
+              "database"?: ({
+                "conn_max_lifetime_ms"?: number;
+                "driver"?: string;
+                "dsn"?: string;
+                "dsn_secret"?: string;
+                "max_idle_conns"?: number;
+                "max_open_conns"?: number;
+                "max_rows"?: number;
+                "query_timeout_ms"?: number;
+                "read_only"?: boolean;
+                "rollback_on_teardown"?: boolean;
+              }) | null;
               "env"?: Record<string, string>;
               "error_handling"?: ({
                 "continue_on_error"?: (boolean) | null;
@@ -115416,6 +120370,34 @@ export interface operations {
                 "retry_delay_ms"?: number;
                 "retry_on"?: Array<string>;
                 "snapshot_on_error"?: boolean;
+              }) | null;
+              "eventhubs"?: ({
+                "auth_type"?: string;
+                "checkpoint_container_url"?: string;
+                "connection_string"?: string;
+                "connection_string_secret"?: string;
+                "consumer_group"?: string;
+                "consumer_mode"?: string;
+                "event_hub"?: string;
+                "mock"?: boolean;
+                "namespace"?: string;
+                "observe_partition_tail"?: boolean;
+                "owner_level"?: (number) | null;
+                "partition_id"?: string;
+                "partition_key"?: string;
+                "processor_max_partitions"?: number;
+                "start_position"?: string;
+                "tail_poll_interval_ms"?: number;
+                "timeout_ms"?: number;
+              }) | null;
+              "grpc"?: ({
+                "authority"?: string;
+                "max_recv_msg_size"?: number;
+                "metadata"?: Record<string, string>;
+                "plain_text"?: boolean;
+                "proto_files"?: Array<string>;
+                "timeout_ms"?: number;
+                "use_reflection"?: boolean;
               }) | null;
               "http"?: ({
                 "accept_encoding"?: string;
@@ -115486,16 +120468,112 @@ export interface operations {
                 "version"?: string;
               }) | null;
               "iterations"?: (number) | null;
+              "java_http"?: ({
+                "accept"?: string;
+                "body_encoding"?: string;
+                "codec"?: string;
+                "content_type"?: string;
+                "extractor_type"?: string;
+                "helper_mode"?: string;
+                "object_schema"?: string;
+                "preserve_binary_result"?: boolean;
+                "request_mapping"?: Record<string, string>;
+                "response_mapping"?: Record<string, string>;
+              }) | null;
               "java_vuser"?: ({
+                "action_timeout_ms"?: number;
                 "additional_vm_parameters"?: Array<string>;
                 "classpath"?: Array<string>;
                 "dedicated_class_loader"?: (boolean) | null;
                 "jdk_home"?: string;
                 "jdk_selection"?: string;
                 "jvm_sharing"?: string;
+                "param_left_brace"?: string;
+                "param_right_brace"?: string;
                 "skip_parameter_evaluation"?: (boolean) | null;
+                "startup_timeout_ms"?: number;
                 "use_xbootclasspath"?: (boolean) | null;
                 "vusers_per_jvm"?: number;
+              }) | null;
+              "jms"?: ({
+                "acknowledgement"?: string;
+                "broker_url"?: string;
+                "client_id"?: string;
+                "delivery_mode"?: string;
+                "destination"?: string;
+                "destination_type"?: string;
+                "message_vpn"?: string;
+                "mock"?: boolean;
+                "password"?: string;
+                "properties"?: Record<string, string>;
+                "provider"?: string;
+                "reply_to"?: string;
+                "subscription"?: string;
+                "timeout_ms"?: number;
+                "tls"?: ({
+                  "ca_cert_secret"?: string;
+                  "insecure_skip_verify"?: boolean;
+                  "trust_store_ref"?: string;
+                }) | null;
+                "username"?: string;
+              }) | null;
+              "kafka"?: ({
+                "acks"?: string;
+                "auto_offset_reset"?: string;
+                "brokers"?: Array<string>;
+                "client_id"?: string;
+                "compression"?: string;
+                "consumer_group"?: string;
+                "consumer_transactions"?: boolean;
+                "idempotence"?: string;
+                "isolation_level"?: string;
+                "max_message_bytes"?: number;
+                "mock"?: boolean;
+                "oauth"?: ({
+                  "authentication_method"?: string;
+                  "client_id": string;
+                  "client_secret"?: string;
+                  "client_secret_ref"?: string;
+                  "mode": string;
+                  "scope"?: string;
+                  "token_url": string;
+                }) | null;
+                "oauth_scope"?: string;
+                "partition_strategy"?: string;
+                "partitions"?: number;
+                "producer"?: ({
+                  "admission_timeout_ms"?: (number) | null;
+                  "batch_bytes"?: (number) | null;
+                  "buffer_bytes"?: (number) | null;
+                  "delivery_timeout_ms"?: (number) | null;
+                  "linger_ms"?: (number) | null;
+                  "max_in_flight_requests"?: (number) | null;
+                  "request_timeout_ms"?: (number) | null;
+                  "retries"?: (number) | null;
+                }) | null;
+                "profile"?: string;
+                "properties"?: Record<string, string>;
+                "sasl_mechanism"?: string;
+                "sasl_password"?: string;
+                "sasl_password_secret"?: string;
+                "sasl_username"?: string;
+                "schema"?: string;
+                "schema_id"?: number;
+                "schema_registry_url"?: string;
+                "security_protocol"?: string;
+                "serialization"?: string;
+                "subject"?: string;
+                "timeout_ms"?: number;
+                "tls"?: ({
+                  "ca_cert_file"?: string;
+                  "client_cert_file"?: string;
+                  "client_key_file"?: string;
+                  "insecure_skip_verify"?: boolean;
+                  "max_version"?: string;
+                  "min_version"?: string;
+                }) | null;
+                "topic"?: string;
+                "transactional_id"?: string;
               }) | null;
               "log"?: ({
                 "error_buffer_bytes"?: number;
@@ -115506,6 +120584,19 @@ export interface operations {
                 "redact_run_evidence"?: (boolean) | null;
               }) | null;
               "log_level"?: string;
+              "network"?: ({
+                "address"?: string;
+                "base_dn"?: string;
+                "from"?: string;
+                "host"?: string;
+                "password"?: string;
+                "port"?: number;
+                "subprotocol"?: string;
+                "timeout_ms"?: number;
+                "tls"?: boolean;
+                "to"?: Array<string>;
+                "username"?: string;
+              }) | null;
               "override_fields"?: Array<string>;
               "pacing"?: ({
                 "arrival_process"?: string;
@@ -115660,6 +120751,12 @@ export interface operations {
             "status": string;
             "test_id": string;
             "test_runtime_settings"?: ({
+              "appium"?: ({
+                "capabilities"?: Record<string, unknown>;
+                "element_timeout_ms"?: number;
+                "server_url"?: string;
+                "session_timeout_ms"?: number;
+              }) | null;
               "auto_transactions"?: string;
               "base_url"?: string;
               "browser"?: ({
@@ -115756,6 +120853,18 @@ export interface operations {
                 "mode"?: string;
                 "platform"?: string;
               }) | null;
+              "database"?: ({
+                "conn_max_lifetime_ms"?: number;
+                "driver"?: string;
+                "dsn"?: string;
+                "dsn_secret"?: string;
+                "max_idle_conns"?: number;
+                "max_open_conns"?: number;
+                "max_rows"?: number;
+                "query_timeout_ms"?: number;
+                "read_only"?: boolean;
+                "rollback_on_teardown"?: boolean;
+              }) | null;
               "env"?: Record<string, string>;
               "error_handling"?: ({
                 "continue_on_error"?: (boolean) | null;
@@ -115767,6 +120876,34 @@ export interface operations {
                 "retry_delay_ms"?: number;
                 "retry_on"?: Array<string>;
                 "snapshot_on_error"?: boolean;
+              }) | null;
+              "eventhubs"?: ({
+                "auth_type"?: string;
+                "checkpoint_container_url"?: string;
+                "connection_string"?: string;
+                "connection_string_secret"?: string;
+                "consumer_group"?: string;
+                "consumer_mode"?: string;
+                "event_hub"?: string;
+                "mock"?: boolean;
+                "namespace"?: string;
+                "observe_partition_tail"?: boolean;
+                "owner_level"?: (number) | null;
+                "partition_id"?: string;
+                "partition_key"?: string;
+                "processor_max_partitions"?: number;
+                "start_position"?: string;
+                "tail_poll_interval_ms"?: number;
+                "timeout_ms"?: number;
+              }) | null;
+              "grpc"?: ({
+                "authority"?: string;
+                "max_recv_msg_size"?: number;
+                "metadata"?: Record<string, string>;
+                "plain_text"?: boolean;
+                "proto_files"?: Array<string>;
+                "timeout_ms"?: number;
+                "use_reflection"?: boolean;
               }) | null;
               "http"?: ({
                 "accept_encoding"?: string;
@@ -115837,16 +120974,112 @@ export interface operations {
                 "version"?: string;
               }) | null;
               "iterations"?: (number) | null;
+              "java_http"?: ({
+                "accept"?: string;
+                "body_encoding"?: string;
+                "codec"?: string;
+                "content_type"?: string;
+                "extractor_type"?: string;
+                "helper_mode"?: string;
+                "object_schema"?: string;
+                "preserve_binary_result"?: boolean;
+                "request_mapping"?: Record<string, string>;
+                "response_mapping"?: Record<string, string>;
+              }) | null;
               "java_vuser"?: ({
+                "action_timeout_ms"?: number;
                 "additional_vm_parameters"?: Array<string>;
                 "classpath"?: Array<string>;
                 "dedicated_class_loader"?: (boolean) | null;
                 "jdk_home"?: string;
                 "jdk_selection"?: string;
                 "jvm_sharing"?: string;
+                "param_left_brace"?: string;
+                "param_right_brace"?: string;
                 "skip_parameter_evaluation"?: (boolean) | null;
+                "startup_timeout_ms"?: number;
                 "use_xbootclasspath"?: (boolean) | null;
                 "vusers_per_jvm"?: number;
+              }) | null;
+              "jms"?: ({
+                "acknowledgement"?: string;
+                "broker_url"?: string;
+                "client_id"?: string;
+                "delivery_mode"?: string;
+                "destination"?: string;
+                "destination_type"?: string;
+                "message_vpn"?: string;
+                "mock"?: boolean;
+                "password"?: string;
+                "properties"?: Record<string, string>;
+                "provider"?: string;
+                "reply_to"?: string;
+                "subscription"?: string;
+                "timeout_ms"?: number;
+                "tls"?: ({
+                  "ca_cert_secret"?: string;
+                  "insecure_skip_verify"?: boolean;
+                  "trust_store_ref"?: string;
+                }) | null;
+                "username"?: string;
+              }) | null;
+              "kafka"?: ({
+                "acks"?: string;
+                "auto_offset_reset"?: string;
+                "brokers"?: Array<string>;
+                "client_id"?: string;
+                "compression"?: string;
+                "consumer_group"?: string;
+                "consumer_transactions"?: boolean;
+                "idempotence"?: string;
+                "isolation_level"?: string;
+                "max_message_bytes"?: number;
+                "mock"?: boolean;
+                "oauth"?: ({
+                  "authentication_method"?: string;
+                  "client_id": string;
+                  "client_secret"?: string;
+                  "client_secret_ref"?: string;
+                  "mode": string;
+                  "scope"?: string;
+                  "token_url": string;
+                }) | null;
+                "oauth_scope"?: string;
+                "partition_strategy"?: string;
+                "partitions"?: number;
+                "producer"?: ({
+                  "admission_timeout_ms"?: (number) | null;
+                  "batch_bytes"?: (number) | null;
+                  "buffer_bytes"?: (number) | null;
+                  "delivery_timeout_ms"?: (number) | null;
+                  "linger_ms"?: (number) | null;
+                  "max_in_flight_requests"?: (number) | null;
+                  "request_timeout_ms"?: (number) | null;
+                  "retries"?: (number) | null;
+                }) | null;
+                "profile"?: string;
+                "properties"?: Record<string, string>;
+                "sasl_mechanism"?: string;
+                "sasl_password"?: string;
+                "sasl_password_secret"?: string;
+                "sasl_username"?: string;
+                "schema"?: string;
+                "schema_id"?: number;
+                "schema_registry_url"?: string;
+                "security_protocol"?: string;
+                "serialization"?: string;
+                "subject"?: string;
+                "timeout_ms"?: number;
+                "tls"?: ({
+                  "ca_cert_file"?: string;
+                  "client_cert_file"?: string;
+                  "client_key_file"?: string;
+                  "insecure_skip_verify"?: boolean;
+                  "max_version"?: string;
+                  "min_version"?: string;
+                }) | null;
+                "topic"?: string;
+                "transactional_id"?: string;
               }) | null;
               "log"?: ({
                 "error_buffer_bytes"?: number;
@@ -115857,6 +121090,19 @@ export interface operations {
                 "redact_run_evidence"?: (boolean) | null;
               }) | null;
               "log_level"?: string;
+              "network"?: ({
+                "address"?: string;
+                "base_dn"?: string;
+                "from"?: string;
+                "host"?: string;
+                "password"?: string;
+                "port"?: number;
+                "subprotocol"?: string;
+                "timeout_ms"?: number;
+                "tls"?: boolean;
+                "to"?: Array<string>;
+                "username"?: string;
+              }) | null;
               "override_fields"?: Array<string>;
               "pacing"?: ({
                 "arrival_process"?: string;
@@ -116315,18 +121561,26 @@ export interface operations {
                   "max_transactions"?: number;
                 }) | null;
                 "runtime_settings"?: ({
+                  "appium"?: (Record<string, unknown>) | null;
                   "auto_transactions"?: string;
                   "base_url"?: string;
                   "browser"?: (Record<string, unknown>) | null;
                   "browser_config"?: (Record<string, unknown>) | null;
                   "browser_emulation"?: (Record<string, unknown>) | null;
+                  "database"?: (Record<string, unknown>) | null;
                   "env"?: Record<string, string>;
                   "error_handling"?: (Record<string, unknown>) | null;
+                  "eventhubs"?: (Record<string, unknown>) | null;
+                  "grpc"?: (Record<string, unknown>) | null;
                   "http"?: (Record<string, unknown>) | null;
                   "iterations"?: (number) | null;
+                  "java_http"?: (Record<string, unknown>) | null;
                   "java_vuser"?: (Record<string, unknown>) | null;
+                  "jms"?: (Record<string, unknown>) | null;
+                  "kafka"?: (Record<string, unknown>) | null;
                   "log"?: (Record<string, unknown>) | null;
                   "log_level"?: string;
+                  "network"?: (Record<string, unknown>) | null;
                   "override_fields"?: Array<string>;
                   "pacing"?: (Record<string, unknown>) | null;
                   "redaction_rules"?: Array<Record<string, unknown>>;
@@ -116348,6 +121602,12 @@ export interface operations {
               }>;
               "resource_baseline"?: boolean;
               "runtime_settings"?: ({
+                "appium"?: ({
+                  "capabilities"?: Record<string, unknown>;
+                  "element_timeout_ms"?: number;
+                  "server_url"?: string;
+                  "session_timeout_ms"?: number;
+                }) | null;
                 "auto_transactions"?: string;
                 "base_url"?: string;
                 "browser"?: ({
@@ -116404,6 +121664,18 @@ export interface operations {
                   "mode"?: string;
                   "platform"?: string;
                 }) | null;
+                "database"?: ({
+                  "conn_max_lifetime_ms"?: number;
+                  "driver"?: string;
+                  "dsn"?: string;
+                  "dsn_secret"?: string;
+                  "max_idle_conns"?: number;
+                  "max_open_conns"?: number;
+                  "max_rows"?: number;
+                  "query_timeout_ms"?: number;
+                  "read_only"?: boolean;
+                  "rollback_on_teardown"?: boolean;
+                }) | null;
                 "env"?: Record<string, string>;
                 "error_handling"?: ({
                   "continue_on_error"?: (boolean) | null;
@@ -116415,6 +121687,34 @@ export interface operations {
                   "retry_delay_ms"?: number;
                   "retry_on"?: Array<string>;
                   "snapshot_on_error"?: boolean;
+                }) | null;
+                "eventhubs"?: ({
+                  "auth_type"?: string;
+                  "checkpoint_container_url"?: string;
+                  "connection_string"?: string;
+                  "connection_string_secret"?: string;
+                  "consumer_group"?: string;
+                  "consumer_mode"?: string;
+                  "event_hub"?: string;
+                  "mock"?: boolean;
+                  "namespace"?: string;
+                  "observe_partition_tail"?: boolean;
+                  "owner_level"?: (number) | null;
+                  "partition_id"?: string;
+                  "partition_key"?: string;
+                  "processor_max_partitions"?: number;
+                  "start_position"?: string;
+                  "tail_poll_interval_ms"?: number;
+                  "timeout_ms"?: number;
+                }) | null;
+                "grpc"?: ({
+                  "authority"?: string;
+                  "max_recv_msg_size"?: number;
+                  "metadata"?: Record<string, string>;
+                  "plain_text"?: boolean;
+                  "proto_files"?: Array<string>;
+                  "timeout_ms"?: number;
+                  "use_reflection"?: boolean;
                 }) | null;
                 "http"?: ({
                   "accept_encoding"?: string;
@@ -116459,16 +121759,84 @@ export interface operations {
                   "version"?: string;
                 }) | null;
                 "iterations"?: (number) | null;
+                "java_http"?: ({
+                  "accept"?: string;
+                  "body_encoding"?: string;
+                  "codec"?: string;
+                  "content_type"?: string;
+                  "extractor_type"?: string;
+                  "helper_mode"?: string;
+                  "object_schema"?: string;
+                  "preserve_binary_result"?: boolean;
+                  "request_mapping"?: Record<string, string>;
+                  "response_mapping"?: Record<string, string>;
+                }) | null;
                 "java_vuser"?: ({
+                  "action_timeout_ms"?: number;
                   "additional_vm_parameters"?: Array<string>;
                   "classpath"?: Array<string>;
                   "dedicated_class_loader"?: (boolean) | null;
                   "jdk_home"?: string;
                   "jdk_selection"?: string;
                   "jvm_sharing"?: string;
+                  "param_left_brace"?: string;
+                  "param_right_brace"?: string;
                   "skip_parameter_evaluation"?: (boolean) | null;
+                  "startup_timeout_ms"?: number;
                   "use_xbootclasspath"?: (boolean) | null;
                   "vusers_per_jvm"?: number;
+                }) | null;
+                "jms"?: ({
+                  "acknowledgement"?: string;
+                  "broker_url"?: string;
+                  "client_id"?: string;
+                  "delivery_mode"?: string;
+                  "destination"?: string;
+                  "destination_type"?: string;
+                  "message_vpn"?: string;
+                  "mock"?: boolean;
+                  "password"?: string;
+                  "properties"?: Record<string, string>;
+                  "provider"?: string;
+                  "reply_to"?: string;
+                  "subscription"?: string;
+                  "timeout_ms"?: number;
+                  "tls"?: (Record<string, unknown>) | null;
+                  "username"?: string;
+                }) | null;
+                "kafka"?: ({
+                  "acks"?: string;
+                  "auto_offset_reset"?: string;
+                  "brokers"?: Array<string>;
+                  "client_id"?: string;
+                  "compression"?: string;
+                  "consumer_group"?: string;
+                  "consumer_transactions"?: boolean;
+                  "idempotence"?: string;
+                  "isolation_level"?: string;
+                  "max_message_bytes"?: number;
+                  "mock"?: boolean;
+                  "oauth"?: (Record<string, unknown>) | null;
+                  "oauth_scope"?: string;
+                  "partition_strategy"?: string;
+                  "partitions"?: number;
+                  "producer"?: (Record<string, unknown>) | null;
+                  "profile"?: string;
+                  "properties"?: Record<string, string>;
+                  "sasl_mechanism"?: string;
+                  "sasl_password"?: string;
+                  "sasl_password_secret"?: string;
+                  "sasl_username"?: string;
+                  "schema"?: string;
+                  "schema_id"?: number;
+                  "schema_registry_url"?: string;
+                  "security_protocol"?: string;
+                  "serialization"?: string;
+                  "subject"?: string;
+                  "timeout_ms"?: number;
+                  "tls"?: (Record<string, unknown>) | null;
+                  "topic"?: string;
+                  "transactional_id"?: string;
                 }) | null;
                 "log"?: ({
                   "error_buffer_bytes"?: number;
@@ -116479,6 +121847,19 @@ export interface operations {
                   "redact_run_evidence"?: (boolean) | null;
                 }) | null;
                 "log_level"?: string;
+                "network"?: ({
+                  "address"?: string;
+                  "base_dn"?: string;
+                  "from"?: string;
+                  "host"?: string;
+                  "password"?: string;
+                  "port"?: number;
+                  "subprotocol"?: string;
+                  "timeout_ms"?: number;
+                  "tls"?: boolean;
+                  "to"?: Array<string>;
+                  "username"?: string;
+                }) | null;
                 "override_fields"?: Array<string>;
                 "pacing"?: ({
                   "arrival_process"?: string;
@@ -116875,18 +122256,26 @@ export interface operations {
                   "max_transactions"?: number;
                 }) | null;
                 "runtime_settings"?: ({
+                  "appium"?: (Record<string, unknown>) | null;
                   "auto_transactions"?: string;
                   "base_url"?: string;
                   "browser"?: (Record<string, unknown>) | null;
                   "browser_config"?: (Record<string, unknown>) | null;
                   "browser_emulation"?: (Record<string, unknown>) | null;
+                  "database"?: (Record<string, unknown>) | null;
                   "env"?: Record<string, string>;
                   "error_handling"?: (Record<string, unknown>) | null;
+                  "eventhubs"?: (Record<string, unknown>) | null;
+                  "grpc"?: (Record<string, unknown>) | null;
                   "http"?: (Record<string, unknown>) | null;
                   "iterations"?: (number) | null;
+                  "java_http"?: (Record<string, unknown>) | null;
                   "java_vuser"?: (Record<string, unknown>) | null;
+                  "jms"?: (Record<string, unknown>) | null;
+                  "kafka"?: (Record<string, unknown>) | null;
                   "log"?: (Record<string, unknown>) | null;
                   "log_level"?: string;
+                  "network"?: (Record<string, unknown>) | null;
                   "override_fields"?: Array<string>;
                   "pacing"?: (Record<string, unknown>) | null;
                   "redaction_rules"?: Array<Record<string, unknown>>;
@@ -116908,6 +122297,12 @@ export interface operations {
               }>;
               "resource_baseline"?: boolean;
               "runtime_settings"?: ({
+                "appium"?: ({
+                  "capabilities"?: Record<string, unknown>;
+                  "element_timeout_ms"?: number;
+                  "server_url"?: string;
+                  "session_timeout_ms"?: number;
+                }) | null;
                 "auto_transactions"?: string;
                 "base_url"?: string;
                 "browser"?: ({
@@ -116964,6 +122359,18 @@ export interface operations {
                   "mode"?: string;
                   "platform"?: string;
                 }) | null;
+                "database"?: ({
+                  "conn_max_lifetime_ms"?: number;
+                  "driver"?: string;
+                  "dsn"?: string;
+                  "dsn_secret"?: string;
+                  "max_idle_conns"?: number;
+                  "max_open_conns"?: number;
+                  "max_rows"?: number;
+                  "query_timeout_ms"?: number;
+                  "read_only"?: boolean;
+                  "rollback_on_teardown"?: boolean;
+                }) | null;
                 "env"?: Record<string, string>;
                 "error_handling"?: ({
                   "continue_on_error"?: (boolean) | null;
@@ -116975,6 +122382,34 @@ export interface operations {
                   "retry_delay_ms"?: number;
                   "retry_on"?: Array<string>;
                   "snapshot_on_error"?: boolean;
+                }) | null;
+                "eventhubs"?: ({
+                  "auth_type"?: string;
+                  "checkpoint_container_url"?: string;
+                  "connection_string"?: string;
+                  "connection_string_secret"?: string;
+                  "consumer_group"?: string;
+                  "consumer_mode"?: string;
+                  "event_hub"?: string;
+                  "mock"?: boolean;
+                  "namespace"?: string;
+                  "observe_partition_tail"?: boolean;
+                  "owner_level"?: (number) | null;
+                  "partition_id"?: string;
+                  "partition_key"?: string;
+                  "processor_max_partitions"?: number;
+                  "start_position"?: string;
+                  "tail_poll_interval_ms"?: number;
+                  "timeout_ms"?: number;
+                }) | null;
+                "grpc"?: ({
+                  "authority"?: string;
+                  "max_recv_msg_size"?: number;
+                  "metadata"?: Record<string, string>;
+                  "plain_text"?: boolean;
+                  "proto_files"?: Array<string>;
+                  "timeout_ms"?: number;
+                  "use_reflection"?: boolean;
                 }) | null;
                 "http"?: ({
                   "accept_encoding"?: string;
@@ -117019,16 +122454,84 @@ export interface operations {
                   "version"?: string;
                 }) | null;
                 "iterations"?: (number) | null;
+                "java_http"?: ({
+                  "accept"?: string;
+                  "body_encoding"?: string;
+                  "codec"?: string;
+                  "content_type"?: string;
+                  "extractor_type"?: string;
+                  "helper_mode"?: string;
+                  "object_schema"?: string;
+                  "preserve_binary_result"?: boolean;
+                  "request_mapping"?: Record<string, string>;
+                  "response_mapping"?: Record<string, string>;
+                }) | null;
                 "java_vuser"?: ({
+                  "action_timeout_ms"?: number;
                   "additional_vm_parameters"?: Array<string>;
                   "classpath"?: Array<string>;
                   "dedicated_class_loader"?: (boolean) | null;
                   "jdk_home"?: string;
                   "jdk_selection"?: string;
                   "jvm_sharing"?: string;
+                  "param_left_brace"?: string;
+                  "param_right_brace"?: string;
                   "skip_parameter_evaluation"?: (boolean) | null;
+                  "startup_timeout_ms"?: number;
                   "use_xbootclasspath"?: (boolean) | null;
                   "vusers_per_jvm"?: number;
+                }) | null;
+                "jms"?: ({
+                  "acknowledgement"?: string;
+                  "broker_url"?: string;
+                  "client_id"?: string;
+                  "delivery_mode"?: string;
+                  "destination"?: string;
+                  "destination_type"?: string;
+                  "message_vpn"?: string;
+                  "mock"?: boolean;
+                  "password"?: string;
+                  "properties"?: Record<string, string>;
+                  "provider"?: string;
+                  "reply_to"?: string;
+                  "subscription"?: string;
+                  "timeout_ms"?: number;
+                  "tls"?: (Record<string, unknown>) | null;
+                  "username"?: string;
+                }) | null;
+                "kafka"?: ({
+                  "acks"?: string;
+                  "auto_offset_reset"?: string;
+                  "brokers"?: Array<string>;
+                  "client_id"?: string;
+                  "compression"?: string;
+                  "consumer_group"?: string;
+                  "consumer_transactions"?: boolean;
+                  "idempotence"?: string;
+                  "isolation_level"?: string;
+                  "max_message_bytes"?: number;
+                  "mock"?: boolean;
+                  "oauth"?: (Record<string, unknown>) | null;
+                  "oauth_scope"?: string;
+                  "partition_strategy"?: string;
+                  "partitions"?: number;
+                  "producer"?: (Record<string, unknown>) | null;
+                  "profile"?: string;
+                  "properties"?: Record<string, string>;
+                  "sasl_mechanism"?: string;
+                  "sasl_password"?: string;
+                  "sasl_password_secret"?: string;
+                  "sasl_username"?: string;
+                  "schema"?: string;
+                  "schema_id"?: number;
+                  "schema_registry_url"?: string;
+                  "security_protocol"?: string;
+                  "serialization"?: string;
+                  "subject"?: string;
+                  "timeout_ms"?: number;
+                  "tls"?: (Record<string, unknown>) | null;
+                  "topic"?: string;
+                  "transactional_id"?: string;
                 }) | null;
                 "log"?: ({
                   "error_buffer_bytes"?: number;
@@ -117039,6 +122542,19 @@ export interface operations {
                   "redact_run_evidence"?: (boolean) | null;
                 }) | null;
                 "log_level"?: string;
+                "network"?: ({
+                  "address"?: string;
+                  "base_dn"?: string;
+                  "from"?: string;
+                  "host"?: string;
+                  "password"?: string;
+                  "port"?: number;
+                  "subprotocol"?: string;
+                  "timeout_ms"?: number;
+                  "tls"?: boolean;
+                  "to"?: Array<string>;
+                  "username"?: string;
+                }) | null;
                 "override_fields"?: Array<string>;
                 "pacing"?: ({
                   "arrival_process"?: string;
@@ -117467,6 +122983,12 @@ export interface operations {
                 "max_transactions"?: number;
               }) | null;
               "runtime_settings"?: ({
+                "appium"?: ({
+                  "capabilities"?: Record<string, unknown>;
+                  "element_timeout_ms"?: number;
+                  "server_url"?: string;
+                  "session_timeout_ms"?: number;
+                }) | null;
                 "auto_transactions"?: string;
                 "base_url"?: string;
                 "browser"?: ({
@@ -117523,6 +123045,18 @@ export interface operations {
                   "mode"?: string;
                   "platform"?: string;
                 }) | null;
+                "database"?: ({
+                  "conn_max_lifetime_ms"?: number;
+                  "driver"?: string;
+                  "dsn"?: string;
+                  "dsn_secret"?: string;
+                  "max_idle_conns"?: number;
+                  "max_open_conns"?: number;
+                  "max_rows"?: number;
+                  "query_timeout_ms"?: number;
+                  "read_only"?: boolean;
+                  "rollback_on_teardown"?: boolean;
+                }) | null;
                 "env"?: Record<string, string>;
                 "error_handling"?: ({
                   "continue_on_error"?: (boolean) | null;
@@ -117534,6 +123068,34 @@ export interface operations {
                   "retry_delay_ms"?: number;
                   "retry_on"?: Array<string>;
                   "snapshot_on_error"?: boolean;
+                }) | null;
+                "eventhubs"?: ({
+                  "auth_type"?: string;
+                  "checkpoint_container_url"?: string;
+                  "connection_string"?: string;
+                  "connection_string_secret"?: string;
+                  "consumer_group"?: string;
+                  "consumer_mode"?: string;
+                  "event_hub"?: string;
+                  "mock"?: boolean;
+                  "namespace"?: string;
+                  "observe_partition_tail"?: boolean;
+                  "owner_level"?: (number) | null;
+                  "partition_id"?: string;
+                  "partition_key"?: string;
+                  "processor_max_partitions"?: number;
+                  "start_position"?: string;
+                  "tail_poll_interval_ms"?: number;
+                  "timeout_ms"?: number;
+                }) | null;
+                "grpc"?: ({
+                  "authority"?: string;
+                  "max_recv_msg_size"?: number;
+                  "metadata"?: Record<string, string>;
+                  "plain_text"?: boolean;
+                  "proto_files"?: Array<string>;
+                  "timeout_ms"?: number;
+                  "use_reflection"?: boolean;
                 }) | null;
                 "http"?: ({
                   "accept_encoding"?: string;
@@ -117578,16 +123140,84 @@ export interface operations {
                   "version"?: string;
                 }) | null;
                 "iterations"?: (number) | null;
+                "java_http"?: ({
+                  "accept"?: string;
+                  "body_encoding"?: string;
+                  "codec"?: string;
+                  "content_type"?: string;
+                  "extractor_type"?: string;
+                  "helper_mode"?: string;
+                  "object_schema"?: string;
+                  "preserve_binary_result"?: boolean;
+                  "request_mapping"?: Record<string, string>;
+                  "response_mapping"?: Record<string, string>;
+                }) | null;
                 "java_vuser"?: ({
+                  "action_timeout_ms"?: number;
                   "additional_vm_parameters"?: Array<string>;
                   "classpath"?: Array<string>;
                   "dedicated_class_loader"?: (boolean) | null;
                   "jdk_home"?: string;
                   "jdk_selection"?: string;
                   "jvm_sharing"?: string;
+                  "param_left_brace"?: string;
+                  "param_right_brace"?: string;
                   "skip_parameter_evaluation"?: (boolean) | null;
+                  "startup_timeout_ms"?: number;
                   "use_xbootclasspath"?: (boolean) | null;
                   "vusers_per_jvm"?: number;
+                }) | null;
+                "jms"?: ({
+                  "acknowledgement"?: string;
+                  "broker_url"?: string;
+                  "client_id"?: string;
+                  "delivery_mode"?: string;
+                  "destination"?: string;
+                  "destination_type"?: string;
+                  "message_vpn"?: string;
+                  "mock"?: boolean;
+                  "password"?: string;
+                  "properties"?: Record<string, string>;
+                  "provider"?: string;
+                  "reply_to"?: string;
+                  "subscription"?: string;
+                  "timeout_ms"?: number;
+                  "tls"?: (Record<string, unknown>) | null;
+                  "username"?: string;
+                }) | null;
+                "kafka"?: ({
+                  "acks"?: string;
+                  "auto_offset_reset"?: string;
+                  "brokers"?: Array<string>;
+                  "client_id"?: string;
+                  "compression"?: string;
+                  "consumer_group"?: string;
+                  "consumer_transactions"?: boolean;
+                  "idempotence"?: string;
+                  "isolation_level"?: string;
+                  "max_message_bytes"?: number;
+                  "mock"?: boolean;
+                  "oauth"?: (Record<string, unknown>) | null;
+                  "oauth_scope"?: string;
+                  "partition_strategy"?: string;
+                  "partitions"?: number;
+                  "producer"?: (Record<string, unknown>) | null;
+                  "profile"?: string;
+                  "properties"?: Record<string, string>;
+                  "sasl_mechanism"?: string;
+                  "sasl_password"?: string;
+                  "sasl_password_secret"?: string;
+                  "sasl_username"?: string;
+                  "schema"?: string;
+                  "schema_id"?: number;
+                  "schema_registry_url"?: string;
+                  "security_protocol"?: string;
+                  "serialization"?: string;
+                  "subject"?: string;
+                  "timeout_ms"?: number;
+                  "tls"?: (Record<string, unknown>) | null;
+                  "topic"?: string;
+                  "transactional_id"?: string;
                 }) | null;
                 "log"?: ({
                   "error_buffer_bytes"?: number;
@@ -117598,6 +123228,19 @@ export interface operations {
                   "redact_run_evidence"?: (boolean) | null;
                 }) | null;
                 "log_level"?: string;
+                "network"?: ({
+                  "address"?: string;
+                  "base_dn"?: string;
+                  "from"?: string;
+                  "host"?: string;
+                  "password"?: string;
+                  "port"?: number;
+                  "subprotocol"?: string;
+                  "timeout_ms"?: number;
+                  "tls"?: boolean;
+                  "to"?: Array<string>;
+                  "username"?: string;
+                }) | null;
                 "override_fields"?: Array<string>;
                 "pacing"?: ({
                   "arrival_process"?: string;
@@ -135868,6 +141511,12 @@ export interface operations {
                 "max_transactions"?: number;
               }) | null;
               "runtime_settings"?: ({
+                "appium"?: ({
+                  "capabilities"?: Record<string, unknown>;
+                  "element_timeout_ms"?: number;
+                  "server_url"?: string;
+                  "session_timeout_ms"?: number;
+                }) | null;
                 "auto_transactions"?: string;
                 "base_url"?: string;
                 "browser"?: ({
@@ -135924,6 +141573,18 @@ export interface operations {
                   "mode"?: string;
                   "platform"?: string;
                 }) | null;
+                "database"?: ({
+                  "conn_max_lifetime_ms"?: number;
+                  "driver"?: string;
+                  "dsn"?: string;
+                  "dsn_secret"?: string;
+                  "max_idle_conns"?: number;
+                  "max_open_conns"?: number;
+                  "max_rows"?: number;
+                  "query_timeout_ms"?: number;
+                  "read_only"?: boolean;
+                  "rollback_on_teardown"?: boolean;
+                }) | null;
                 "env"?: Record<string, string>;
                 "error_handling"?: ({
                   "continue_on_error"?: (boolean) | null;
@@ -135935,6 +141596,34 @@ export interface operations {
                   "retry_delay_ms"?: number;
                   "retry_on"?: Array<string>;
                   "snapshot_on_error"?: boolean;
+                }) | null;
+                "eventhubs"?: ({
+                  "auth_type"?: string;
+                  "checkpoint_container_url"?: string;
+                  "connection_string"?: string;
+                  "connection_string_secret"?: string;
+                  "consumer_group"?: string;
+                  "consumer_mode"?: string;
+                  "event_hub"?: string;
+                  "mock"?: boolean;
+                  "namespace"?: string;
+                  "observe_partition_tail"?: boolean;
+                  "owner_level"?: (number) | null;
+                  "partition_id"?: string;
+                  "partition_key"?: string;
+                  "processor_max_partitions"?: number;
+                  "start_position"?: string;
+                  "tail_poll_interval_ms"?: number;
+                  "timeout_ms"?: number;
+                }) | null;
+                "grpc"?: ({
+                  "authority"?: string;
+                  "max_recv_msg_size"?: number;
+                  "metadata"?: Record<string, string>;
+                  "plain_text"?: boolean;
+                  "proto_files"?: Array<string>;
+                  "timeout_ms"?: number;
+                  "use_reflection"?: boolean;
                 }) | null;
                 "http"?: ({
                   "accept_encoding"?: string;
@@ -135979,16 +141668,84 @@ export interface operations {
                   "version"?: string;
                 }) | null;
                 "iterations"?: (number) | null;
+                "java_http"?: ({
+                  "accept"?: string;
+                  "body_encoding"?: string;
+                  "codec"?: string;
+                  "content_type"?: string;
+                  "extractor_type"?: string;
+                  "helper_mode"?: string;
+                  "object_schema"?: string;
+                  "preserve_binary_result"?: boolean;
+                  "request_mapping"?: Record<string, string>;
+                  "response_mapping"?: Record<string, string>;
+                }) | null;
                 "java_vuser"?: ({
+                  "action_timeout_ms"?: number;
                   "additional_vm_parameters"?: Array<string>;
                   "classpath"?: Array<string>;
                   "dedicated_class_loader"?: (boolean) | null;
                   "jdk_home"?: string;
                   "jdk_selection"?: string;
                   "jvm_sharing"?: string;
+                  "param_left_brace"?: string;
+                  "param_right_brace"?: string;
                   "skip_parameter_evaluation"?: (boolean) | null;
+                  "startup_timeout_ms"?: number;
                   "use_xbootclasspath"?: (boolean) | null;
                   "vusers_per_jvm"?: number;
+                }) | null;
+                "jms"?: ({
+                  "acknowledgement"?: string;
+                  "broker_url"?: string;
+                  "client_id"?: string;
+                  "delivery_mode"?: string;
+                  "destination"?: string;
+                  "destination_type"?: string;
+                  "message_vpn"?: string;
+                  "mock"?: boolean;
+                  "password"?: string;
+                  "properties"?: Record<string, string>;
+                  "provider"?: string;
+                  "reply_to"?: string;
+                  "subscription"?: string;
+                  "timeout_ms"?: number;
+                  "tls"?: (Record<string, unknown>) | null;
+                  "username"?: string;
+                }) | null;
+                "kafka"?: ({
+                  "acks"?: string;
+                  "auto_offset_reset"?: string;
+                  "brokers"?: Array<string>;
+                  "client_id"?: string;
+                  "compression"?: string;
+                  "consumer_group"?: string;
+                  "consumer_transactions"?: boolean;
+                  "idempotence"?: string;
+                  "isolation_level"?: string;
+                  "max_message_bytes"?: number;
+                  "mock"?: boolean;
+                  "oauth"?: (Record<string, unknown>) | null;
+                  "oauth_scope"?: string;
+                  "partition_strategy"?: string;
+                  "partitions"?: number;
+                  "producer"?: (Record<string, unknown>) | null;
+                  "profile"?: string;
+                  "properties"?: Record<string, string>;
+                  "sasl_mechanism"?: string;
+                  "sasl_password"?: string;
+                  "sasl_password_secret"?: string;
+                  "sasl_username"?: string;
+                  "schema"?: string;
+                  "schema_id"?: number;
+                  "schema_registry_url"?: string;
+                  "security_protocol"?: string;
+                  "serialization"?: string;
+                  "subject"?: string;
+                  "timeout_ms"?: number;
+                  "tls"?: (Record<string, unknown>) | null;
+                  "topic"?: string;
+                  "transactional_id"?: string;
                 }) | null;
                 "log"?: ({
                   "error_buffer_bytes"?: number;
@@ -135999,6 +141756,19 @@ export interface operations {
                   "redact_run_evidence"?: (boolean) | null;
                 }) | null;
                 "log_level"?: string;
+                "network"?: ({
+                  "address"?: string;
+                  "base_dn"?: string;
+                  "from"?: string;
+                  "host"?: string;
+                  "password"?: string;
+                  "port"?: number;
+                  "subprotocol"?: string;
+                  "timeout_ms"?: number;
+                  "tls"?: boolean;
+                  "to"?: Array<string>;
+                  "username"?: string;
+                }) | null;
                 "override_fields"?: Array<string>;
                 "pacing"?: ({
                   "arrival_process"?: string;
@@ -140876,6 +146646,12 @@ export interface operations {
             "release_id"?: string;
             "resource_baseline"?: boolean;
             "runtime_settings"?: ({
+              "appium"?: ({
+                "capabilities"?: Record<string, unknown>;
+                "element_timeout_ms"?: number;
+                "server_url"?: string;
+                "session_timeout_ms"?: number;
+              }) | null;
               "auto_transactions"?: string;
               "base_url"?: string;
               "browser"?: ({
@@ -140972,6 +146748,18 @@ export interface operations {
                 "mode"?: string;
                 "platform"?: string;
               }) | null;
+              "database"?: ({
+                "conn_max_lifetime_ms"?: number;
+                "driver"?: string;
+                "dsn"?: string;
+                "dsn_secret"?: string;
+                "max_idle_conns"?: number;
+                "max_open_conns"?: number;
+                "max_rows"?: number;
+                "query_timeout_ms"?: number;
+                "read_only"?: boolean;
+                "rollback_on_teardown"?: boolean;
+              }) | null;
               "env"?: Record<string, string>;
               "error_handling"?: ({
                 "continue_on_error"?: (boolean) | null;
@@ -140983,6 +146771,34 @@ export interface operations {
                 "retry_delay_ms"?: number;
                 "retry_on"?: Array<string>;
                 "snapshot_on_error"?: boolean;
+              }) | null;
+              "eventhubs"?: ({
+                "auth_type"?: string;
+                "checkpoint_container_url"?: string;
+                "connection_string"?: string;
+                "connection_string_secret"?: string;
+                "consumer_group"?: string;
+                "consumer_mode"?: string;
+                "event_hub"?: string;
+                "mock"?: boolean;
+                "namespace"?: string;
+                "observe_partition_tail"?: boolean;
+                "owner_level"?: (number) | null;
+                "partition_id"?: string;
+                "partition_key"?: string;
+                "processor_max_partitions"?: number;
+                "start_position"?: string;
+                "tail_poll_interval_ms"?: number;
+                "timeout_ms"?: number;
+              }) | null;
+              "grpc"?: ({
+                "authority"?: string;
+                "max_recv_msg_size"?: number;
+                "metadata"?: Record<string, string>;
+                "plain_text"?: boolean;
+                "proto_files"?: Array<string>;
+                "timeout_ms"?: number;
+                "use_reflection"?: boolean;
               }) | null;
               "http"?: ({
                 "accept_encoding"?: string;
@@ -141053,16 +146869,112 @@ export interface operations {
                 "version"?: string;
               }) | null;
               "iterations"?: (number) | null;
+              "java_http"?: ({
+                "accept"?: string;
+                "body_encoding"?: string;
+                "codec"?: string;
+                "content_type"?: string;
+                "extractor_type"?: string;
+                "helper_mode"?: string;
+                "object_schema"?: string;
+                "preserve_binary_result"?: boolean;
+                "request_mapping"?: Record<string, string>;
+                "response_mapping"?: Record<string, string>;
+              }) | null;
               "java_vuser"?: ({
+                "action_timeout_ms"?: number;
                 "additional_vm_parameters"?: Array<string>;
                 "classpath"?: Array<string>;
                 "dedicated_class_loader"?: (boolean) | null;
                 "jdk_home"?: string;
                 "jdk_selection"?: string;
                 "jvm_sharing"?: string;
+                "param_left_brace"?: string;
+                "param_right_brace"?: string;
                 "skip_parameter_evaluation"?: (boolean) | null;
+                "startup_timeout_ms"?: number;
                 "use_xbootclasspath"?: (boolean) | null;
                 "vusers_per_jvm"?: number;
+              }) | null;
+              "jms"?: ({
+                "acknowledgement"?: string;
+                "broker_url"?: string;
+                "client_id"?: string;
+                "delivery_mode"?: string;
+                "destination"?: string;
+                "destination_type"?: string;
+                "message_vpn"?: string;
+                "mock"?: boolean;
+                "password"?: string;
+                "properties"?: Record<string, string>;
+                "provider"?: string;
+                "reply_to"?: string;
+                "subscription"?: string;
+                "timeout_ms"?: number;
+                "tls"?: ({
+                  "ca_cert_secret"?: string;
+                  "insecure_skip_verify"?: boolean;
+                  "trust_store_ref"?: string;
+                }) | null;
+                "username"?: string;
+              }) | null;
+              "kafka"?: ({
+                "acks"?: string;
+                "auto_offset_reset"?: string;
+                "brokers"?: Array<string>;
+                "client_id"?: string;
+                "compression"?: string;
+                "consumer_group"?: string;
+                "consumer_transactions"?: boolean;
+                "idempotence"?: string;
+                "isolation_level"?: string;
+                "max_message_bytes"?: number;
+                "mock"?: boolean;
+                "oauth"?: ({
+                  "authentication_method"?: string;
+                  "client_id": string;
+                  "client_secret"?: string;
+                  "client_secret_ref"?: string;
+                  "mode": string;
+                  "scope"?: string;
+                  "token_url": string;
+                }) | null;
+                "oauth_scope"?: string;
+                "partition_strategy"?: string;
+                "partitions"?: number;
+                "producer"?: ({
+                  "admission_timeout_ms"?: (number) | null;
+                  "batch_bytes"?: (number) | null;
+                  "buffer_bytes"?: (number) | null;
+                  "delivery_timeout_ms"?: (number) | null;
+                  "linger_ms"?: (number) | null;
+                  "max_in_flight_requests"?: (number) | null;
+                  "request_timeout_ms"?: (number) | null;
+                  "retries"?: (number) | null;
+                }) | null;
+                "profile"?: string;
+                "properties"?: Record<string, string>;
+                "sasl_mechanism"?: string;
+                "sasl_password"?: string;
+                "sasl_password_secret"?: string;
+                "sasl_username"?: string;
+                "schema"?: string;
+                "schema_id"?: number;
+                "schema_registry_url"?: string;
+                "security_protocol"?: string;
+                "serialization"?: string;
+                "subject"?: string;
+                "timeout_ms"?: number;
+                "tls"?: ({
+                  "ca_cert_file"?: string;
+                  "client_cert_file"?: string;
+                  "client_key_file"?: string;
+                  "insecure_skip_verify"?: boolean;
+                  "max_version"?: string;
+                  "min_version"?: string;
+                }) | null;
+                "topic"?: string;
+                "transactional_id"?: string;
               }) | null;
               "log"?: ({
                 "error_buffer_bytes"?: number;
@@ -141073,6 +146985,19 @@ export interface operations {
                 "redact_run_evidence"?: (boolean) | null;
               }) | null;
               "log_level"?: string;
+              "network"?: ({
+                "address"?: string;
+                "base_dn"?: string;
+                "from"?: string;
+                "host"?: string;
+                "password"?: string;
+                "port"?: number;
+                "subprotocol"?: string;
+                "timeout_ms"?: number;
+                "tls"?: boolean;
+                "to"?: Array<string>;
+                "username"?: string;
+              }) | null;
               "override_fields"?: Array<string>;
               "pacing"?: ({
                 "arrival_process"?: string;
@@ -141970,18 +147895,26 @@ export interface operations {
             "revision_source_group_index"?: (number) | null;
             "role"?: string;
             "runtime_settings"?: ({
+              "appium"?: (Record<string, unknown>) | null;
               "auto_transactions"?: string;
               "base_url"?: string;
               "browser"?: (Record<string, unknown>) | null;
               "browser_config"?: (Record<string, unknown>) | null;
               "browser_emulation"?: (Record<string, unknown>) | null;
+              "database"?: (Record<string, unknown>) | null;
               "env"?: Record<string, string>;
               "error_handling"?: (Record<string, unknown>) | null;
+              "eventhubs"?: (Record<string, unknown>) | null;
+              "grpc"?: (Record<string, unknown>) | null;
               "http"?: (Record<string, unknown>) | null;
               "iterations"?: (number) | null;
+              "java_http"?: (Record<string, unknown>) | null;
               "java_vuser"?: (Record<string, unknown>) | null;
+              "jms"?: (Record<string, unknown>) | null;
+              "kafka"?: (Record<string, unknown>) | null;
               "log"?: (Record<string, unknown>) | null;
               "log_level"?: string;
+              "network"?: (Record<string, unknown>) | null;
               "override_fields"?: Array<string>;
               "pacing"?: (Record<string, unknown>) | null;
               "redaction_rules"?: Array<Record<string, unknown>>;
@@ -142016,6 +147949,12 @@ export interface operations {
           "resource_baseline"?: boolean;
           "revision_source_test_id"?: string;
           "runtime_settings"?: ({
+            "appium"?: ({
+              "capabilities"?: Record<string, unknown>;
+              "element_timeout_ms"?: number;
+              "server_url"?: string;
+              "session_timeout_ms"?: number;
+            }) | null;
             "auto_transactions"?: string;
             "base_url"?: string;
             "browser"?: ({
@@ -142072,6 +148011,18 @@ export interface operations {
               "mode"?: string;
               "platform"?: string;
             }) | null;
+            "database"?: ({
+              "conn_max_lifetime_ms"?: number;
+              "driver"?: string;
+              "dsn"?: string;
+              "dsn_secret"?: string;
+              "max_idle_conns"?: number;
+              "max_open_conns"?: number;
+              "max_rows"?: number;
+              "query_timeout_ms"?: number;
+              "read_only"?: boolean;
+              "rollback_on_teardown"?: boolean;
+            }) | null;
             "env"?: Record<string, string>;
             "error_handling"?: ({
               "continue_on_error"?: (boolean) | null;
@@ -142083,6 +148034,34 @@ export interface operations {
               "retry_delay_ms"?: number;
               "retry_on"?: Array<string>;
               "snapshot_on_error"?: boolean;
+            }) | null;
+            "eventhubs"?: ({
+              "auth_type"?: string;
+              "checkpoint_container_url"?: string;
+              "connection_string"?: string;
+              "connection_string_secret"?: string;
+              "consumer_group"?: string;
+              "consumer_mode"?: string;
+              "event_hub"?: string;
+              "mock"?: boolean;
+              "namespace"?: string;
+              "observe_partition_tail"?: boolean;
+              "owner_level"?: (number) | null;
+              "partition_id"?: string;
+              "partition_key"?: string;
+              "processor_max_partitions"?: number;
+              "start_position"?: string;
+              "tail_poll_interval_ms"?: number;
+              "timeout_ms"?: number;
+            }) | null;
+            "grpc"?: ({
+              "authority"?: string;
+              "max_recv_msg_size"?: number;
+              "metadata"?: Record<string, string>;
+              "plain_text"?: boolean;
+              "proto_files"?: Array<string>;
+              "timeout_ms"?: number;
+              "use_reflection"?: boolean;
             }) | null;
             "http"?: ({
               "accept_encoding"?: string;
@@ -142127,16 +148106,84 @@ export interface operations {
               "version"?: string;
             }) | null;
             "iterations"?: (number) | null;
+            "java_http"?: ({
+              "accept"?: string;
+              "body_encoding"?: string;
+              "codec"?: string;
+              "content_type"?: string;
+              "extractor_type"?: string;
+              "helper_mode"?: string;
+              "object_schema"?: string;
+              "preserve_binary_result"?: boolean;
+              "request_mapping"?: Record<string, string>;
+              "response_mapping"?: Record<string, string>;
+            }) | null;
             "java_vuser"?: ({
+              "action_timeout_ms"?: number;
               "additional_vm_parameters"?: Array<string>;
               "classpath"?: Array<string>;
               "dedicated_class_loader"?: (boolean) | null;
               "jdk_home"?: string;
               "jdk_selection"?: string;
               "jvm_sharing"?: string;
+              "param_left_brace"?: string;
+              "param_right_brace"?: string;
               "skip_parameter_evaluation"?: (boolean) | null;
+              "startup_timeout_ms"?: number;
               "use_xbootclasspath"?: (boolean) | null;
               "vusers_per_jvm"?: number;
+            }) | null;
+            "jms"?: ({
+              "acknowledgement"?: string;
+              "broker_url"?: string;
+              "client_id"?: string;
+              "delivery_mode"?: string;
+              "destination"?: string;
+              "destination_type"?: string;
+              "message_vpn"?: string;
+              "mock"?: boolean;
+              "password"?: string;
+              "properties"?: Record<string, string>;
+              "provider"?: string;
+              "reply_to"?: string;
+              "subscription"?: string;
+              "timeout_ms"?: number;
+              "tls"?: (Record<string, unknown>) | null;
+              "username"?: string;
+            }) | null;
+            "kafka"?: ({
+              "acks"?: string;
+              "auto_offset_reset"?: string;
+              "brokers"?: Array<string>;
+              "client_id"?: string;
+              "compression"?: string;
+              "consumer_group"?: string;
+              "consumer_transactions"?: boolean;
+              "idempotence"?: string;
+              "isolation_level"?: string;
+              "max_message_bytes"?: number;
+              "mock"?: boolean;
+              "oauth"?: (Record<string, unknown>) | null;
+              "oauth_scope"?: string;
+              "partition_strategy"?: string;
+              "partitions"?: number;
+              "producer"?: (Record<string, unknown>) | null;
+              "profile"?: string;
+              "properties"?: Record<string, string>;
+              "sasl_mechanism"?: string;
+              "sasl_password"?: string;
+              "sasl_password_secret"?: string;
+              "sasl_username"?: string;
+              "schema"?: string;
+              "schema_id"?: number;
+              "schema_registry_url"?: string;
+              "security_protocol"?: string;
+              "serialization"?: string;
+              "subject"?: string;
+              "timeout_ms"?: number;
+              "tls"?: (Record<string, unknown>) | null;
+              "topic"?: string;
+              "transactional_id"?: string;
             }) | null;
             "log"?: ({
               "error_buffer_bytes"?: number;
@@ -142147,6 +148194,19 @@ export interface operations {
               "redact_run_evidence"?: (boolean) | null;
             }) | null;
             "log_level"?: string;
+            "network"?: ({
+              "address"?: string;
+              "base_dn"?: string;
+              "from"?: string;
+              "host"?: string;
+              "password"?: string;
+              "port"?: number;
+              "subprotocol"?: string;
+              "timeout_ms"?: number;
+              "tls"?: boolean;
+              "to"?: Array<string>;
+              "username"?: string;
+            }) | null;
             "override_fields"?: Array<string>;
             "pacing"?: ({
               "arrival_process"?: string;
@@ -157245,18 +163305,26 @@ export interface operations {
                   "max_transactions"?: number;
                 }) | null;
                 "runtime_settings"?: ({
+                  "appium"?: (Record<string, unknown>) | null;
                   "auto_transactions"?: string;
                   "base_url"?: string;
                   "browser"?: (Record<string, unknown>) | null;
                   "browser_config"?: (Record<string, unknown>) | null;
                   "browser_emulation"?: (Record<string, unknown>) | null;
+                  "database"?: (Record<string, unknown>) | null;
                   "env"?: Record<string, string>;
                   "error_handling"?: (Record<string, unknown>) | null;
+                  "eventhubs"?: (Record<string, unknown>) | null;
+                  "grpc"?: (Record<string, unknown>) | null;
                   "http"?: (Record<string, unknown>) | null;
                   "iterations"?: (number) | null;
+                  "java_http"?: (Record<string, unknown>) | null;
                   "java_vuser"?: (Record<string, unknown>) | null;
+                  "jms"?: (Record<string, unknown>) | null;
+                  "kafka"?: (Record<string, unknown>) | null;
                   "log"?: (Record<string, unknown>) | null;
                   "log_level"?: string;
+                  "network"?: (Record<string, unknown>) | null;
                   "override_fields"?: Array<string>;
                   "pacing"?: (Record<string, unknown>) | null;
                   "redaction_rules"?: Array<Record<string, unknown>>;
@@ -158971,6 +165039,12 @@ export interface operations {
               "release_id"?: string;
               "resource_baseline"?: boolean;
               "runtime_settings"?: ({
+                "appium"?: ({
+                  "capabilities"?: Record<string, unknown>;
+                  "element_timeout_ms"?: number;
+                  "server_url"?: string;
+                  "session_timeout_ms"?: number;
+                }) | null;
                 "auto_transactions"?: string;
                 "base_url"?: string;
                 "browser"?: ({
@@ -159027,6 +165101,18 @@ export interface operations {
                   "mode"?: string;
                   "platform"?: string;
                 }) | null;
+                "database"?: ({
+                  "conn_max_lifetime_ms"?: number;
+                  "driver"?: string;
+                  "dsn"?: string;
+                  "dsn_secret"?: string;
+                  "max_idle_conns"?: number;
+                  "max_open_conns"?: number;
+                  "max_rows"?: number;
+                  "query_timeout_ms"?: number;
+                  "read_only"?: boolean;
+                  "rollback_on_teardown"?: boolean;
+                }) | null;
                 "env"?: Record<string, string>;
                 "error_handling"?: ({
                   "continue_on_error"?: (boolean) | null;
@@ -159038,6 +165124,34 @@ export interface operations {
                   "retry_delay_ms"?: number;
                   "retry_on"?: Array<string>;
                   "snapshot_on_error"?: boolean;
+                }) | null;
+                "eventhubs"?: ({
+                  "auth_type"?: string;
+                  "checkpoint_container_url"?: string;
+                  "connection_string"?: string;
+                  "connection_string_secret"?: string;
+                  "consumer_group"?: string;
+                  "consumer_mode"?: string;
+                  "event_hub"?: string;
+                  "mock"?: boolean;
+                  "namespace"?: string;
+                  "observe_partition_tail"?: boolean;
+                  "owner_level"?: (number) | null;
+                  "partition_id"?: string;
+                  "partition_key"?: string;
+                  "processor_max_partitions"?: number;
+                  "start_position"?: string;
+                  "tail_poll_interval_ms"?: number;
+                  "timeout_ms"?: number;
+                }) | null;
+                "grpc"?: ({
+                  "authority"?: string;
+                  "max_recv_msg_size"?: number;
+                  "metadata"?: Record<string, string>;
+                  "plain_text"?: boolean;
+                  "proto_files"?: Array<string>;
+                  "timeout_ms"?: number;
+                  "use_reflection"?: boolean;
                 }) | null;
                 "http"?: ({
                   "accept_encoding"?: string;
@@ -159082,16 +165196,84 @@ export interface operations {
                   "version"?: string;
                 }) | null;
                 "iterations"?: (number) | null;
+                "java_http"?: ({
+                  "accept"?: string;
+                  "body_encoding"?: string;
+                  "codec"?: string;
+                  "content_type"?: string;
+                  "extractor_type"?: string;
+                  "helper_mode"?: string;
+                  "object_schema"?: string;
+                  "preserve_binary_result"?: boolean;
+                  "request_mapping"?: Record<string, string>;
+                  "response_mapping"?: Record<string, string>;
+                }) | null;
                 "java_vuser"?: ({
+                  "action_timeout_ms"?: number;
                   "additional_vm_parameters"?: Array<string>;
                   "classpath"?: Array<string>;
                   "dedicated_class_loader"?: (boolean) | null;
                   "jdk_home"?: string;
                   "jdk_selection"?: string;
                   "jvm_sharing"?: string;
+                  "param_left_brace"?: string;
+                  "param_right_brace"?: string;
                   "skip_parameter_evaluation"?: (boolean) | null;
+                  "startup_timeout_ms"?: number;
                   "use_xbootclasspath"?: (boolean) | null;
                   "vusers_per_jvm"?: number;
+                }) | null;
+                "jms"?: ({
+                  "acknowledgement"?: string;
+                  "broker_url"?: string;
+                  "client_id"?: string;
+                  "delivery_mode"?: string;
+                  "destination"?: string;
+                  "destination_type"?: string;
+                  "message_vpn"?: string;
+                  "mock"?: boolean;
+                  "password"?: string;
+                  "properties"?: Record<string, string>;
+                  "provider"?: string;
+                  "reply_to"?: string;
+                  "subscription"?: string;
+                  "timeout_ms"?: number;
+                  "tls"?: (Record<string, unknown>) | null;
+                  "username"?: string;
+                }) | null;
+                "kafka"?: ({
+                  "acks"?: string;
+                  "auto_offset_reset"?: string;
+                  "brokers"?: Array<string>;
+                  "client_id"?: string;
+                  "compression"?: string;
+                  "consumer_group"?: string;
+                  "consumer_transactions"?: boolean;
+                  "idempotence"?: string;
+                  "isolation_level"?: string;
+                  "max_message_bytes"?: number;
+                  "mock"?: boolean;
+                  "oauth"?: (Record<string, unknown>) | null;
+                  "oauth_scope"?: string;
+                  "partition_strategy"?: string;
+                  "partitions"?: number;
+                  "producer"?: (Record<string, unknown>) | null;
+                  "profile"?: string;
+                  "properties"?: Record<string, string>;
+                  "sasl_mechanism"?: string;
+                  "sasl_password"?: string;
+                  "sasl_password_secret"?: string;
+                  "sasl_username"?: string;
+                  "schema"?: string;
+                  "schema_id"?: number;
+                  "schema_registry_url"?: string;
+                  "security_protocol"?: string;
+                  "serialization"?: string;
+                  "subject"?: string;
+                  "timeout_ms"?: number;
+                  "tls"?: (Record<string, unknown>) | null;
+                  "topic"?: string;
+                  "transactional_id"?: string;
                 }) | null;
                 "log"?: ({
                   "error_buffer_bytes"?: number;
@@ -159102,6 +165284,19 @@ export interface operations {
                   "redact_run_evidence"?: (boolean) | null;
                 }) | null;
                 "log_level"?: string;
+                "network"?: ({
+                  "address"?: string;
+                  "base_dn"?: string;
+                  "from"?: string;
+                  "host"?: string;
+                  "password"?: string;
+                  "port"?: number;
+                  "subprotocol"?: string;
+                  "timeout_ms"?: number;
+                  "tls"?: boolean;
+                  "to"?: Array<string>;
+                  "username"?: string;
+                }) | null;
                 "override_fields"?: Array<string>;
                 "pacing"?: ({
                   "arrival_process"?: string;
@@ -160000,18 +166195,26 @@ export interface operations {
                   "max_transactions"?: number;
                 }) | null;
                 "runtime_settings"?: ({
+                  "appium"?: (Record<string, unknown>) | null;
                   "auto_transactions"?: string;
                   "base_url"?: string;
                   "browser"?: (Record<string, unknown>) | null;
                   "browser_config"?: (Record<string, unknown>) | null;
                   "browser_emulation"?: (Record<string, unknown>) | null;
+                  "database"?: (Record<string, unknown>) | null;
                   "env"?: Record<string, string>;
                   "error_handling"?: (Record<string, unknown>) | null;
+                  "eventhubs"?: (Record<string, unknown>) | null;
+                  "grpc"?: (Record<string, unknown>) | null;
                   "http"?: (Record<string, unknown>) | null;
                   "iterations"?: (number) | null;
+                  "java_http"?: (Record<string, unknown>) | null;
                   "java_vuser"?: (Record<string, unknown>) | null;
+                  "jms"?: (Record<string, unknown>) | null;
+                  "kafka"?: (Record<string, unknown>) | null;
                   "log"?: (Record<string, unknown>) | null;
                   "log_level"?: string;
+                  "network"?: (Record<string, unknown>) | null;
                   "override_fields"?: Array<string>;
                   "pacing"?: (Record<string, unknown>) | null;
                   "redaction_rules"?: Array<Record<string, unknown>>;
@@ -161726,6 +167929,12 @@ export interface operations {
               "release_id"?: string;
               "resource_baseline"?: boolean;
               "runtime_settings"?: ({
+                "appium"?: ({
+                  "capabilities"?: Record<string, unknown>;
+                  "element_timeout_ms"?: number;
+                  "server_url"?: string;
+                  "session_timeout_ms"?: number;
+                }) | null;
                 "auto_transactions"?: string;
                 "base_url"?: string;
                 "browser"?: ({
@@ -161782,6 +167991,18 @@ export interface operations {
                   "mode"?: string;
                   "platform"?: string;
                 }) | null;
+                "database"?: ({
+                  "conn_max_lifetime_ms"?: number;
+                  "driver"?: string;
+                  "dsn"?: string;
+                  "dsn_secret"?: string;
+                  "max_idle_conns"?: number;
+                  "max_open_conns"?: number;
+                  "max_rows"?: number;
+                  "query_timeout_ms"?: number;
+                  "read_only"?: boolean;
+                  "rollback_on_teardown"?: boolean;
+                }) | null;
                 "env"?: Record<string, string>;
                 "error_handling"?: ({
                   "continue_on_error"?: (boolean) | null;
@@ -161793,6 +168014,34 @@ export interface operations {
                   "retry_delay_ms"?: number;
                   "retry_on"?: Array<string>;
                   "snapshot_on_error"?: boolean;
+                }) | null;
+                "eventhubs"?: ({
+                  "auth_type"?: string;
+                  "checkpoint_container_url"?: string;
+                  "connection_string"?: string;
+                  "connection_string_secret"?: string;
+                  "consumer_group"?: string;
+                  "consumer_mode"?: string;
+                  "event_hub"?: string;
+                  "mock"?: boolean;
+                  "namespace"?: string;
+                  "observe_partition_tail"?: boolean;
+                  "owner_level"?: (number) | null;
+                  "partition_id"?: string;
+                  "partition_key"?: string;
+                  "processor_max_partitions"?: number;
+                  "start_position"?: string;
+                  "tail_poll_interval_ms"?: number;
+                  "timeout_ms"?: number;
+                }) | null;
+                "grpc"?: ({
+                  "authority"?: string;
+                  "max_recv_msg_size"?: number;
+                  "metadata"?: Record<string, string>;
+                  "plain_text"?: boolean;
+                  "proto_files"?: Array<string>;
+                  "timeout_ms"?: number;
+                  "use_reflection"?: boolean;
                 }) | null;
                 "http"?: ({
                   "accept_encoding"?: string;
@@ -161837,16 +168086,84 @@ export interface operations {
                   "version"?: string;
                 }) | null;
                 "iterations"?: (number) | null;
+                "java_http"?: ({
+                  "accept"?: string;
+                  "body_encoding"?: string;
+                  "codec"?: string;
+                  "content_type"?: string;
+                  "extractor_type"?: string;
+                  "helper_mode"?: string;
+                  "object_schema"?: string;
+                  "preserve_binary_result"?: boolean;
+                  "request_mapping"?: Record<string, string>;
+                  "response_mapping"?: Record<string, string>;
+                }) | null;
                 "java_vuser"?: ({
+                  "action_timeout_ms"?: number;
                   "additional_vm_parameters"?: Array<string>;
                   "classpath"?: Array<string>;
                   "dedicated_class_loader"?: (boolean) | null;
                   "jdk_home"?: string;
                   "jdk_selection"?: string;
                   "jvm_sharing"?: string;
+                  "param_left_brace"?: string;
+                  "param_right_brace"?: string;
                   "skip_parameter_evaluation"?: (boolean) | null;
+                  "startup_timeout_ms"?: number;
                   "use_xbootclasspath"?: (boolean) | null;
                   "vusers_per_jvm"?: number;
+                }) | null;
+                "jms"?: ({
+                  "acknowledgement"?: string;
+                  "broker_url"?: string;
+                  "client_id"?: string;
+                  "delivery_mode"?: string;
+                  "destination"?: string;
+                  "destination_type"?: string;
+                  "message_vpn"?: string;
+                  "mock"?: boolean;
+                  "password"?: string;
+                  "properties"?: Record<string, string>;
+                  "provider"?: string;
+                  "reply_to"?: string;
+                  "subscription"?: string;
+                  "timeout_ms"?: number;
+                  "tls"?: (Record<string, unknown>) | null;
+                  "username"?: string;
+                }) | null;
+                "kafka"?: ({
+                  "acks"?: string;
+                  "auto_offset_reset"?: string;
+                  "brokers"?: Array<string>;
+                  "client_id"?: string;
+                  "compression"?: string;
+                  "consumer_group"?: string;
+                  "consumer_transactions"?: boolean;
+                  "idempotence"?: string;
+                  "isolation_level"?: string;
+                  "max_message_bytes"?: number;
+                  "mock"?: boolean;
+                  "oauth"?: (Record<string, unknown>) | null;
+                  "oauth_scope"?: string;
+                  "partition_strategy"?: string;
+                  "partitions"?: number;
+                  "producer"?: (Record<string, unknown>) | null;
+                  "profile"?: string;
+                  "properties"?: Record<string, string>;
+                  "sasl_mechanism"?: string;
+                  "sasl_password"?: string;
+                  "sasl_password_secret"?: string;
+                  "sasl_username"?: string;
+                  "schema"?: string;
+                  "schema_id"?: number;
+                  "schema_registry_url"?: string;
+                  "security_protocol"?: string;
+                  "serialization"?: string;
+                  "subject"?: string;
+                  "timeout_ms"?: number;
+                  "tls"?: (Record<string, unknown>) | null;
+                  "topic"?: string;
+                  "transactional_id"?: string;
                 }) | null;
                 "log"?: ({
                   "error_buffer_bytes"?: number;
@@ -161857,6 +168174,19 @@ export interface operations {
                   "redact_run_evidence"?: (boolean) | null;
                 }) | null;
                 "log_level"?: string;
+                "network"?: ({
+                  "address"?: string;
+                  "base_dn"?: string;
+                  "from"?: string;
+                  "host"?: string;
+                  "password"?: string;
+                  "port"?: number;
+                  "subprotocol"?: string;
+                  "timeout_ms"?: number;
+                  "tls"?: boolean;
+                  "to"?: Array<string>;
+                  "username"?: string;
+                }) | null;
                 "override_fields"?: Array<string>;
                 "pacing"?: ({
                   "arrival_process"?: string;
@@ -162755,18 +169085,26 @@ export interface operations {
                   "max_transactions"?: number;
                 }) | null;
                 "runtime_settings"?: ({
+                  "appium"?: (Record<string, unknown>) | null;
                   "auto_transactions"?: string;
                   "base_url"?: string;
                   "browser"?: (Record<string, unknown>) | null;
                   "browser_config"?: (Record<string, unknown>) | null;
                   "browser_emulation"?: (Record<string, unknown>) | null;
+                  "database"?: (Record<string, unknown>) | null;
                   "env"?: Record<string, string>;
                   "error_handling"?: (Record<string, unknown>) | null;
+                  "eventhubs"?: (Record<string, unknown>) | null;
+                  "grpc"?: (Record<string, unknown>) | null;
                   "http"?: (Record<string, unknown>) | null;
                   "iterations"?: (number) | null;
+                  "java_http"?: (Record<string, unknown>) | null;
                   "java_vuser"?: (Record<string, unknown>) | null;
+                  "jms"?: (Record<string, unknown>) | null;
+                  "kafka"?: (Record<string, unknown>) | null;
                   "log"?: (Record<string, unknown>) | null;
                   "log_level"?: string;
+                  "network"?: (Record<string, unknown>) | null;
                   "override_fields"?: Array<string>;
                   "pacing"?: (Record<string, unknown>) | null;
                   "redaction_rules"?: Array<Record<string, unknown>>;
@@ -164481,6 +170819,12 @@ export interface operations {
               "release_id"?: string;
               "resource_baseline"?: boolean;
               "runtime_settings"?: ({
+                "appium"?: ({
+                  "capabilities"?: Record<string, unknown>;
+                  "element_timeout_ms"?: number;
+                  "server_url"?: string;
+                  "session_timeout_ms"?: number;
+                }) | null;
                 "auto_transactions"?: string;
                 "base_url"?: string;
                 "browser"?: ({
@@ -164537,6 +170881,18 @@ export interface operations {
                   "mode"?: string;
                   "platform"?: string;
                 }) | null;
+                "database"?: ({
+                  "conn_max_lifetime_ms"?: number;
+                  "driver"?: string;
+                  "dsn"?: string;
+                  "dsn_secret"?: string;
+                  "max_idle_conns"?: number;
+                  "max_open_conns"?: number;
+                  "max_rows"?: number;
+                  "query_timeout_ms"?: number;
+                  "read_only"?: boolean;
+                  "rollback_on_teardown"?: boolean;
+                }) | null;
                 "env"?: Record<string, string>;
                 "error_handling"?: ({
                   "continue_on_error"?: (boolean) | null;
@@ -164548,6 +170904,34 @@ export interface operations {
                   "retry_delay_ms"?: number;
                   "retry_on"?: Array<string>;
                   "snapshot_on_error"?: boolean;
+                }) | null;
+                "eventhubs"?: ({
+                  "auth_type"?: string;
+                  "checkpoint_container_url"?: string;
+                  "connection_string"?: string;
+                  "connection_string_secret"?: string;
+                  "consumer_group"?: string;
+                  "consumer_mode"?: string;
+                  "event_hub"?: string;
+                  "mock"?: boolean;
+                  "namespace"?: string;
+                  "observe_partition_tail"?: boolean;
+                  "owner_level"?: (number) | null;
+                  "partition_id"?: string;
+                  "partition_key"?: string;
+                  "processor_max_partitions"?: number;
+                  "start_position"?: string;
+                  "tail_poll_interval_ms"?: number;
+                  "timeout_ms"?: number;
+                }) | null;
+                "grpc"?: ({
+                  "authority"?: string;
+                  "max_recv_msg_size"?: number;
+                  "metadata"?: Record<string, string>;
+                  "plain_text"?: boolean;
+                  "proto_files"?: Array<string>;
+                  "timeout_ms"?: number;
+                  "use_reflection"?: boolean;
                 }) | null;
                 "http"?: ({
                   "accept_encoding"?: string;
@@ -164592,16 +170976,84 @@ export interface operations {
                   "version"?: string;
                 }) | null;
                 "iterations"?: (number) | null;
+                "java_http"?: ({
+                  "accept"?: string;
+                  "body_encoding"?: string;
+                  "codec"?: string;
+                  "content_type"?: string;
+                  "extractor_type"?: string;
+                  "helper_mode"?: string;
+                  "object_schema"?: string;
+                  "preserve_binary_result"?: boolean;
+                  "request_mapping"?: Record<string, string>;
+                  "response_mapping"?: Record<string, string>;
+                }) | null;
                 "java_vuser"?: ({
+                  "action_timeout_ms"?: number;
                   "additional_vm_parameters"?: Array<string>;
                   "classpath"?: Array<string>;
                   "dedicated_class_loader"?: (boolean) | null;
                   "jdk_home"?: string;
                   "jdk_selection"?: string;
                   "jvm_sharing"?: string;
+                  "param_left_brace"?: string;
+                  "param_right_brace"?: string;
                   "skip_parameter_evaluation"?: (boolean) | null;
+                  "startup_timeout_ms"?: number;
                   "use_xbootclasspath"?: (boolean) | null;
                   "vusers_per_jvm"?: number;
+                }) | null;
+                "jms"?: ({
+                  "acknowledgement"?: string;
+                  "broker_url"?: string;
+                  "client_id"?: string;
+                  "delivery_mode"?: string;
+                  "destination"?: string;
+                  "destination_type"?: string;
+                  "message_vpn"?: string;
+                  "mock"?: boolean;
+                  "password"?: string;
+                  "properties"?: Record<string, string>;
+                  "provider"?: string;
+                  "reply_to"?: string;
+                  "subscription"?: string;
+                  "timeout_ms"?: number;
+                  "tls"?: (Record<string, unknown>) | null;
+                  "username"?: string;
+                }) | null;
+                "kafka"?: ({
+                  "acks"?: string;
+                  "auto_offset_reset"?: string;
+                  "brokers"?: Array<string>;
+                  "client_id"?: string;
+                  "compression"?: string;
+                  "consumer_group"?: string;
+                  "consumer_transactions"?: boolean;
+                  "idempotence"?: string;
+                  "isolation_level"?: string;
+                  "max_message_bytes"?: number;
+                  "mock"?: boolean;
+                  "oauth"?: (Record<string, unknown>) | null;
+                  "oauth_scope"?: string;
+                  "partition_strategy"?: string;
+                  "partitions"?: number;
+                  "producer"?: (Record<string, unknown>) | null;
+                  "profile"?: string;
+                  "properties"?: Record<string, string>;
+                  "sasl_mechanism"?: string;
+                  "sasl_password"?: string;
+                  "sasl_password_secret"?: string;
+                  "sasl_username"?: string;
+                  "schema"?: string;
+                  "schema_id"?: number;
+                  "schema_registry_url"?: string;
+                  "security_protocol"?: string;
+                  "serialization"?: string;
+                  "subject"?: string;
+                  "timeout_ms"?: number;
+                  "tls"?: (Record<string, unknown>) | null;
+                  "topic"?: string;
+                  "transactional_id"?: string;
                 }) | null;
                 "log"?: ({
                   "error_buffer_bytes"?: number;
@@ -164612,6 +171064,19 @@ export interface operations {
                   "redact_run_evidence"?: (boolean) | null;
                 }) | null;
                 "log_level"?: string;
+                "network"?: ({
+                  "address"?: string;
+                  "base_dn"?: string;
+                  "from"?: string;
+                  "host"?: string;
+                  "password"?: string;
+                  "port"?: number;
+                  "subprotocol"?: string;
+                  "timeout_ms"?: number;
+                  "tls"?: boolean;
+                  "to"?: Array<string>;
+                  "username"?: string;
+                }) | null;
                 "override_fields"?: Array<string>;
                 "pacing"?: ({
                   "arrival_process"?: string;
@@ -165510,18 +171975,26 @@ export interface operations {
                   "max_transactions"?: number;
                 }) | null;
                 "runtime_settings"?: ({
+                  "appium"?: (Record<string, unknown>) | null;
                   "auto_transactions"?: string;
                   "base_url"?: string;
                   "browser"?: (Record<string, unknown>) | null;
                   "browser_config"?: (Record<string, unknown>) | null;
                   "browser_emulation"?: (Record<string, unknown>) | null;
+                  "database"?: (Record<string, unknown>) | null;
                   "env"?: Record<string, string>;
                   "error_handling"?: (Record<string, unknown>) | null;
+                  "eventhubs"?: (Record<string, unknown>) | null;
+                  "grpc"?: (Record<string, unknown>) | null;
                   "http"?: (Record<string, unknown>) | null;
                   "iterations"?: (number) | null;
+                  "java_http"?: (Record<string, unknown>) | null;
                   "java_vuser"?: (Record<string, unknown>) | null;
+                  "jms"?: (Record<string, unknown>) | null;
+                  "kafka"?: (Record<string, unknown>) | null;
                   "log"?: (Record<string, unknown>) | null;
                   "log_level"?: string;
+                  "network"?: (Record<string, unknown>) | null;
                   "override_fields"?: Array<string>;
                   "pacing"?: (Record<string, unknown>) | null;
                   "redaction_rules"?: Array<Record<string, unknown>>;
@@ -167236,6 +173709,12 @@ export interface operations {
               "release_id"?: string;
               "resource_baseline"?: boolean;
               "runtime_settings"?: ({
+                "appium"?: ({
+                  "capabilities"?: Record<string, unknown>;
+                  "element_timeout_ms"?: number;
+                  "server_url"?: string;
+                  "session_timeout_ms"?: number;
+                }) | null;
                 "auto_transactions"?: string;
                 "base_url"?: string;
                 "browser"?: ({
@@ -167292,6 +173771,18 @@ export interface operations {
                   "mode"?: string;
                   "platform"?: string;
                 }) | null;
+                "database"?: ({
+                  "conn_max_lifetime_ms"?: number;
+                  "driver"?: string;
+                  "dsn"?: string;
+                  "dsn_secret"?: string;
+                  "max_idle_conns"?: number;
+                  "max_open_conns"?: number;
+                  "max_rows"?: number;
+                  "query_timeout_ms"?: number;
+                  "read_only"?: boolean;
+                  "rollback_on_teardown"?: boolean;
+                }) | null;
                 "env"?: Record<string, string>;
                 "error_handling"?: ({
                   "continue_on_error"?: (boolean) | null;
@@ -167303,6 +173794,34 @@ export interface operations {
                   "retry_delay_ms"?: number;
                   "retry_on"?: Array<string>;
                   "snapshot_on_error"?: boolean;
+                }) | null;
+                "eventhubs"?: ({
+                  "auth_type"?: string;
+                  "checkpoint_container_url"?: string;
+                  "connection_string"?: string;
+                  "connection_string_secret"?: string;
+                  "consumer_group"?: string;
+                  "consumer_mode"?: string;
+                  "event_hub"?: string;
+                  "mock"?: boolean;
+                  "namespace"?: string;
+                  "observe_partition_tail"?: boolean;
+                  "owner_level"?: (number) | null;
+                  "partition_id"?: string;
+                  "partition_key"?: string;
+                  "processor_max_partitions"?: number;
+                  "start_position"?: string;
+                  "tail_poll_interval_ms"?: number;
+                  "timeout_ms"?: number;
+                }) | null;
+                "grpc"?: ({
+                  "authority"?: string;
+                  "max_recv_msg_size"?: number;
+                  "metadata"?: Record<string, string>;
+                  "plain_text"?: boolean;
+                  "proto_files"?: Array<string>;
+                  "timeout_ms"?: number;
+                  "use_reflection"?: boolean;
                 }) | null;
                 "http"?: ({
                   "accept_encoding"?: string;
@@ -167347,16 +173866,84 @@ export interface operations {
                   "version"?: string;
                 }) | null;
                 "iterations"?: (number) | null;
+                "java_http"?: ({
+                  "accept"?: string;
+                  "body_encoding"?: string;
+                  "codec"?: string;
+                  "content_type"?: string;
+                  "extractor_type"?: string;
+                  "helper_mode"?: string;
+                  "object_schema"?: string;
+                  "preserve_binary_result"?: boolean;
+                  "request_mapping"?: Record<string, string>;
+                  "response_mapping"?: Record<string, string>;
+                }) | null;
                 "java_vuser"?: ({
+                  "action_timeout_ms"?: number;
                   "additional_vm_parameters"?: Array<string>;
                   "classpath"?: Array<string>;
                   "dedicated_class_loader"?: (boolean) | null;
                   "jdk_home"?: string;
                   "jdk_selection"?: string;
                   "jvm_sharing"?: string;
+                  "param_left_brace"?: string;
+                  "param_right_brace"?: string;
                   "skip_parameter_evaluation"?: (boolean) | null;
+                  "startup_timeout_ms"?: number;
                   "use_xbootclasspath"?: (boolean) | null;
                   "vusers_per_jvm"?: number;
+                }) | null;
+                "jms"?: ({
+                  "acknowledgement"?: string;
+                  "broker_url"?: string;
+                  "client_id"?: string;
+                  "delivery_mode"?: string;
+                  "destination"?: string;
+                  "destination_type"?: string;
+                  "message_vpn"?: string;
+                  "mock"?: boolean;
+                  "password"?: string;
+                  "properties"?: Record<string, string>;
+                  "provider"?: string;
+                  "reply_to"?: string;
+                  "subscription"?: string;
+                  "timeout_ms"?: number;
+                  "tls"?: (Record<string, unknown>) | null;
+                  "username"?: string;
+                }) | null;
+                "kafka"?: ({
+                  "acks"?: string;
+                  "auto_offset_reset"?: string;
+                  "brokers"?: Array<string>;
+                  "client_id"?: string;
+                  "compression"?: string;
+                  "consumer_group"?: string;
+                  "consumer_transactions"?: boolean;
+                  "idempotence"?: string;
+                  "isolation_level"?: string;
+                  "max_message_bytes"?: number;
+                  "mock"?: boolean;
+                  "oauth"?: (Record<string, unknown>) | null;
+                  "oauth_scope"?: string;
+                  "partition_strategy"?: string;
+                  "partitions"?: number;
+                  "producer"?: (Record<string, unknown>) | null;
+                  "profile"?: string;
+                  "properties"?: Record<string, string>;
+                  "sasl_mechanism"?: string;
+                  "sasl_password"?: string;
+                  "sasl_password_secret"?: string;
+                  "sasl_username"?: string;
+                  "schema"?: string;
+                  "schema_id"?: number;
+                  "schema_registry_url"?: string;
+                  "security_protocol"?: string;
+                  "serialization"?: string;
+                  "subject"?: string;
+                  "timeout_ms"?: number;
+                  "tls"?: (Record<string, unknown>) | null;
+                  "topic"?: string;
+                  "transactional_id"?: string;
                 }) | null;
                 "log"?: ({
                   "error_buffer_bytes"?: number;
@@ -167367,6 +173954,19 @@ export interface operations {
                   "redact_run_evidence"?: (boolean) | null;
                 }) | null;
                 "log_level"?: string;
+                "network"?: ({
+                  "address"?: string;
+                  "base_dn"?: string;
+                  "from"?: string;
+                  "host"?: string;
+                  "password"?: string;
+                  "port"?: number;
+                  "subprotocol"?: string;
+                  "timeout_ms"?: number;
+                  "tls"?: boolean;
+                  "to"?: Array<string>;
+                  "username"?: string;
+                }) | null;
                 "override_fields"?: Array<string>;
                 "pacing"?: ({
                   "arrival_process"?: string;
@@ -168265,18 +174865,26 @@ export interface operations {
                   "max_transactions"?: number;
                 }) | null;
                 "runtime_settings"?: ({
+                  "appium"?: (Record<string, unknown>) | null;
                   "auto_transactions"?: string;
                   "base_url"?: string;
                   "browser"?: (Record<string, unknown>) | null;
                   "browser_config"?: (Record<string, unknown>) | null;
                   "browser_emulation"?: (Record<string, unknown>) | null;
+                  "database"?: (Record<string, unknown>) | null;
                   "env"?: Record<string, string>;
                   "error_handling"?: (Record<string, unknown>) | null;
+                  "eventhubs"?: (Record<string, unknown>) | null;
+                  "grpc"?: (Record<string, unknown>) | null;
                   "http"?: (Record<string, unknown>) | null;
                   "iterations"?: (number) | null;
+                  "java_http"?: (Record<string, unknown>) | null;
                   "java_vuser"?: (Record<string, unknown>) | null;
+                  "jms"?: (Record<string, unknown>) | null;
+                  "kafka"?: (Record<string, unknown>) | null;
                   "log"?: (Record<string, unknown>) | null;
                   "log_level"?: string;
+                  "network"?: (Record<string, unknown>) | null;
                   "override_fields"?: Array<string>;
                   "pacing"?: (Record<string, unknown>) | null;
                   "redaction_rules"?: Array<Record<string, unknown>>;
@@ -169991,6 +176599,12 @@ export interface operations {
               "release_id"?: string;
               "resource_baseline"?: boolean;
               "runtime_settings"?: ({
+                "appium"?: ({
+                  "capabilities"?: Record<string, unknown>;
+                  "element_timeout_ms"?: number;
+                  "server_url"?: string;
+                  "session_timeout_ms"?: number;
+                }) | null;
                 "auto_transactions"?: string;
                 "base_url"?: string;
                 "browser"?: ({
@@ -170047,6 +176661,18 @@ export interface operations {
                   "mode"?: string;
                   "platform"?: string;
                 }) | null;
+                "database"?: ({
+                  "conn_max_lifetime_ms"?: number;
+                  "driver"?: string;
+                  "dsn"?: string;
+                  "dsn_secret"?: string;
+                  "max_idle_conns"?: number;
+                  "max_open_conns"?: number;
+                  "max_rows"?: number;
+                  "query_timeout_ms"?: number;
+                  "read_only"?: boolean;
+                  "rollback_on_teardown"?: boolean;
+                }) | null;
                 "env"?: Record<string, string>;
                 "error_handling"?: ({
                   "continue_on_error"?: (boolean) | null;
@@ -170058,6 +176684,34 @@ export interface operations {
                   "retry_delay_ms"?: number;
                   "retry_on"?: Array<string>;
                   "snapshot_on_error"?: boolean;
+                }) | null;
+                "eventhubs"?: ({
+                  "auth_type"?: string;
+                  "checkpoint_container_url"?: string;
+                  "connection_string"?: string;
+                  "connection_string_secret"?: string;
+                  "consumer_group"?: string;
+                  "consumer_mode"?: string;
+                  "event_hub"?: string;
+                  "mock"?: boolean;
+                  "namespace"?: string;
+                  "observe_partition_tail"?: boolean;
+                  "owner_level"?: (number) | null;
+                  "partition_id"?: string;
+                  "partition_key"?: string;
+                  "processor_max_partitions"?: number;
+                  "start_position"?: string;
+                  "tail_poll_interval_ms"?: number;
+                  "timeout_ms"?: number;
+                }) | null;
+                "grpc"?: ({
+                  "authority"?: string;
+                  "max_recv_msg_size"?: number;
+                  "metadata"?: Record<string, string>;
+                  "plain_text"?: boolean;
+                  "proto_files"?: Array<string>;
+                  "timeout_ms"?: number;
+                  "use_reflection"?: boolean;
                 }) | null;
                 "http"?: ({
                   "accept_encoding"?: string;
@@ -170102,16 +176756,84 @@ export interface operations {
                   "version"?: string;
                 }) | null;
                 "iterations"?: (number) | null;
+                "java_http"?: ({
+                  "accept"?: string;
+                  "body_encoding"?: string;
+                  "codec"?: string;
+                  "content_type"?: string;
+                  "extractor_type"?: string;
+                  "helper_mode"?: string;
+                  "object_schema"?: string;
+                  "preserve_binary_result"?: boolean;
+                  "request_mapping"?: Record<string, string>;
+                  "response_mapping"?: Record<string, string>;
+                }) | null;
                 "java_vuser"?: ({
+                  "action_timeout_ms"?: number;
                   "additional_vm_parameters"?: Array<string>;
                   "classpath"?: Array<string>;
                   "dedicated_class_loader"?: (boolean) | null;
                   "jdk_home"?: string;
                   "jdk_selection"?: string;
                   "jvm_sharing"?: string;
+                  "param_left_brace"?: string;
+                  "param_right_brace"?: string;
                   "skip_parameter_evaluation"?: (boolean) | null;
+                  "startup_timeout_ms"?: number;
                   "use_xbootclasspath"?: (boolean) | null;
                   "vusers_per_jvm"?: number;
+                }) | null;
+                "jms"?: ({
+                  "acknowledgement"?: string;
+                  "broker_url"?: string;
+                  "client_id"?: string;
+                  "delivery_mode"?: string;
+                  "destination"?: string;
+                  "destination_type"?: string;
+                  "message_vpn"?: string;
+                  "mock"?: boolean;
+                  "password"?: string;
+                  "properties"?: Record<string, string>;
+                  "provider"?: string;
+                  "reply_to"?: string;
+                  "subscription"?: string;
+                  "timeout_ms"?: number;
+                  "tls"?: (Record<string, unknown>) | null;
+                  "username"?: string;
+                }) | null;
+                "kafka"?: ({
+                  "acks"?: string;
+                  "auto_offset_reset"?: string;
+                  "brokers"?: Array<string>;
+                  "client_id"?: string;
+                  "compression"?: string;
+                  "consumer_group"?: string;
+                  "consumer_transactions"?: boolean;
+                  "idempotence"?: string;
+                  "isolation_level"?: string;
+                  "max_message_bytes"?: number;
+                  "mock"?: boolean;
+                  "oauth"?: (Record<string, unknown>) | null;
+                  "oauth_scope"?: string;
+                  "partition_strategy"?: string;
+                  "partitions"?: number;
+                  "producer"?: (Record<string, unknown>) | null;
+                  "profile"?: string;
+                  "properties"?: Record<string, string>;
+                  "sasl_mechanism"?: string;
+                  "sasl_password"?: string;
+                  "sasl_password_secret"?: string;
+                  "sasl_username"?: string;
+                  "schema"?: string;
+                  "schema_id"?: number;
+                  "schema_registry_url"?: string;
+                  "security_protocol"?: string;
+                  "serialization"?: string;
+                  "subject"?: string;
+                  "timeout_ms"?: number;
+                  "tls"?: (Record<string, unknown>) | null;
+                  "topic"?: string;
+                  "transactional_id"?: string;
                 }) | null;
                 "log"?: ({
                   "error_buffer_bytes"?: number;
@@ -170122,6 +176844,19 @@ export interface operations {
                   "redact_run_evidence"?: (boolean) | null;
                 }) | null;
                 "log_level"?: string;
+                "network"?: ({
+                  "address"?: string;
+                  "base_dn"?: string;
+                  "from"?: string;
+                  "host"?: string;
+                  "password"?: string;
+                  "port"?: number;
+                  "subprotocol"?: string;
+                  "timeout_ms"?: number;
+                  "tls"?: boolean;
+                  "to"?: Array<string>;
+                  "username"?: string;
+                }) | null;
                 "override_fields"?: Array<string>;
                 "pacing"?: ({
                   "arrival_process"?: string;
@@ -170536,6 +177271,12 @@ export interface operations {
           }>;
           "replay_session_id"?: string;
           "runtime_overrides"?: ({
+            "appium"?: ({
+              "capabilities"?: Record<string, unknown>;
+              "element_timeout_ms"?: number;
+              "server_url"?: string;
+              "session_timeout_ms"?: number;
+            }) | null;
             "auto_transactions"?: string;
             "base_url"?: string;
             "browser"?: ({
@@ -170632,6 +177373,18 @@ export interface operations {
               "mode"?: string;
               "platform"?: string;
             }) | null;
+            "database"?: ({
+              "conn_max_lifetime_ms"?: number;
+              "driver"?: string;
+              "dsn"?: string;
+              "dsn_secret"?: string;
+              "max_idle_conns"?: number;
+              "max_open_conns"?: number;
+              "max_rows"?: number;
+              "query_timeout_ms"?: number;
+              "read_only"?: boolean;
+              "rollback_on_teardown"?: boolean;
+            }) | null;
             "env"?: Record<string, string>;
             "error_handling"?: ({
               "continue_on_error"?: (boolean) | null;
@@ -170643,6 +177396,34 @@ export interface operations {
               "retry_delay_ms"?: number;
               "retry_on"?: Array<string>;
               "snapshot_on_error"?: boolean;
+            }) | null;
+            "eventhubs"?: ({
+              "auth_type"?: string;
+              "checkpoint_container_url"?: string;
+              "connection_string"?: string;
+              "connection_string_secret"?: string;
+              "consumer_group"?: string;
+              "consumer_mode"?: string;
+              "event_hub"?: string;
+              "mock"?: boolean;
+              "namespace"?: string;
+              "observe_partition_tail"?: boolean;
+              "owner_level"?: (number) | null;
+              "partition_id"?: string;
+              "partition_key"?: string;
+              "processor_max_partitions"?: number;
+              "start_position"?: string;
+              "tail_poll_interval_ms"?: number;
+              "timeout_ms"?: number;
+            }) | null;
+            "grpc"?: ({
+              "authority"?: string;
+              "max_recv_msg_size"?: number;
+              "metadata"?: Record<string, string>;
+              "plain_text"?: boolean;
+              "proto_files"?: Array<string>;
+              "timeout_ms"?: number;
+              "use_reflection"?: boolean;
             }) | null;
             "http"?: ({
               "accept_encoding"?: string;
@@ -170713,16 +177494,112 @@ export interface operations {
               "version"?: string;
             }) | null;
             "iterations"?: (number) | null;
+            "java_http"?: ({
+              "accept"?: string;
+              "body_encoding"?: string;
+              "codec"?: string;
+              "content_type"?: string;
+              "extractor_type"?: string;
+              "helper_mode"?: string;
+              "object_schema"?: string;
+              "preserve_binary_result"?: boolean;
+              "request_mapping"?: Record<string, string>;
+              "response_mapping"?: Record<string, string>;
+            }) | null;
             "java_vuser"?: ({
+              "action_timeout_ms"?: number;
               "additional_vm_parameters"?: Array<string>;
               "classpath"?: Array<string>;
               "dedicated_class_loader"?: (boolean) | null;
               "jdk_home"?: string;
               "jdk_selection"?: string;
               "jvm_sharing"?: string;
+              "param_left_brace"?: string;
+              "param_right_brace"?: string;
               "skip_parameter_evaluation"?: (boolean) | null;
+              "startup_timeout_ms"?: number;
               "use_xbootclasspath"?: (boolean) | null;
               "vusers_per_jvm"?: number;
+            }) | null;
+            "jms"?: ({
+              "acknowledgement"?: string;
+              "broker_url"?: string;
+              "client_id"?: string;
+              "delivery_mode"?: string;
+              "destination"?: string;
+              "destination_type"?: string;
+              "message_vpn"?: string;
+              "mock"?: boolean;
+              "password"?: string;
+              "properties"?: Record<string, string>;
+              "provider"?: string;
+              "reply_to"?: string;
+              "subscription"?: string;
+              "timeout_ms"?: number;
+              "tls"?: ({
+                "ca_cert_secret"?: string;
+                "insecure_skip_verify"?: boolean;
+                "trust_store_ref"?: string;
+              }) | null;
+              "username"?: string;
+            }) | null;
+            "kafka"?: ({
+              "acks"?: string;
+              "auto_offset_reset"?: string;
+              "brokers"?: Array<string>;
+              "client_id"?: string;
+              "compression"?: string;
+              "consumer_group"?: string;
+              "consumer_transactions"?: boolean;
+              "idempotence"?: string;
+              "isolation_level"?: string;
+              "max_message_bytes"?: number;
+              "mock"?: boolean;
+              "oauth"?: ({
+                "authentication_method"?: string;
+                "client_id"?: string;
+                "client_secret"?: string;
+                "client_secret_ref"?: string;
+                "mode"?: string;
+                "scope"?: string;
+                "token_url"?: string;
+              }) | null;
+              "oauth_scope"?: string;
+              "partition_strategy"?: string;
+              "partitions"?: number;
+              "producer"?: ({
+                "admission_timeout_ms"?: (number) | null;
+                "batch_bytes"?: (number) | null;
+                "buffer_bytes"?: (number) | null;
+                "delivery_timeout_ms"?: (number) | null;
+                "linger_ms"?: (number) | null;
+                "max_in_flight_requests"?: (number) | null;
+                "request_timeout_ms"?: (number) | null;
+                "retries"?: (number) | null;
+              }) | null;
+              "profile"?: string;
+              "properties"?: Record<string, string>;
+              "sasl_mechanism"?: string;
+              "sasl_password"?: string;
+              "sasl_password_secret"?: string;
+              "sasl_username"?: string;
+              "schema"?: string;
+              "schema_id"?: number;
+              "schema_registry_url"?: string;
+              "security_protocol"?: string;
+              "serialization"?: string;
+              "subject"?: string;
+              "timeout_ms"?: number;
+              "tls"?: ({
+                "ca_cert_file"?: string;
+                "client_cert_file"?: string;
+                "client_key_file"?: string;
+                "insecure_skip_verify"?: boolean;
+                "max_version"?: string;
+                "min_version"?: string;
+              }) | null;
+              "topic"?: string;
+              "transactional_id"?: string;
             }) | null;
             "log"?: ({
               "error_buffer_bytes"?: number;
@@ -170733,6 +177610,19 @@ export interface operations {
               "redact_run_evidence"?: (boolean) | null;
             }) | null;
             "log_level"?: string;
+            "network"?: ({
+              "address"?: string;
+              "base_dn"?: string;
+              "from"?: string;
+              "host"?: string;
+              "password"?: string;
+              "port"?: number;
+              "subprotocol"?: string;
+              "timeout_ms"?: number;
+              "tls"?: boolean;
+              "to"?: Array<string>;
+              "username"?: string;
+            }) | null;
             "override_fields"?: Array<string>;
             "pacing"?: ({
               "arrival_process"?: string;
@@ -171740,6 +178630,12 @@ export interface operations {
           }>;
           "replay_session_id"?: string;
           "runtime_overrides"?: ({
+            "appium"?: ({
+              "capabilities"?: Record<string, unknown>;
+              "element_timeout_ms"?: number;
+              "server_url"?: string;
+              "session_timeout_ms"?: number;
+            }) | null;
             "auto_transactions"?: string;
             "base_url"?: string;
             "browser"?: ({
@@ -171836,6 +178732,18 @@ export interface operations {
               "mode"?: string;
               "platform"?: string;
             }) | null;
+            "database"?: ({
+              "conn_max_lifetime_ms"?: number;
+              "driver"?: string;
+              "dsn"?: string;
+              "dsn_secret"?: string;
+              "max_idle_conns"?: number;
+              "max_open_conns"?: number;
+              "max_rows"?: number;
+              "query_timeout_ms"?: number;
+              "read_only"?: boolean;
+              "rollback_on_teardown"?: boolean;
+            }) | null;
             "env"?: Record<string, string>;
             "error_handling"?: ({
               "continue_on_error"?: (boolean) | null;
@@ -171847,6 +178755,34 @@ export interface operations {
               "retry_delay_ms"?: number;
               "retry_on"?: Array<string>;
               "snapshot_on_error"?: boolean;
+            }) | null;
+            "eventhubs"?: ({
+              "auth_type"?: string;
+              "checkpoint_container_url"?: string;
+              "connection_string"?: string;
+              "connection_string_secret"?: string;
+              "consumer_group"?: string;
+              "consumer_mode"?: string;
+              "event_hub"?: string;
+              "mock"?: boolean;
+              "namespace"?: string;
+              "observe_partition_tail"?: boolean;
+              "owner_level"?: (number) | null;
+              "partition_id"?: string;
+              "partition_key"?: string;
+              "processor_max_partitions"?: number;
+              "start_position"?: string;
+              "tail_poll_interval_ms"?: number;
+              "timeout_ms"?: number;
+            }) | null;
+            "grpc"?: ({
+              "authority"?: string;
+              "max_recv_msg_size"?: number;
+              "metadata"?: Record<string, string>;
+              "plain_text"?: boolean;
+              "proto_files"?: Array<string>;
+              "timeout_ms"?: number;
+              "use_reflection"?: boolean;
             }) | null;
             "http"?: ({
               "accept_encoding"?: string;
@@ -171917,16 +178853,112 @@ export interface operations {
               "version"?: string;
             }) | null;
             "iterations"?: (number) | null;
+            "java_http"?: ({
+              "accept"?: string;
+              "body_encoding"?: string;
+              "codec"?: string;
+              "content_type"?: string;
+              "extractor_type"?: string;
+              "helper_mode"?: string;
+              "object_schema"?: string;
+              "preserve_binary_result"?: boolean;
+              "request_mapping"?: Record<string, string>;
+              "response_mapping"?: Record<string, string>;
+            }) | null;
             "java_vuser"?: ({
+              "action_timeout_ms"?: number;
               "additional_vm_parameters"?: Array<string>;
               "classpath"?: Array<string>;
               "dedicated_class_loader"?: (boolean) | null;
               "jdk_home"?: string;
               "jdk_selection"?: string;
               "jvm_sharing"?: string;
+              "param_left_brace"?: string;
+              "param_right_brace"?: string;
               "skip_parameter_evaluation"?: (boolean) | null;
+              "startup_timeout_ms"?: number;
               "use_xbootclasspath"?: (boolean) | null;
               "vusers_per_jvm"?: number;
+            }) | null;
+            "jms"?: ({
+              "acknowledgement"?: string;
+              "broker_url"?: string;
+              "client_id"?: string;
+              "delivery_mode"?: string;
+              "destination"?: string;
+              "destination_type"?: string;
+              "message_vpn"?: string;
+              "mock"?: boolean;
+              "password"?: string;
+              "properties"?: Record<string, string>;
+              "provider"?: string;
+              "reply_to"?: string;
+              "subscription"?: string;
+              "timeout_ms"?: number;
+              "tls"?: ({
+                "ca_cert_secret"?: string;
+                "insecure_skip_verify"?: boolean;
+                "trust_store_ref"?: string;
+              }) | null;
+              "username"?: string;
+            }) | null;
+            "kafka"?: ({
+              "acks"?: string;
+              "auto_offset_reset"?: string;
+              "brokers"?: Array<string>;
+              "client_id"?: string;
+              "compression"?: string;
+              "consumer_group"?: string;
+              "consumer_transactions"?: boolean;
+              "idempotence"?: string;
+              "isolation_level"?: string;
+              "max_message_bytes"?: number;
+              "mock"?: boolean;
+              "oauth"?: ({
+                "authentication_method"?: string;
+                "client_id"?: string;
+                "client_secret"?: string;
+                "client_secret_ref"?: string;
+                "mode"?: string;
+                "scope"?: string;
+                "token_url"?: string;
+              }) | null;
+              "oauth_scope"?: string;
+              "partition_strategy"?: string;
+              "partitions"?: number;
+              "producer"?: ({
+                "admission_timeout_ms"?: (number) | null;
+                "batch_bytes"?: (number) | null;
+                "buffer_bytes"?: (number) | null;
+                "delivery_timeout_ms"?: (number) | null;
+                "linger_ms"?: (number) | null;
+                "max_in_flight_requests"?: (number) | null;
+                "request_timeout_ms"?: (number) | null;
+                "retries"?: (number) | null;
+              }) | null;
+              "profile"?: string;
+              "properties"?: Record<string, string>;
+              "sasl_mechanism"?: string;
+              "sasl_password"?: string;
+              "sasl_password_secret"?: string;
+              "sasl_username"?: string;
+              "schema"?: string;
+              "schema_id"?: number;
+              "schema_registry_url"?: string;
+              "security_protocol"?: string;
+              "serialization"?: string;
+              "subject"?: string;
+              "timeout_ms"?: number;
+              "tls"?: ({
+                "ca_cert_file"?: string;
+                "client_cert_file"?: string;
+                "client_key_file"?: string;
+                "insecure_skip_verify"?: boolean;
+                "max_version"?: string;
+                "min_version"?: string;
+              }) | null;
+              "topic"?: string;
+              "transactional_id"?: string;
             }) | null;
             "log"?: ({
               "error_buffer_bytes"?: number;
@@ -171937,6 +178969,19 @@ export interface operations {
               "redact_run_evidence"?: (boolean) | null;
             }) | null;
             "log_level"?: string;
+            "network"?: ({
+              "address"?: string;
+              "base_dn"?: string;
+              "from"?: string;
+              "host"?: string;
+              "password"?: string;
+              "port"?: number;
+              "subprotocol"?: string;
+              "timeout_ms"?: number;
+              "tls"?: boolean;
+              "to"?: Array<string>;
+              "username"?: string;
+            }) | null;
             "override_fields"?: Array<string>;
             "pacing"?: ({
               "arrival_process"?: string;
@@ -174330,6 +181375,12 @@ export interface operations {
                 "max_transactions"?: number;
               }) | null;
               "runtime_settings"?: ({
+                "appium"?: ({
+                  "capabilities"?: Record<string, unknown>;
+                  "element_timeout_ms"?: number;
+                  "server_url"?: string;
+                  "session_timeout_ms"?: number;
+                }) | null;
                 "auto_transactions"?: string;
                 "base_url"?: string;
                 "browser"?: ({
@@ -174386,6 +181437,18 @@ export interface operations {
                   "mode"?: string;
                   "platform"?: string;
                 }) | null;
+                "database"?: ({
+                  "conn_max_lifetime_ms"?: number;
+                  "driver"?: string;
+                  "dsn"?: string;
+                  "dsn_secret"?: string;
+                  "max_idle_conns"?: number;
+                  "max_open_conns"?: number;
+                  "max_rows"?: number;
+                  "query_timeout_ms"?: number;
+                  "read_only"?: boolean;
+                  "rollback_on_teardown"?: boolean;
+                }) | null;
                 "env"?: Record<string, string>;
                 "error_handling"?: ({
                   "continue_on_error"?: (boolean) | null;
@@ -174397,6 +181460,34 @@ export interface operations {
                   "retry_delay_ms"?: number;
                   "retry_on"?: Array<string>;
                   "snapshot_on_error"?: boolean;
+                }) | null;
+                "eventhubs"?: ({
+                  "auth_type"?: string;
+                  "checkpoint_container_url"?: string;
+                  "connection_string"?: string;
+                  "connection_string_secret"?: string;
+                  "consumer_group"?: string;
+                  "consumer_mode"?: string;
+                  "event_hub"?: string;
+                  "mock"?: boolean;
+                  "namespace"?: string;
+                  "observe_partition_tail"?: boolean;
+                  "owner_level"?: (number) | null;
+                  "partition_id"?: string;
+                  "partition_key"?: string;
+                  "processor_max_partitions"?: number;
+                  "start_position"?: string;
+                  "tail_poll_interval_ms"?: number;
+                  "timeout_ms"?: number;
+                }) | null;
+                "grpc"?: ({
+                  "authority"?: string;
+                  "max_recv_msg_size"?: number;
+                  "metadata"?: Record<string, string>;
+                  "plain_text"?: boolean;
+                  "proto_files"?: Array<string>;
+                  "timeout_ms"?: number;
+                  "use_reflection"?: boolean;
                 }) | null;
                 "http"?: ({
                   "accept_encoding"?: string;
@@ -174441,16 +181532,84 @@ export interface operations {
                   "version"?: string;
                 }) | null;
                 "iterations"?: (number) | null;
+                "java_http"?: ({
+                  "accept"?: string;
+                  "body_encoding"?: string;
+                  "codec"?: string;
+                  "content_type"?: string;
+                  "extractor_type"?: string;
+                  "helper_mode"?: string;
+                  "object_schema"?: string;
+                  "preserve_binary_result"?: boolean;
+                  "request_mapping"?: Record<string, string>;
+                  "response_mapping"?: Record<string, string>;
+                }) | null;
                 "java_vuser"?: ({
+                  "action_timeout_ms"?: number;
                   "additional_vm_parameters"?: Array<string>;
                   "classpath"?: Array<string>;
                   "dedicated_class_loader"?: (boolean) | null;
                   "jdk_home"?: string;
                   "jdk_selection"?: string;
                   "jvm_sharing"?: string;
+                  "param_left_brace"?: string;
+                  "param_right_brace"?: string;
                   "skip_parameter_evaluation"?: (boolean) | null;
+                  "startup_timeout_ms"?: number;
                   "use_xbootclasspath"?: (boolean) | null;
                   "vusers_per_jvm"?: number;
+                }) | null;
+                "jms"?: ({
+                  "acknowledgement"?: string;
+                  "broker_url"?: string;
+                  "client_id"?: string;
+                  "delivery_mode"?: string;
+                  "destination"?: string;
+                  "destination_type"?: string;
+                  "message_vpn"?: string;
+                  "mock"?: boolean;
+                  "password"?: string;
+                  "properties"?: Record<string, string>;
+                  "provider"?: string;
+                  "reply_to"?: string;
+                  "subscription"?: string;
+                  "timeout_ms"?: number;
+                  "tls"?: (Record<string, unknown>) | null;
+                  "username"?: string;
+                }) | null;
+                "kafka"?: ({
+                  "acks"?: string;
+                  "auto_offset_reset"?: string;
+                  "brokers"?: Array<string>;
+                  "client_id"?: string;
+                  "compression"?: string;
+                  "consumer_group"?: string;
+                  "consumer_transactions"?: boolean;
+                  "idempotence"?: string;
+                  "isolation_level"?: string;
+                  "max_message_bytes"?: number;
+                  "mock"?: boolean;
+                  "oauth"?: (Record<string, unknown>) | null;
+                  "oauth_scope"?: string;
+                  "partition_strategy"?: string;
+                  "partitions"?: number;
+                  "producer"?: (Record<string, unknown>) | null;
+                  "profile"?: string;
+                  "properties"?: Record<string, string>;
+                  "sasl_mechanism"?: string;
+                  "sasl_password"?: string;
+                  "sasl_password_secret"?: string;
+                  "sasl_username"?: string;
+                  "schema"?: string;
+                  "schema_id"?: number;
+                  "schema_registry_url"?: string;
+                  "security_protocol"?: string;
+                  "serialization"?: string;
+                  "subject"?: string;
+                  "timeout_ms"?: number;
+                  "tls"?: (Record<string, unknown>) | null;
+                  "topic"?: string;
+                  "transactional_id"?: string;
                 }) | null;
                 "log"?: ({
                   "error_buffer_bytes"?: number;
@@ -174461,6 +181620,19 @@ export interface operations {
                   "redact_run_evidence"?: (boolean) | null;
                 }) | null;
                 "log_level"?: string;
+                "network"?: ({
+                  "address"?: string;
+                  "base_dn"?: string;
+                  "from"?: string;
+                  "host"?: string;
+                  "password"?: string;
+                  "port"?: number;
+                  "subprotocol"?: string;
+                  "timeout_ms"?: number;
+                  "tls"?: boolean;
+                  "to"?: Array<string>;
+                  "username"?: string;
+                }) | null;
                 "override_fields"?: Array<string>;
                 "pacing"?: ({
                   "arrival_process"?: string;
@@ -179338,6 +186510,12 @@ export interface operations {
             "release_id"?: string;
             "resource_baseline"?: boolean;
             "runtime_settings"?: ({
+              "appium"?: ({
+                "capabilities"?: Record<string, unknown>;
+                "element_timeout_ms"?: number;
+                "server_url"?: string;
+                "session_timeout_ms"?: number;
+              }) | null;
               "auto_transactions"?: string;
               "base_url"?: string;
               "browser"?: ({
@@ -179434,6 +186612,18 @@ export interface operations {
                 "mode"?: string;
                 "platform"?: string;
               }) | null;
+              "database"?: ({
+                "conn_max_lifetime_ms"?: number;
+                "driver"?: string;
+                "dsn"?: string;
+                "dsn_secret"?: string;
+                "max_idle_conns"?: number;
+                "max_open_conns"?: number;
+                "max_rows"?: number;
+                "query_timeout_ms"?: number;
+                "read_only"?: boolean;
+                "rollback_on_teardown"?: boolean;
+              }) | null;
               "env"?: Record<string, string>;
               "error_handling"?: ({
                 "continue_on_error"?: (boolean) | null;
@@ -179445,6 +186635,34 @@ export interface operations {
                 "retry_delay_ms"?: number;
                 "retry_on"?: Array<string>;
                 "snapshot_on_error"?: boolean;
+              }) | null;
+              "eventhubs"?: ({
+                "auth_type"?: string;
+                "checkpoint_container_url"?: string;
+                "connection_string"?: string;
+                "connection_string_secret"?: string;
+                "consumer_group"?: string;
+                "consumer_mode"?: string;
+                "event_hub"?: string;
+                "mock"?: boolean;
+                "namespace"?: string;
+                "observe_partition_tail"?: boolean;
+                "owner_level"?: (number) | null;
+                "partition_id"?: string;
+                "partition_key"?: string;
+                "processor_max_partitions"?: number;
+                "start_position"?: string;
+                "tail_poll_interval_ms"?: number;
+                "timeout_ms"?: number;
+              }) | null;
+              "grpc"?: ({
+                "authority"?: string;
+                "max_recv_msg_size"?: number;
+                "metadata"?: Record<string, string>;
+                "plain_text"?: boolean;
+                "proto_files"?: Array<string>;
+                "timeout_ms"?: number;
+                "use_reflection"?: boolean;
               }) | null;
               "http"?: ({
                 "accept_encoding"?: string;
@@ -179515,16 +186733,112 @@ export interface operations {
                 "version"?: string;
               }) | null;
               "iterations"?: (number) | null;
+              "java_http"?: ({
+                "accept"?: string;
+                "body_encoding"?: string;
+                "codec"?: string;
+                "content_type"?: string;
+                "extractor_type"?: string;
+                "helper_mode"?: string;
+                "object_schema"?: string;
+                "preserve_binary_result"?: boolean;
+                "request_mapping"?: Record<string, string>;
+                "response_mapping"?: Record<string, string>;
+              }) | null;
               "java_vuser"?: ({
+                "action_timeout_ms"?: number;
                 "additional_vm_parameters"?: Array<string>;
                 "classpath"?: Array<string>;
                 "dedicated_class_loader"?: (boolean) | null;
                 "jdk_home"?: string;
                 "jdk_selection"?: string;
                 "jvm_sharing"?: string;
+                "param_left_brace"?: string;
+                "param_right_brace"?: string;
                 "skip_parameter_evaluation"?: (boolean) | null;
+                "startup_timeout_ms"?: number;
                 "use_xbootclasspath"?: (boolean) | null;
                 "vusers_per_jvm"?: number;
+              }) | null;
+              "jms"?: ({
+                "acknowledgement"?: string;
+                "broker_url"?: string;
+                "client_id"?: string;
+                "delivery_mode"?: string;
+                "destination"?: string;
+                "destination_type"?: string;
+                "message_vpn"?: string;
+                "mock"?: boolean;
+                "password"?: string;
+                "properties"?: Record<string, string>;
+                "provider"?: string;
+                "reply_to"?: string;
+                "subscription"?: string;
+                "timeout_ms"?: number;
+                "tls"?: ({
+                  "ca_cert_secret"?: string;
+                  "insecure_skip_verify"?: boolean;
+                  "trust_store_ref"?: string;
+                }) | null;
+                "username"?: string;
+              }) | null;
+              "kafka"?: ({
+                "acks"?: string;
+                "auto_offset_reset"?: string;
+                "brokers"?: Array<string>;
+                "client_id"?: string;
+                "compression"?: string;
+                "consumer_group"?: string;
+                "consumer_transactions"?: boolean;
+                "idempotence"?: string;
+                "isolation_level"?: string;
+                "max_message_bytes"?: number;
+                "mock"?: boolean;
+                "oauth"?: ({
+                  "authentication_method"?: string;
+                  "client_id": string;
+                  "client_secret"?: string;
+                  "client_secret_ref"?: string;
+                  "mode": string;
+                  "scope"?: string;
+                  "token_url": string;
+                }) | null;
+                "oauth_scope"?: string;
+                "partition_strategy"?: string;
+                "partitions"?: number;
+                "producer"?: ({
+                  "admission_timeout_ms"?: (number) | null;
+                  "batch_bytes"?: (number) | null;
+                  "buffer_bytes"?: (number) | null;
+                  "delivery_timeout_ms"?: (number) | null;
+                  "linger_ms"?: (number) | null;
+                  "max_in_flight_requests"?: (number) | null;
+                  "request_timeout_ms"?: (number) | null;
+                  "retries"?: (number) | null;
+                }) | null;
+                "profile"?: string;
+                "properties"?: Record<string, string>;
+                "sasl_mechanism"?: string;
+                "sasl_password"?: string;
+                "sasl_password_secret"?: string;
+                "sasl_username"?: string;
+                "schema"?: string;
+                "schema_id"?: number;
+                "schema_registry_url"?: string;
+                "security_protocol"?: string;
+                "serialization"?: string;
+                "subject"?: string;
+                "timeout_ms"?: number;
+                "tls"?: ({
+                  "ca_cert_file"?: string;
+                  "client_cert_file"?: string;
+                  "client_key_file"?: string;
+                  "insecure_skip_verify"?: boolean;
+                  "max_version"?: string;
+                  "min_version"?: string;
+                }) | null;
+                "topic"?: string;
+                "transactional_id"?: string;
               }) | null;
               "log"?: ({
                 "error_buffer_bytes"?: number;
@@ -179535,6 +186849,19 @@ export interface operations {
                 "redact_run_evidence"?: (boolean) | null;
               }) | null;
               "log_level"?: string;
+              "network"?: ({
+                "address"?: string;
+                "base_dn"?: string;
+                "from"?: string;
+                "host"?: string;
+                "password"?: string;
+                "port"?: number;
+                "subprotocol"?: string;
+                "timeout_ms"?: number;
+                "tls"?: boolean;
+                "to"?: Array<string>;
+                "username"?: string;
+              }) | null;
               "override_fields"?: Array<string>;
               "pacing"?: ({
                 "arrival_process"?: string;
@@ -184462,6 +191789,12 @@ export interface operations {
               "name": string;
               "recommended_protocols": Array<string>;
               "runtime_settings"?: ({
+                "appium"?: ({
+                  "capabilities"?: Record<string, unknown>;
+                  "element_timeout_ms"?: number;
+                  "server_url"?: string;
+                  "session_timeout_ms"?: number;
+                }) | null;
                 "auto_transactions"?: string;
                 "base_url"?: string;
                 "browser"?: ({
@@ -184518,6 +191851,18 @@ export interface operations {
                   "mode"?: string;
                   "platform"?: string;
                 }) | null;
+                "database"?: ({
+                  "conn_max_lifetime_ms"?: number;
+                  "driver"?: string;
+                  "dsn"?: string;
+                  "dsn_secret"?: string;
+                  "max_idle_conns"?: number;
+                  "max_open_conns"?: number;
+                  "max_rows"?: number;
+                  "query_timeout_ms"?: number;
+                  "read_only"?: boolean;
+                  "rollback_on_teardown"?: boolean;
+                }) | null;
                 "env"?: Record<string, string>;
                 "error_handling"?: ({
                   "continue_on_error"?: (boolean) | null;
@@ -184529,6 +191874,34 @@ export interface operations {
                   "retry_delay_ms"?: number;
                   "retry_on"?: Array<string>;
                   "snapshot_on_error"?: boolean;
+                }) | null;
+                "eventhubs"?: ({
+                  "auth_type"?: string;
+                  "checkpoint_container_url"?: string;
+                  "connection_string"?: string;
+                  "connection_string_secret"?: string;
+                  "consumer_group"?: string;
+                  "consumer_mode"?: string;
+                  "event_hub"?: string;
+                  "mock"?: boolean;
+                  "namespace"?: string;
+                  "observe_partition_tail"?: boolean;
+                  "owner_level"?: (number) | null;
+                  "partition_id"?: string;
+                  "partition_key"?: string;
+                  "processor_max_partitions"?: number;
+                  "start_position"?: string;
+                  "tail_poll_interval_ms"?: number;
+                  "timeout_ms"?: number;
+                }) | null;
+                "grpc"?: ({
+                  "authority"?: string;
+                  "max_recv_msg_size"?: number;
+                  "metadata"?: Record<string, string>;
+                  "plain_text"?: boolean;
+                  "proto_files"?: Array<string>;
+                  "timeout_ms"?: number;
+                  "use_reflection"?: boolean;
                 }) | null;
                 "http"?: ({
                   "accept_encoding"?: string;
@@ -184573,16 +191946,84 @@ export interface operations {
                   "version"?: string;
                 }) | null;
                 "iterations"?: (number) | null;
+                "java_http"?: ({
+                  "accept"?: string;
+                  "body_encoding"?: string;
+                  "codec"?: string;
+                  "content_type"?: string;
+                  "extractor_type"?: string;
+                  "helper_mode"?: string;
+                  "object_schema"?: string;
+                  "preserve_binary_result"?: boolean;
+                  "request_mapping"?: Record<string, string>;
+                  "response_mapping"?: Record<string, string>;
+                }) | null;
                 "java_vuser"?: ({
+                  "action_timeout_ms"?: number;
                   "additional_vm_parameters"?: Array<string>;
                   "classpath"?: Array<string>;
                   "dedicated_class_loader"?: (boolean) | null;
                   "jdk_home"?: string;
                   "jdk_selection"?: string;
                   "jvm_sharing"?: string;
+                  "param_left_brace"?: string;
+                  "param_right_brace"?: string;
                   "skip_parameter_evaluation"?: (boolean) | null;
+                  "startup_timeout_ms"?: number;
                   "use_xbootclasspath"?: (boolean) | null;
                   "vusers_per_jvm"?: number;
+                }) | null;
+                "jms"?: ({
+                  "acknowledgement"?: string;
+                  "broker_url"?: string;
+                  "client_id"?: string;
+                  "delivery_mode"?: string;
+                  "destination"?: string;
+                  "destination_type"?: string;
+                  "message_vpn"?: string;
+                  "mock"?: boolean;
+                  "password"?: string;
+                  "properties"?: Record<string, string>;
+                  "provider"?: string;
+                  "reply_to"?: string;
+                  "subscription"?: string;
+                  "timeout_ms"?: number;
+                  "tls"?: (Record<string, unknown>) | null;
+                  "username"?: string;
+                }) | null;
+                "kafka"?: ({
+                  "acks"?: string;
+                  "auto_offset_reset"?: string;
+                  "brokers"?: Array<string>;
+                  "client_id"?: string;
+                  "compression"?: string;
+                  "consumer_group"?: string;
+                  "consumer_transactions"?: boolean;
+                  "idempotence"?: string;
+                  "isolation_level"?: string;
+                  "max_message_bytes"?: number;
+                  "mock"?: boolean;
+                  "oauth"?: (Record<string, unknown>) | null;
+                  "oauth_scope"?: string;
+                  "partition_strategy"?: string;
+                  "partitions"?: number;
+                  "producer"?: (Record<string, unknown>) | null;
+                  "profile"?: string;
+                  "properties"?: Record<string, string>;
+                  "sasl_mechanism"?: string;
+                  "sasl_password"?: string;
+                  "sasl_password_secret"?: string;
+                  "sasl_username"?: string;
+                  "schema"?: string;
+                  "schema_id"?: number;
+                  "schema_registry_url"?: string;
+                  "security_protocol"?: string;
+                  "serialization"?: string;
+                  "subject"?: string;
+                  "timeout_ms"?: number;
+                  "tls"?: (Record<string, unknown>) | null;
+                  "topic"?: string;
+                  "transactional_id"?: string;
                 }) | null;
                 "log"?: ({
                   "error_buffer_bytes"?: number;
@@ -184593,6 +192034,19 @@ export interface operations {
                   "redact_run_evidence"?: (boolean) | null;
                 }) | null;
                 "log_level"?: string;
+                "network"?: ({
+                  "address"?: string;
+                  "base_dn"?: string;
+                  "from"?: string;
+                  "host"?: string;
+                  "password"?: string;
+                  "port"?: number;
+                  "subprotocol"?: string;
+                  "timeout_ms"?: number;
+                  "tls"?: boolean;
+                  "to"?: Array<string>;
+                  "username"?: string;
+                }) | null;
                 "override_fields"?: Array<string>;
                 "pacing"?: ({
                   "arrival_process"?: string;
@@ -187544,18 +194998,26 @@ export interface operations {
                 "revision_source_group_index"?: (number) | null;
                 "role"?: string;
                 "runtime_settings"?: ({
+                  "appium"?: (Record<string, unknown>) | null;
                   "auto_transactions"?: string;
                   "base_url"?: string;
                   "browser"?: (Record<string, unknown>) | null;
                   "browser_config"?: (Record<string, unknown>) | null;
                   "browser_emulation"?: (Record<string, unknown>) | null;
+                  "database"?: (Record<string, unknown>) | null;
                   "env"?: Record<string, string>;
                   "error_handling"?: (Record<string, unknown>) | null;
+                  "eventhubs"?: (Record<string, unknown>) | null;
+                  "grpc"?: (Record<string, unknown>) | null;
                   "http"?: (Record<string, unknown>) | null;
                   "iterations"?: (number) | null;
+                  "java_http"?: (Record<string, unknown>) | null;
                   "java_vuser"?: (Record<string, unknown>) | null;
+                  "jms"?: (Record<string, unknown>) | null;
+                  "kafka"?: (Record<string, unknown>) | null;
                   "log"?: (Record<string, unknown>) | null;
                   "log_level"?: string;
+                  "network"?: (Record<string, unknown>) | null;
                   "override_fields"?: Array<string>;
                   "pacing"?: (Record<string, unknown>) | null;
                   "redaction_rules"?: Array<Record<string, unknown>>;
@@ -187580,6 +195042,12 @@ export interface operations {
               "project_id"?: string;
               "resource_baseline"?: boolean;
               "runtime_settings"?: ({
+                "appium"?: ({
+                  "capabilities"?: Record<string, unknown>;
+                  "element_timeout_ms"?: number;
+                  "server_url"?: string;
+                  "session_timeout_ms"?: number;
+                }) | null;
                 "auto_transactions"?: string;
                 "base_url"?: string;
                 "browser"?: ({
@@ -187636,6 +195104,18 @@ export interface operations {
                   "mode"?: string;
                   "platform"?: string;
                 }) | null;
+                "database"?: ({
+                  "conn_max_lifetime_ms"?: number;
+                  "driver"?: string;
+                  "dsn"?: string;
+                  "dsn_secret"?: string;
+                  "max_idle_conns"?: number;
+                  "max_open_conns"?: number;
+                  "max_rows"?: number;
+                  "query_timeout_ms"?: number;
+                  "read_only"?: boolean;
+                  "rollback_on_teardown"?: boolean;
+                }) | null;
                 "env"?: Record<string, string>;
                 "error_handling"?: ({
                   "continue_on_error"?: (boolean) | null;
@@ -187647,6 +195127,34 @@ export interface operations {
                   "retry_delay_ms"?: number;
                   "retry_on"?: Array<string>;
                   "snapshot_on_error"?: boolean;
+                }) | null;
+                "eventhubs"?: ({
+                  "auth_type"?: string;
+                  "checkpoint_container_url"?: string;
+                  "connection_string"?: string;
+                  "connection_string_secret"?: string;
+                  "consumer_group"?: string;
+                  "consumer_mode"?: string;
+                  "event_hub"?: string;
+                  "mock"?: boolean;
+                  "namespace"?: string;
+                  "observe_partition_tail"?: boolean;
+                  "owner_level"?: (number) | null;
+                  "partition_id"?: string;
+                  "partition_key"?: string;
+                  "processor_max_partitions"?: number;
+                  "start_position"?: string;
+                  "tail_poll_interval_ms"?: number;
+                  "timeout_ms"?: number;
+                }) | null;
+                "grpc"?: ({
+                  "authority"?: string;
+                  "max_recv_msg_size"?: number;
+                  "metadata"?: Record<string, string>;
+                  "plain_text"?: boolean;
+                  "proto_files"?: Array<string>;
+                  "timeout_ms"?: number;
+                  "use_reflection"?: boolean;
                 }) | null;
                 "http"?: ({
                   "accept_encoding"?: string;
@@ -187691,16 +195199,84 @@ export interface operations {
                   "version"?: string;
                 }) | null;
                 "iterations"?: (number) | null;
+                "java_http"?: ({
+                  "accept"?: string;
+                  "body_encoding"?: string;
+                  "codec"?: string;
+                  "content_type"?: string;
+                  "extractor_type"?: string;
+                  "helper_mode"?: string;
+                  "object_schema"?: string;
+                  "preserve_binary_result"?: boolean;
+                  "request_mapping"?: Record<string, string>;
+                  "response_mapping"?: Record<string, string>;
+                }) | null;
                 "java_vuser"?: ({
+                  "action_timeout_ms"?: number;
                   "additional_vm_parameters"?: Array<string>;
                   "classpath"?: Array<string>;
                   "dedicated_class_loader"?: (boolean) | null;
                   "jdk_home"?: string;
                   "jdk_selection"?: string;
                   "jvm_sharing"?: string;
+                  "param_left_brace"?: string;
+                  "param_right_brace"?: string;
                   "skip_parameter_evaluation"?: (boolean) | null;
+                  "startup_timeout_ms"?: number;
                   "use_xbootclasspath"?: (boolean) | null;
                   "vusers_per_jvm"?: number;
+                }) | null;
+                "jms"?: ({
+                  "acknowledgement"?: string;
+                  "broker_url"?: string;
+                  "client_id"?: string;
+                  "delivery_mode"?: string;
+                  "destination"?: string;
+                  "destination_type"?: string;
+                  "message_vpn"?: string;
+                  "mock"?: boolean;
+                  "password"?: string;
+                  "properties"?: Record<string, string>;
+                  "provider"?: string;
+                  "reply_to"?: string;
+                  "subscription"?: string;
+                  "timeout_ms"?: number;
+                  "tls"?: (Record<string, unknown>) | null;
+                  "username"?: string;
+                }) | null;
+                "kafka"?: ({
+                  "acks"?: string;
+                  "auto_offset_reset"?: string;
+                  "brokers"?: Array<string>;
+                  "client_id"?: string;
+                  "compression"?: string;
+                  "consumer_group"?: string;
+                  "consumer_transactions"?: boolean;
+                  "idempotence"?: string;
+                  "isolation_level"?: string;
+                  "max_message_bytes"?: number;
+                  "mock"?: boolean;
+                  "oauth"?: (Record<string, unknown>) | null;
+                  "oauth_scope"?: string;
+                  "partition_strategy"?: string;
+                  "partitions"?: number;
+                  "producer"?: (Record<string, unknown>) | null;
+                  "profile"?: string;
+                  "properties"?: Record<string, string>;
+                  "sasl_mechanism"?: string;
+                  "sasl_password"?: string;
+                  "sasl_password_secret"?: string;
+                  "sasl_username"?: string;
+                  "schema"?: string;
+                  "schema_id"?: number;
+                  "schema_registry_url"?: string;
+                  "security_protocol"?: string;
+                  "serialization"?: string;
+                  "subject"?: string;
+                  "timeout_ms"?: number;
+                  "tls"?: (Record<string, unknown>) | null;
+                  "topic"?: string;
+                  "transactional_id"?: string;
                 }) | null;
                 "log"?: ({
                   "error_buffer_bytes"?: number;
@@ -187711,6 +195287,19 @@ export interface operations {
                   "redact_run_evidence"?: (boolean) | null;
                 }) | null;
                 "log_level"?: string;
+                "network"?: ({
+                  "address"?: string;
+                  "base_dn"?: string;
+                  "from"?: string;
+                  "host"?: string;
+                  "password"?: string;
+                  "port"?: number;
+                  "subprotocol"?: string;
+                  "timeout_ms"?: number;
+                  "tls"?: boolean;
+                  "to"?: Array<string>;
+                  "username"?: string;
+                }) | null;
                 "override_fields"?: Array<string>;
                 "pacing"?: ({
                   "arrival_process"?: string;
@@ -191506,6 +199095,12 @@ export interface operations {
           "replay_session_id"?: string;
           "run_id"?: string;
           "runtime_overrides"?: ({
+            "appium"?: ({
+              "capabilities"?: Record<string, unknown>;
+              "element_timeout_ms"?: number;
+              "server_url"?: string;
+              "session_timeout_ms"?: number;
+            }) | null;
             "auto_transactions"?: string;
             "base_url"?: string;
             "browser"?: ({
@@ -191602,6 +199197,18 @@ export interface operations {
               "mode"?: string;
               "platform"?: string;
             }) | null;
+            "database"?: ({
+              "conn_max_lifetime_ms"?: number;
+              "driver"?: string;
+              "dsn"?: string;
+              "dsn_secret"?: string;
+              "max_idle_conns"?: number;
+              "max_open_conns"?: number;
+              "max_rows"?: number;
+              "query_timeout_ms"?: number;
+              "read_only"?: boolean;
+              "rollback_on_teardown"?: boolean;
+            }) | null;
             "env"?: Record<string, string>;
             "error_handling"?: ({
               "continue_on_error"?: (boolean) | null;
@@ -191613,6 +199220,34 @@ export interface operations {
               "retry_delay_ms"?: number;
               "retry_on"?: Array<string>;
               "snapshot_on_error"?: boolean;
+            }) | null;
+            "eventhubs"?: ({
+              "auth_type"?: string;
+              "checkpoint_container_url"?: string;
+              "connection_string"?: string;
+              "connection_string_secret"?: string;
+              "consumer_group"?: string;
+              "consumer_mode"?: string;
+              "event_hub"?: string;
+              "mock"?: boolean;
+              "namespace"?: string;
+              "observe_partition_tail"?: boolean;
+              "owner_level"?: (number) | null;
+              "partition_id"?: string;
+              "partition_key"?: string;
+              "processor_max_partitions"?: number;
+              "start_position"?: string;
+              "tail_poll_interval_ms"?: number;
+              "timeout_ms"?: number;
+            }) | null;
+            "grpc"?: ({
+              "authority"?: string;
+              "max_recv_msg_size"?: number;
+              "metadata"?: Record<string, string>;
+              "plain_text"?: boolean;
+              "proto_files"?: Array<string>;
+              "timeout_ms"?: number;
+              "use_reflection"?: boolean;
             }) | null;
             "http"?: ({
               "accept_encoding"?: string;
@@ -191683,16 +199318,112 @@ export interface operations {
               "version"?: string;
             }) | null;
             "iterations"?: (number) | null;
+            "java_http"?: ({
+              "accept"?: string;
+              "body_encoding"?: string;
+              "codec"?: string;
+              "content_type"?: string;
+              "extractor_type"?: string;
+              "helper_mode"?: string;
+              "object_schema"?: string;
+              "preserve_binary_result"?: boolean;
+              "request_mapping"?: Record<string, string>;
+              "response_mapping"?: Record<string, string>;
+            }) | null;
             "java_vuser"?: ({
+              "action_timeout_ms"?: number;
               "additional_vm_parameters"?: Array<string>;
               "classpath"?: Array<string>;
               "dedicated_class_loader"?: (boolean) | null;
               "jdk_home"?: string;
               "jdk_selection"?: string;
               "jvm_sharing"?: string;
+              "param_left_brace"?: string;
+              "param_right_brace"?: string;
               "skip_parameter_evaluation"?: (boolean) | null;
+              "startup_timeout_ms"?: number;
               "use_xbootclasspath"?: (boolean) | null;
               "vusers_per_jvm"?: number;
+            }) | null;
+            "jms"?: ({
+              "acknowledgement"?: string;
+              "broker_url"?: string;
+              "client_id"?: string;
+              "delivery_mode"?: string;
+              "destination"?: string;
+              "destination_type"?: string;
+              "message_vpn"?: string;
+              "mock"?: boolean;
+              "password"?: string;
+              "properties"?: Record<string, string>;
+              "provider"?: string;
+              "reply_to"?: string;
+              "subscription"?: string;
+              "timeout_ms"?: number;
+              "tls"?: ({
+                "ca_cert_secret"?: string;
+                "insecure_skip_verify"?: boolean;
+                "trust_store_ref"?: string;
+              }) | null;
+              "username"?: string;
+            }) | null;
+            "kafka"?: ({
+              "acks"?: string;
+              "auto_offset_reset"?: string;
+              "brokers"?: Array<string>;
+              "client_id"?: string;
+              "compression"?: string;
+              "consumer_group"?: string;
+              "consumer_transactions"?: boolean;
+              "idempotence"?: string;
+              "isolation_level"?: string;
+              "max_message_bytes"?: number;
+              "mock"?: boolean;
+              "oauth"?: ({
+                "authentication_method"?: string;
+                "client_id"?: string;
+                "client_secret"?: string;
+                "client_secret_ref"?: string;
+                "mode"?: string;
+                "scope"?: string;
+                "token_url"?: string;
+              }) | null;
+              "oauth_scope"?: string;
+              "partition_strategy"?: string;
+              "partitions"?: number;
+              "producer"?: ({
+                "admission_timeout_ms"?: (number) | null;
+                "batch_bytes"?: (number) | null;
+                "buffer_bytes"?: (number) | null;
+                "delivery_timeout_ms"?: (number) | null;
+                "linger_ms"?: (number) | null;
+                "max_in_flight_requests"?: (number) | null;
+                "request_timeout_ms"?: (number) | null;
+                "retries"?: (number) | null;
+              }) | null;
+              "profile"?: string;
+              "properties"?: Record<string, string>;
+              "sasl_mechanism"?: string;
+              "sasl_password"?: string;
+              "sasl_password_secret"?: string;
+              "sasl_username"?: string;
+              "schema"?: string;
+              "schema_id"?: number;
+              "schema_registry_url"?: string;
+              "security_protocol"?: string;
+              "serialization"?: string;
+              "subject"?: string;
+              "timeout_ms"?: number;
+              "tls"?: ({
+                "ca_cert_file"?: string;
+                "client_cert_file"?: string;
+                "client_key_file"?: string;
+                "insecure_skip_verify"?: boolean;
+                "max_version"?: string;
+                "min_version"?: string;
+              }) | null;
+              "topic"?: string;
+              "transactional_id"?: string;
             }) | null;
             "log"?: ({
               "error_buffer_bytes"?: number;
@@ -191703,6 +199434,19 @@ export interface operations {
               "redact_run_evidence"?: (boolean) | null;
             }) | null;
             "log_level"?: string;
+            "network"?: ({
+              "address"?: string;
+              "base_dn"?: string;
+              "from"?: string;
+              "host"?: string;
+              "password"?: string;
+              "port"?: number;
+              "subprotocol"?: string;
+              "timeout_ms"?: number;
+              "tls"?: boolean;
+              "to"?: Array<string>;
+              "username"?: string;
+            }) | null;
             "override_fields"?: Array<string>;
             "pacing"?: ({
               "arrival_process"?: string;
@@ -193601,6 +201345,12 @@ export interface operations {
           "replay_session_id"?: string;
           "run_id"?: string;
           "runtime_overrides"?: ({
+            "appium"?: ({
+              "capabilities"?: Record<string, unknown>;
+              "element_timeout_ms"?: number;
+              "server_url"?: string;
+              "session_timeout_ms"?: number;
+            }) | null;
             "auto_transactions"?: string;
             "base_url"?: string;
             "browser"?: ({
@@ -193697,6 +201447,18 @@ export interface operations {
               "mode"?: string;
               "platform"?: string;
             }) | null;
+            "database"?: ({
+              "conn_max_lifetime_ms"?: number;
+              "driver"?: string;
+              "dsn"?: string;
+              "dsn_secret"?: string;
+              "max_idle_conns"?: number;
+              "max_open_conns"?: number;
+              "max_rows"?: number;
+              "query_timeout_ms"?: number;
+              "read_only"?: boolean;
+              "rollback_on_teardown"?: boolean;
+            }) | null;
             "env"?: Record<string, string>;
             "error_handling"?: ({
               "continue_on_error"?: (boolean) | null;
@@ -193708,6 +201470,34 @@ export interface operations {
               "retry_delay_ms"?: number;
               "retry_on"?: Array<string>;
               "snapshot_on_error"?: boolean;
+            }) | null;
+            "eventhubs"?: ({
+              "auth_type"?: string;
+              "checkpoint_container_url"?: string;
+              "connection_string"?: string;
+              "connection_string_secret"?: string;
+              "consumer_group"?: string;
+              "consumer_mode"?: string;
+              "event_hub"?: string;
+              "mock"?: boolean;
+              "namespace"?: string;
+              "observe_partition_tail"?: boolean;
+              "owner_level"?: (number) | null;
+              "partition_id"?: string;
+              "partition_key"?: string;
+              "processor_max_partitions"?: number;
+              "start_position"?: string;
+              "tail_poll_interval_ms"?: number;
+              "timeout_ms"?: number;
+            }) | null;
+            "grpc"?: ({
+              "authority"?: string;
+              "max_recv_msg_size"?: number;
+              "metadata"?: Record<string, string>;
+              "plain_text"?: boolean;
+              "proto_files"?: Array<string>;
+              "timeout_ms"?: number;
+              "use_reflection"?: boolean;
             }) | null;
             "http"?: ({
               "accept_encoding"?: string;
@@ -193778,16 +201568,112 @@ export interface operations {
               "version"?: string;
             }) | null;
             "iterations"?: (number) | null;
+            "java_http"?: ({
+              "accept"?: string;
+              "body_encoding"?: string;
+              "codec"?: string;
+              "content_type"?: string;
+              "extractor_type"?: string;
+              "helper_mode"?: string;
+              "object_schema"?: string;
+              "preserve_binary_result"?: boolean;
+              "request_mapping"?: Record<string, string>;
+              "response_mapping"?: Record<string, string>;
+            }) | null;
             "java_vuser"?: ({
+              "action_timeout_ms"?: number;
               "additional_vm_parameters"?: Array<string>;
               "classpath"?: Array<string>;
               "dedicated_class_loader"?: (boolean) | null;
               "jdk_home"?: string;
               "jdk_selection"?: string;
               "jvm_sharing"?: string;
+              "param_left_brace"?: string;
+              "param_right_brace"?: string;
               "skip_parameter_evaluation"?: (boolean) | null;
+              "startup_timeout_ms"?: number;
               "use_xbootclasspath"?: (boolean) | null;
               "vusers_per_jvm"?: number;
+            }) | null;
+            "jms"?: ({
+              "acknowledgement"?: string;
+              "broker_url"?: string;
+              "client_id"?: string;
+              "delivery_mode"?: string;
+              "destination"?: string;
+              "destination_type"?: string;
+              "message_vpn"?: string;
+              "mock"?: boolean;
+              "password"?: string;
+              "properties"?: Record<string, string>;
+              "provider"?: string;
+              "reply_to"?: string;
+              "subscription"?: string;
+              "timeout_ms"?: number;
+              "tls"?: ({
+                "ca_cert_secret"?: string;
+                "insecure_skip_verify"?: boolean;
+                "trust_store_ref"?: string;
+              }) | null;
+              "username"?: string;
+            }) | null;
+            "kafka"?: ({
+              "acks"?: string;
+              "auto_offset_reset"?: string;
+              "brokers"?: Array<string>;
+              "client_id"?: string;
+              "compression"?: string;
+              "consumer_group"?: string;
+              "consumer_transactions"?: boolean;
+              "idempotence"?: string;
+              "isolation_level"?: string;
+              "max_message_bytes"?: number;
+              "mock"?: boolean;
+              "oauth"?: ({
+                "authentication_method"?: string;
+                "client_id"?: string;
+                "client_secret"?: string;
+                "client_secret_ref"?: string;
+                "mode"?: string;
+                "scope"?: string;
+                "token_url"?: string;
+              }) | null;
+              "oauth_scope"?: string;
+              "partition_strategy"?: string;
+              "partitions"?: number;
+              "producer"?: ({
+                "admission_timeout_ms"?: (number) | null;
+                "batch_bytes"?: (number) | null;
+                "buffer_bytes"?: (number) | null;
+                "delivery_timeout_ms"?: (number) | null;
+                "linger_ms"?: (number) | null;
+                "max_in_flight_requests"?: (number) | null;
+                "request_timeout_ms"?: (number) | null;
+                "retries"?: (number) | null;
+              }) | null;
+              "profile"?: string;
+              "properties"?: Record<string, string>;
+              "sasl_mechanism"?: string;
+              "sasl_password"?: string;
+              "sasl_password_secret"?: string;
+              "sasl_username"?: string;
+              "schema"?: string;
+              "schema_id"?: number;
+              "schema_registry_url"?: string;
+              "security_protocol"?: string;
+              "serialization"?: string;
+              "subject"?: string;
+              "timeout_ms"?: number;
+              "tls"?: ({
+                "ca_cert_file"?: string;
+                "client_cert_file"?: string;
+                "client_key_file"?: string;
+                "insecure_skip_verify"?: boolean;
+                "max_version"?: string;
+                "min_version"?: string;
+              }) | null;
+              "topic"?: string;
+              "transactional_id"?: string;
             }) | null;
             "log"?: ({
               "error_buffer_bytes"?: number;
@@ -193798,6 +201684,19 @@ export interface operations {
               "redact_run_evidence"?: (boolean) | null;
             }) | null;
             "log_level"?: string;
+            "network"?: ({
+              "address"?: string;
+              "base_dn"?: string;
+              "from"?: string;
+              "host"?: string;
+              "password"?: string;
+              "port"?: number;
+              "subprotocol"?: string;
+              "timeout_ms"?: number;
+              "tls"?: boolean;
+              "to"?: Array<string>;
+              "username"?: string;
+            }) | null;
             "override_fields"?: Array<string>;
             "pacing"?: ({
               "arrival_process"?: string;
@@ -195692,6 +203591,12 @@ export interface operations {
           "replay_session_id"?: string;
           "run_id"?: string;
           "runtime_overrides"?: ({
+            "appium"?: ({
+              "capabilities"?: Record<string, unknown>;
+              "element_timeout_ms"?: number;
+              "server_url"?: string;
+              "session_timeout_ms"?: number;
+            }) | null;
             "auto_transactions"?: string;
             "base_url"?: string;
             "browser"?: ({
@@ -195788,6 +203693,18 @@ export interface operations {
               "mode"?: string;
               "platform"?: string;
             }) | null;
+            "database"?: ({
+              "conn_max_lifetime_ms"?: number;
+              "driver"?: string;
+              "dsn"?: string;
+              "dsn_secret"?: string;
+              "max_idle_conns"?: number;
+              "max_open_conns"?: number;
+              "max_rows"?: number;
+              "query_timeout_ms"?: number;
+              "read_only"?: boolean;
+              "rollback_on_teardown"?: boolean;
+            }) | null;
             "env"?: Record<string, string>;
             "error_handling"?: ({
               "continue_on_error"?: (boolean) | null;
@@ -195799,6 +203716,34 @@ export interface operations {
               "retry_delay_ms"?: number;
               "retry_on"?: Array<string>;
               "snapshot_on_error"?: boolean;
+            }) | null;
+            "eventhubs"?: ({
+              "auth_type"?: string;
+              "checkpoint_container_url"?: string;
+              "connection_string"?: string;
+              "connection_string_secret"?: string;
+              "consumer_group"?: string;
+              "consumer_mode"?: string;
+              "event_hub"?: string;
+              "mock"?: boolean;
+              "namespace"?: string;
+              "observe_partition_tail"?: boolean;
+              "owner_level"?: (number) | null;
+              "partition_id"?: string;
+              "partition_key"?: string;
+              "processor_max_partitions"?: number;
+              "start_position"?: string;
+              "tail_poll_interval_ms"?: number;
+              "timeout_ms"?: number;
+            }) | null;
+            "grpc"?: ({
+              "authority"?: string;
+              "max_recv_msg_size"?: number;
+              "metadata"?: Record<string, string>;
+              "plain_text"?: boolean;
+              "proto_files"?: Array<string>;
+              "timeout_ms"?: number;
+              "use_reflection"?: boolean;
             }) | null;
             "http"?: ({
               "accept_encoding"?: string;
@@ -195869,16 +203814,112 @@ export interface operations {
               "version"?: string;
             }) | null;
             "iterations"?: (number) | null;
+            "java_http"?: ({
+              "accept"?: string;
+              "body_encoding"?: string;
+              "codec"?: string;
+              "content_type"?: string;
+              "extractor_type"?: string;
+              "helper_mode"?: string;
+              "object_schema"?: string;
+              "preserve_binary_result"?: boolean;
+              "request_mapping"?: Record<string, string>;
+              "response_mapping"?: Record<string, string>;
+            }) | null;
             "java_vuser"?: ({
+              "action_timeout_ms"?: number;
               "additional_vm_parameters"?: Array<string>;
               "classpath"?: Array<string>;
               "dedicated_class_loader"?: (boolean) | null;
               "jdk_home"?: string;
               "jdk_selection"?: string;
               "jvm_sharing"?: string;
+              "param_left_brace"?: string;
+              "param_right_brace"?: string;
               "skip_parameter_evaluation"?: (boolean) | null;
+              "startup_timeout_ms"?: number;
               "use_xbootclasspath"?: (boolean) | null;
               "vusers_per_jvm"?: number;
+            }) | null;
+            "jms"?: ({
+              "acknowledgement"?: string;
+              "broker_url"?: string;
+              "client_id"?: string;
+              "delivery_mode"?: string;
+              "destination"?: string;
+              "destination_type"?: string;
+              "message_vpn"?: string;
+              "mock"?: boolean;
+              "password"?: string;
+              "properties"?: Record<string, string>;
+              "provider"?: string;
+              "reply_to"?: string;
+              "subscription"?: string;
+              "timeout_ms"?: number;
+              "tls"?: ({
+                "ca_cert_secret"?: string;
+                "insecure_skip_verify"?: boolean;
+                "trust_store_ref"?: string;
+              }) | null;
+              "username"?: string;
+            }) | null;
+            "kafka"?: ({
+              "acks"?: string;
+              "auto_offset_reset"?: string;
+              "brokers"?: Array<string>;
+              "client_id"?: string;
+              "compression"?: string;
+              "consumer_group"?: string;
+              "consumer_transactions"?: boolean;
+              "idempotence"?: string;
+              "isolation_level"?: string;
+              "max_message_bytes"?: number;
+              "mock"?: boolean;
+              "oauth"?: ({
+                "authentication_method"?: string;
+                "client_id"?: string;
+                "client_secret"?: string;
+                "client_secret_ref"?: string;
+                "mode"?: string;
+                "scope"?: string;
+                "token_url"?: string;
+              }) | null;
+              "oauth_scope"?: string;
+              "partition_strategy"?: string;
+              "partitions"?: number;
+              "producer"?: ({
+                "admission_timeout_ms"?: (number) | null;
+                "batch_bytes"?: (number) | null;
+                "buffer_bytes"?: (number) | null;
+                "delivery_timeout_ms"?: (number) | null;
+                "linger_ms"?: (number) | null;
+                "max_in_flight_requests"?: (number) | null;
+                "request_timeout_ms"?: (number) | null;
+                "retries"?: (number) | null;
+              }) | null;
+              "profile"?: string;
+              "properties"?: Record<string, string>;
+              "sasl_mechanism"?: string;
+              "sasl_password"?: string;
+              "sasl_password_secret"?: string;
+              "sasl_username"?: string;
+              "schema"?: string;
+              "schema_id"?: number;
+              "schema_registry_url"?: string;
+              "security_protocol"?: string;
+              "serialization"?: string;
+              "subject"?: string;
+              "timeout_ms"?: number;
+              "tls"?: ({
+                "ca_cert_file"?: string;
+                "client_cert_file"?: string;
+                "client_key_file"?: string;
+                "insecure_skip_verify"?: boolean;
+                "max_version"?: string;
+                "min_version"?: string;
+              }) | null;
+              "topic"?: string;
+              "transactional_id"?: string;
             }) | null;
             "log"?: ({
               "error_buffer_bytes"?: number;
@@ -195889,6 +203930,19 @@ export interface operations {
               "redact_run_evidence"?: (boolean) | null;
             }) | null;
             "log_level"?: string;
+            "network"?: ({
+              "address"?: string;
+              "base_dn"?: string;
+              "from"?: string;
+              "host"?: string;
+              "password"?: string;
+              "port"?: number;
+              "subprotocol"?: string;
+              "timeout_ms"?: number;
+              "tls"?: boolean;
+              "to"?: Array<string>;
+              "username"?: string;
+            }) | null;
             "override_fields"?: Array<string>;
             "pacing"?: ({
               "arrival_process"?: string;
@@ -197787,6 +205841,12 @@ export interface operations {
           "replay_session_id"?: string;
           "run_id"?: string;
           "runtime_overrides"?: ({
+            "appium"?: ({
+              "capabilities"?: Record<string, unknown>;
+              "element_timeout_ms"?: number;
+              "server_url"?: string;
+              "session_timeout_ms"?: number;
+            }) | null;
             "auto_transactions"?: string;
             "base_url"?: string;
             "browser"?: ({
@@ -197883,6 +205943,18 @@ export interface operations {
               "mode"?: string;
               "platform"?: string;
             }) | null;
+            "database"?: ({
+              "conn_max_lifetime_ms"?: number;
+              "driver"?: string;
+              "dsn"?: string;
+              "dsn_secret"?: string;
+              "max_idle_conns"?: number;
+              "max_open_conns"?: number;
+              "max_rows"?: number;
+              "query_timeout_ms"?: number;
+              "read_only"?: boolean;
+              "rollback_on_teardown"?: boolean;
+            }) | null;
             "env"?: Record<string, string>;
             "error_handling"?: ({
               "continue_on_error"?: (boolean) | null;
@@ -197894,6 +205966,34 @@ export interface operations {
               "retry_delay_ms"?: number;
               "retry_on"?: Array<string>;
               "snapshot_on_error"?: boolean;
+            }) | null;
+            "eventhubs"?: ({
+              "auth_type"?: string;
+              "checkpoint_container_url"?: string;
+              "connection_string"?: string;
+              "connection_string_secret"?: string;
+              "consumer_group"?: string;
+              "consumer_mode"?: string;
+              "event_hub"?: string;
+              "mock"?: boolean;
+              "namespace"?: string;
+              "observe_partition_tail"?: boolean;
+              "owner_level"?: (number) | null;
+              "partition_id"?: string;
+              "partition_key"?: string;
+              "processor_max_partitions"?: number;
+              "start_position"?: string;
+              "tail_poll_interval_ms"?: number;
+              "timeout_ms"?: number;
+            }) | null;
+            "grpc"?: ({
+              "authority"?: string;
+              "max_recv_msg_size"?: number;
+              "metadata"?: Record<string, string>;
+              "plain_text"?: boolean;
+              "proto_files"?: Array<string>;
+              "timeout_ms"?: number;
+              "use_reflection"?: boolean;
             }) | null;
             "http"?: ({
               "accept_encoding"?: string;
@@ -197964,16 +206064,112 @@ export interface operations {
               "version"?: string;
             }) | null;
             "iterations"?: (number) | null;
+            "java_http"?: ({
+              "accept"?: string;
+              "body_encoding"?: string;
+              "codec"?: string;
+              "content_type"?: string;
+              "extractor_type"?: string;
+              "helper_mode"?: string;
+              "object_schema"?: string;
+              "preserve_binary_result"?: boolean;
+              "request_mapping"?: Record<string, string>;
+              "response_mapping"?: Record<string, string>;
+            }) | null;
             "java_vuser"?: ({
+              "action_timeout_ms"?: number;
               "additional_vm_parameters"?: Array<string>;
               "classpath"?: Array<string>;
               "dedicated_class_loader"?: (boolean) | null;
               "jdk_home"?: string;
               "jdk_selection"?: string;
               "jvm_sharing"?: string;
+              "param_left_brace"?: string;
+              "param_right_brace"?: string;
               "skip_parameter_evaluation"?: (boolean) | null;
+              "startup_timeout_ms"?: number;
               "use_xbootclasspath"?: (boolean) | null;
               "vusers_per_jvm"?: number;
+            }) | null;
+            "jms"?: ({
+              "acknowledgement"?: string;
+              "broker_url"?: string;
+              "client_id"?: string;
+              "delivery_mode"?: string;
+              "destination"?: string;
+              "destination_type"?: string;
+              "message_vpn"?: string;
+              "mock"?: boolean;
+              "password"?: string;
+              "properties"?: Record<string, string>;
+              "provider"?: string;
+              "reply_to"?: string;
+              "subscription"?: string;
+              "timeout_ms"?: number;
+              "tls"?: ({
+                "ca_cert_secret"?: string;
+                "insecure_skip_verify"?: boolean;
+                "trust_store_ref"?: string;
+              }) | null;
+              "username"?: string;
+            }) | null;
+            "kafka"?: ({
+              "acks"?: string;
+              "auto_offset_reset"?: string;
+              "brokers"?: Array<string>;
+              "client_id"?: string;
+              "compression"?: string;
+              "consumer_group"?: string;
+              "consumer_transactions"?: boolean;
+              "idempotence"?: string;
+              "isolation_level"?: string;
+              "max_message_bytes"?: number;
+              "mock"?: boolean;
+              "oauth"?: ({
+                "authentication_method"?: string;
+                "client_id"?: string;
+                "client_secret"?: string;
+                "client_secret_ref"?: string;
+                "mode"?: string;
+                "scope"?: string;
+                "token_url"?: string;
+              }) | null;
+              "oauth_scope"?: string;
+              "partition_strategy"?: string;
+              "partitions"?: number;
+              "producer"?: ({
+                "admission_timeout_ms"?: (number) | null;
+                "batch_bytes"?: (number) | null;
+                "buffer_bytes"?: (number) | null;
+                "delivery_timeout_ms"?: (number) | null;
+                "linger_ms"?: (number) | null;
+                "max_in_flight_requests"?: (number) | null;
+                "request_timeout_ms"?: (number) | null;
+                "retries"?: (number) | null;
+              }) | null;
+              "profile"?: string;
+              "properties"?: Record<string, string>;
+              "sasl_mechanism"?: string;
+              "sasl_password"?: string;
+              "sasl_password_secret"?: string;
+              "sasl_username"?: string;
+              "schema"?: string;
+              "schema_id"?: number;
+              "schema_registry_url"?: string;
+              "security_protocol"?: string;
+              "serialization"?: string;
+              "subject"?: string;
+              "timeout_ms"?: number;
+              "tls"?: ({
+                "ca_cert_file"?: string;
+                "client_cert_file"?: string;
+                "client_key_file"?: string;
+                "insecure_skip_verify"?: boolean;
+                "max_version"?: string;
+                "min_version"?: string;
+              }) | null;
+              "topic"?: string;
+              "transactional_id"?: string;
             }) | null;
             "log"?: ({
               "error_buffer_bytes"?: number;
@@ -197984,6 +206180,19 @@ export interface operations {
               "redact_run_evidence"?: (boolean) | null;
             }) | null;
             "log_level"?: string;
+            "network"?: ({
+              "address"?: string;
+              "base_dn"?: string;
+              "from"?: string;
+              "host"?: string;
+              "password"?: string;
+              "port"?: number;
+              "subprotocol"?: string;
+              "timeout_ms"?: number;
+              "tls"?: boolean;
+              "to"?: Array<string>;
+              "username"?: string;
+            }) | null;
             "override_fields"?: Array<string>;
             "pacing"?: ({
               "arrival_process"?: string;
@@ -206210,6 +214419,12 @@ export interface operations {
                 "max_transactions"?: number;
               }) | null;
               "runtime_settings"?: ({
+                "appium"?: ({
+                  "capabilities"?: Record<string, unknown>;
+                  "element_timeout_ms"?: number;
+                  "server_url"?: string;
+                  "session_timeout_ms"?: number;
+                }) | null;
                 "auto_transactions"?: string;
                 "base_url"?: string;
                 "browser"?: ({
@@ -206266,6 +214481,18 @@ export interface operations {
                   "mode"?: string;
                   "platform"?: string;
                 }) | null;
+                "database"?: ({
+                  "conn_max_lifetime_ms"?: number;
+                  "driver"?: string;
+                  "dsn"?: string;
+                  "dsn_secret"?: string;
+                  "max_idle_conns"?: number;
+                  "max_open_conns"?: number;
+                  "max_rows"?: number;
+                  "query_timeout_ms"?: number;
+                  "read_only"?: boolean;
+                  "rollback_on_teardown"?: boolean;
+                }) | null;
                 "env"?: Record<string, string>;
                 "error_handling"?: ({
                   "continue_on_error"?: (boolean) | null;
@@ -206277,6 +214504,34 @@ export interface operations {
                   "retry_delay_ms"?: number;
                   "retry_on"?: Array<string>;
                   "snapshot_on_error"?: boolean;
+                }) | null;
+                "eventhubs"?: ({
+                  "auth_type"?: string;
+                  "checkpoint_container_url"?: string;
+                  "connection_string"?: string;
+                  "connection_string_secret"?: string;
+                  "consumer_group"?: string;
+                  "consumer_mode"?: string;
+                  "event_hub"?: string;
+                  "mock"?: boolean;
+                  "namespace"?: string;
+                  "observe_partition_tail"?: boolean;
+                  "owner_level"?: (number) | null;
+                  "partition_id"?: string;
+                  "partition_key"?: string;
+                  "processor_max_partitions"?: number;
+                  "start_position"?: string;
+                  "tail_poll_interval_ms"?: number;
+                  "timeout_ms"?: number;
+                }) | null;
+                "grpc"?: ({
+                  "authority"?: string;
+                  "max_recv_msg_size"?: number;
+                  "metadata"?: Record<string, string>;
+                  "plain_text"?: boolean;
+                  "proto_files"?: Array<string>;
+                  "timeout_ms"?: number;
+                  "use_reflection"?: boolean;
                 }) | null;
                 "http"?: ({
                   "accept_encoding"?: string;
@@ -206321,16 +214576,84 @@ export interface operations {
                   "version"?: string;
                 }) | null;
                 "iterations"?: (number) | null;
+                "java_http"?: ({
+                  "accept"?: string;
+                  "body_encoding"?: string;
+                  "codec"?: string;
+                  "content_type"?: string;
+                  "extractor_type"?: string;
+                  "helper_mode"?: string;
+                  "object_schema"?: string;
+                  "preserve_binary_result"?: boolean;
+                  "request_mapping"?: Record<string, string>;
+                  "response_mapping"?: Record<string, string>;
+                }) | null;
                 "java_vuser"?: ({
+                  "action_timeout_ms"?: number;
                   "additional_vm_parameters"?: Array<string>;
                   "classpath"?: Array<string>;
                   "dedicated_class_loader"?: (boolean) | null;
                   "jdk_home"?: string;
                   "jdk_selection"?: string;
                   "jvm_sharing"?: string;
+                  "param_left_brace"?: string;
+                  "param_right_brace"?: string;
                   "skip_parameter_evaluation"?: (boolean) | null;
+                  "startup_timeout_ms"?: number;
                   "use_xbootclasspath"?: (boolean) | null;
                   "vusers_per_jvm"?: number;
+                }) | null;
+                "jms"?: ({
+                  "acknowledgement"?: string;
+                  "broker_url"?: string;
+                  "client_id"?: string;
+                  "delivery_mode"?: string;
+                  "destination"?: string;
+                  "destination_type"?: string;
+                  "message_vpn"?: string;
+                  "mock"?: boolean;
+                  "password"?: string;
+                  "properties"?: Record<string, string>;
+                  "provider"?: string;
+                  "reply_to"?: string;
+                  "subscription"?: string;
+                  "timeout_ms"?: number;
+                  "tls"?: (Record<string, unknown>) | null;
+                  "username"?: string;
+                }) | null;
+                "kafka"?: ({
+                  "acks"?: string;
+                  "auto_offset_reset"?: string;
+                  "brokers"?: Array<string>;
+                  "client_id"?: string;
+                  "compression"?: string;
+                  "consumer_group"?: string;
+                  "consumer_transactions"?: boolean;
+                  "idempotence"?: string;
+                  "isolation_level"?: string;
+                  "max_message_bytes"?: number;
+                  "mock"?: boolean;
+                  "oauth"?: (Record<string, unknown>) | null;
+                  "oauth_scope"?: string;
+                  "partition_strategy"?: string;
+                  "partitions"?: number;
+                  "producer"?: (Record<string, unknown>) | null;
+                  "profile"?: string;
+                  "properties"?: Record<string, string>;
+                  "sasl_mechanism"?: string;
+                  "sasl_password"?: string;
+                  "sasl_password_secret"?: string;
+                  "sasl_username"?: string;
+                  "schema"?: string;
+                  "schema_id"?: number;
+                  "schema_registry_url"?: string;
+                  "security_protocol"?: string;
+                  "serialization"?: string;
+                  "subject"?: string;
+                  "timeout_ms"?: number;
+                  "tls"?: (Record<string, unknown>) | null;
+                  "topic"?: string;
+                  "transactional_id"?: string;
                 }) | null;
                 "log"?: ({
                   "error_buffer_bytes"?: number;
@@ -206341,6 +214664,19 @@ export interface operations {
                   "redact_run_evidence"?: (boolean) | null;
                 }) | null;
                 "log_level"?: string;
+                "network"?: ({
+                  "address"?: string;
+                  "base_dn"?: string;
+                  "from"?: string;
+                  "host"?: string;
+                  "password"?: string;
+                  "port"?: number;
+                  "subprotocol"?: string;
+                  "timeout_ms"?: number;
+                  "tls"?: boolean;
+                  "to"?: Array<string>;
+                  "username"?: string;
+                }) | null;
                 "override_fields"?: Array<string>;
                 "pacing"?: ({
                   "arrival_process"?: string;
@@ -211218,6 +219554,12 @@ export interface operations {
             "release_id"?: string;
             "resource_baseline"?: boolean;
             "runtime_settings"?: ({
+              "appium"?: ({
+                "capabilities"?: Record<string, unknown>;
+                "element_timeout_ms"?: number;
+                "server_url"?: string;
+                "session_timeout_ms"?: number;
+              }) | null;
               "auto_transactions"?: string;
               "base_url"?: string;
               "browser"?: ({
@@ -211314,6 +219656,18 @@ export interface operations {
                 "mode"?: string;
                 "platform"?: string;
               }) | null;
+              "database"?: ({
+                "conn_max_lifetime_ms"?: number;
+                "driver"?: string;
+                "dsn"?: string;
+                "dsn_secret"?: string;
+                "max_idle_conns"?: number;
+                "max_open_conns"?: number;
+                "max_rows"?: number;
+                "query_timeout_ms"?: number;
+                "read_only"?: boolean;
+                "rollback_on_teardown"?: boolean;
+              }) | null;
               "env"?: Record<string, string>;
               "error_handling"?: ({
                 "continue_on_error"?: (boolean) | null;
@@ -211325,6 +219679,34 @@ export interface operations {
                 "retry_delay_ms"?: number;
                 "retry_on"?: Array<string>;
                 "snapshot_on_error"?: boolean;
+              }) | null;
+              "eventhubs"?: ({
+                "auth_type"?: string;
+                "checkpoint_container_url"?: string;
+                "connection_string"?: string;
+                "connection_string_secret"?: string;
+                "consumer_group"?: string;
+                "consumer_mode"?: string;
+                "event_hub"?: string;
+                "mock"?: boolean;
+                "namespace"?: string;
+                "observe_partition_tail"?: boolean;
+                "owner_level"?: (number) | null;
+                "partition_id"?: string;
+                "partition_key"?: string;
+                "processor_max_partitions"?: number;
+                "start_position"?: string;
+                "tail_poll_interval_ms"?: number;
+                "timeout_ms"?: number;
+              }) | null;
+              "grpc"?: ({
+                "authority"?: string;
+                "max_recv_msg_size"?: number;
+                "metadata"?: Record<string, string>;
+                "plain_text"?: boolean;
+                "proto_files"?: Array<string>;
+                "timeout_ms"?: number;
+                "use_reflection"?: boolean;
               }) | null;
               "http"?: ({
                 "accept_encoding"?: string;
@@ -211395,16 +219777,112 @@ export interface operations {
                 "version"?: string;
               }) | null;
               "iterations"?: (number) | null;
+              "java_http"?: ({
+                "accept"?: string;
+                "body_encoding"?: string;
+                "codec"?: string;
+                "content_type"?: string;
+                "extractor_type"?: string;
+                "helper_mode"?: string;
+                "object_schema"?: string;
+                "preserve_binary_result"?: boolean;
+                "request_mapping"?: Record<string, string>;
+                "response_mapping"?: Record<string, string>;
+              }) | null;
               "java_vuser"?: ({
+                "action_timeout_ms"?: number;
                 "additional_vm_parameters"?: Array<string>;
                 "classpath"?: Array<string>;
                 "dedicated_class_loader"?: (boolean) | null;
                 "jdk_home"?: string;
                 "jdk_selection"?: string;
                 "jvm_sharing"?: string;
+                "param_left_brace"?: string;
+                "param_right_brace"?: string;
                 "skip_parameter_evaluation"?: (boolean) | null;
+                "startup_timeout_ms"?: number;
                 "use_xbootclasspath"?: (boolean) | null;
                 "vusers_per_jvm"?: number;
+              }) | null;
+              "jms"?: ({
+                "acknowledgement"?: string;
+                "broker_url"?: string;
+                "client_id"?: string;
+                "delivery_mode"?: string;
+                "destination"?: string;
+                "destination_type"?: string;
+                "message_vpn"?: string;
+                "mock"?: boolean;
+                "password"?: string;
+                "properties"?: Record<string, string>;
+                "provider"?: string;
+                "reply_to"?: string;
+                "subscription"?: string;
+                "timeout_ms"?: number;
+                "tls"?: ({
+                  "ca_cert_secret"?: string;
+                  "insecure_skip_verify"?: boolean;
+                  "trust_store_ref"?: string;
+                }) | null;
+                "username"?: string;
+              }) | null;
+              "kafka"?: ({
+                "acks"?: string;
+                "auto_offset_reset"?: string;
+                "brokers"?: Array<string>;
+                "client_id"?: string;
+                "compression"?: string;
+                "consumer_group"?: string;
+                "consumer_transactions"?: boolean;
+                "idempotence"?: string;
+                "isolation_level"?: string;
+                "max_message_bytes"?: number;
+                "mock"?: boolean;
+                "oauth"?: ({
+                  "authentication_method"?: string;
+                  "client_id": string;
+                  "client_secret"?: string;
+                  "client_secret_ref"?: string;
+                  "mode": string;
+                  "scope"?: string;
+                  "token_url": string;
+                }) | null;
+                "oauth_scope"?: string;
+                "partition_strategy"?: string;
+                "partitions"?: number;
+                "producer"?: ({
+                  "admission_timeout_ms"?: (number) | null;
+                  "batch_bytes"?: (number) | null;
+                  "buffer_bytes"?: (number) | null;
+                  "delivery_timeout_ms"?: (number) | null;
+                  "linger_ms"?: (number) | null;
+                  "max_in_flight_requests"?: (number) | null;
+                  "request_timeout_ms"?: (number) | null;
+                  "retries"?: (number) | null;
+                }) | null;
+                "profile"?: string;
+                "properties"?: Record<string, string>;
+                "sasl_mechanism"?: string;
+                "sasl_password"?: string;
+                "sasl_password_secret"?: string;
+                "sasl_username"?: string;
+                "schema"?: string;
+                "schema_id"?: number;
+                "schema_registry_url"?: string;
+                "security_protocol"?: string;
+                "serialization"?: string;
+                "subject"?: string;
+                "timeout_ms"?: number;
+                "tls"?: ({
+                  "ca_cert_file"?: string;
+                  "client_cert_file"?: string;
+                  "client_key_file"?: string;
+                  "insecure_skip_verify"?: boolean;
+                  "max_version"?: string;
+                  "min_version"?: string;
+                }) | null;
+                "topic"?: string;
+                "transactional_id"?: string;
               }) | null;
               "log"?: ({
                 "error_buffer_bytes"?: number;
@@ -211415,6 +219893,19 @@ export interface operations {
                 "redact_run_evidence"?: (boolean) | null;
               }) | null;
               "log_level"?: string;
+              "network"?: ({
+                "address"?: string;
+                "base_dn"?: string;
+                "from"?: string;
+                "host"?: string;
+                "password"?: string;
+                "port"?: number;
+                "subprotocol"?: string;
+                "timeout_ms"?: number;
+                "tls"?: boolean;
+                "to"?: Array<string>;
+                "username"?: string;
+              }) | null;
               "override_fields"?: Array<string>;
               "pacing"?: ({
                 "arrival_process"?: string;
@@ -214891,6 +223382,7 @@ export interface operations {
             "failure_policy"?: string;
             "order"?: number;
             "runtime_overrides"?: unknown;
+            "runtime_overrides_schema"?: number;
             "scenario_id"?: string;
             "scenario_name"?: string;
             "timeslot_id"?: (string) | null;
@@ -216961,6 +225453,12 @@ export interface operations {
             "revision_source_group_index"?: (number) | null;
             "role"?: string;
             "runtime_settings"?: ({
+              "appium"?: ({
+                "capabilities"?: Record<string, unknown>;
+                "element_timeout_ms"?: number;
+                "server_url"?: string;
+                "session_timeout_ms"?: number;
+              }) | null;
               "auto_transactions"?: string;
               "base_url"?: string;
               "browser"?: ({
@@ -217017,6 +225515,18 @@ export interface operations {
                 "mode"?: string;
                 "platform"?: string;
               }) | null;
+              "database"?: ({
+                "conn_max_lifetime_ms"?: number;
+                "driver"?: string;
+                "dsn"?: string;
+                "dsn_secret"?: string;
+                "max_idle_conns"?: number;
+                "max_open_conns"?: number;
+                "max_rows"?: number;
+                "query_timeout_ms"?: number;
+                "read_only"?: boolean;
+                "rollback_on_teardown"?: boolean;
+              }) | null;
               "env"?: Record<string, string>;
               "error_handling"?: ({
                 "continue_on_error"?: (boolean) | null;
@@ -217028,6 +225538,34 @@ export interface operations {
                 "retry_delay_ms"?: number;
                 "retry_on"?: Array<string>;
                 "snapshot_on_error"?: boolean;
+              }) | null;
+              "eventhubs"?: ({
+                "auth_type"?: string;
+                "checkpoint_container_url"?: string;
+                "connection_string"?: string;
+                "connection_string_secret"?: string;
+                "consumer_group"?: string;
+                "consumer_mode"?: string;
+                "event_hub"?: string;
+                "mock"?: boolean;
+                "namespace"?: string;
+                "observe_partition_tail"?: boolean;
+                "owner_level"?: (number) | null;
+                "partition_id"?: string;
+                "partition_key"?: string;
+                "processor_max_partitions"?: number;
+                "start_position"?: string;
+                "tail_poll_interval_ms"?: number;
+                "timeout_ms"?: number;
+              }) | null;
+              "grpc"?: ({
+                "authority"?: string;
+                "max_recv_msg_size"?: number;
+                "metadata"?: Record<string, string>;
+                "plain_text"?: boolean;
+                "proto_files"?: Array<string>;
+                "timeout_ms"?: number;
+                "use_reflection"?: boolean;
               }) | null;
               "http"?: ({
                 "accept_encoding"?: string;
@@ -217072,16 +225610,84 @@ export interface operations {
                 "version"?: string;
               }) | null;
               "iterations"?: (number) | null;
+              "java_http"?: ({
+                "accept"?: string;
+                "body_encoding"?: string;
+                "codec"?: string;
+                "content_type"?: string;
+                "extractor_type"?: string;
+                "helper_mode"?: string;
+                "object_schema"?: string;
+                "preserve_binary_result"?: boolean;
+                "request_mapping"?: Record<string, string>;
+                "response_mapping"?: Record<string, string>;
+              }) | null;
               "java_vuser"?: ({
+                "action_timeout_ms"?: number;
                 "additional_vm_parameters"?: Array<string>;
                 "classpath"?: Array<string>;
                 "dedicated_class_loader"?: (boolean) | null;
                 "jdk_home"?: string;
                 "jdk_selection"?: string;
                 "jvm_sharing"?: string;
+                "param_left_brace"?: string;
+                "param_right_brace"?: string;
                 "skip_parameter_evaluation"?: (boolean) | null;
+                "startup_timeout_ms"?: number;
                 "use_xbootclasspath"?: (boolean) | null;
                 "vusers_per_jvm"?: number;
+              }) | null;
+              "jms"?: ({
+                "acknowledgement"?: string;
+                "broker_url"?: string;
+                "client_id"?: string;
+                "delivery_mode"?: string;
+                "destination"?: string;
+                "destination_type"?: string;
+                "message_vpn"?: string;
+                "mock"?: boolean;
+                "password"?: string;
+                "properties"?: Record<string, string>;
+                "provider"?: string;
+                "reply_to"?: string;
+                "subscription"?: string;
+                "timeout_ms"?: number;
+                "tls"?: (Record<string, unknown>) | null;
+                "username"?: string;
+              }) | null;
+              "kafka"?: ({
+                "acks"?: string;
+                "auto_offset_reset"?: string;
+                "brokers"?: Array<string>;
+                "client_id"?: string;
+                "compression"?: string;
+                "consumer_group"?: string;
+                "consumer_transactions"?: boolean;
+                "idempotence"?: string;
+                "isolation_level"?: string;
+                "max_message_bytes"?: number;
+                "mock"?: boolean;
+                "oauth"?: (Record<string, unknown>) | null;
+                "oauth_scope"?: string;
+                "partition_strategy"?: string;
+                "partitions"?: number;
+                "producer"?: (Record<string, unknown>) | null;
+                "profile"?: string;
+                "properties"?: Record<string, string>;
+                "sasl_mechanism"?: string;
+                "sasl_password"?: string;
+                "sasl_password_secret"?: string;
+                "sasl_username"?: string;
+                "schema"?: string;
+                "schema_id"?: number;
+                "schema_registry_url"?: string;
+                "security_protocol"?: string;
+                "serialization"?: string;
+                "subject"?: string;
+                "timeout_ms"?: number;
+                "tls"?: (Record<string, unknown>) | null;
+                "topic"?: string;
+                "transactional_id"?: string;
               }) | null;
               "log"?: ({
                 "error_buffer_bytes"?: number;
@@ -217092,6 +225698,19 @@ export interface operations {
                 "redact_run_evidence"?: (boolean) | null;
               }) | null;
               "log_level"?: string;
+              "network"?: ({
+                "address"?: string;
+                "base_dn"?: string;
+                "from"?: string;
+                "host"?: string;
+                "password"?: string;
+                "port"?: number;
+                "subprotocol"?: string;
+                "timeout_ms"?: number;
+                "tls"?: boolean;
+                "to"?: Array<string>;
+                "username"?: string;
+              }) | null;
               "override_fields"?: Array<string>;
               "pacing"?: ({
                 "arrival_process"?: string;
@@ -217189,6 +225808,12 @@ export interface operations {
           "project_id"?: string;
           "resource_baseline"?: boolean;
           "runtime_settings"?: ({
+            "appium"?: ({
+              "capabilities"?: Record<string, unknown>;
+              "element_timeout_ms"?: number;
+              "server_url"?: string;
+              "session_timeout_ms"?: number;
+            }) | null;
             "auto_transactions"?: string;
             "base_url"?: string;
             "browser"?: ({
@@ -217285,6 +225910,18 @@ export interface operations {
               "mode"?: string;
               "platform"?: string;
             }) | null;
+            "database"?: ({
+              "conn_max_lifetime_ms"?: number;
+              "driver"?: string;
+              "dsn"?: string;
+              "dsn_secret"?: string;
+              "max_idle_conns"?: number;
+              "max_open_conns"?: number;
+              "max_rows"?: number;
+              "query_timeout_ms"?: number;
+              "read_only"?: boolean;
+              "rollback_on_teardown"?: boolean;
+            }) | null;
             "env"?: Record<string, string>;
             "error_handling"?: ({
               "continue_on_error"?: (boolean) | null;
@@ -217296,6 +225933,34 @@ export interface operations {
               "retry_delay_ms"?: number;
               "retry_on"?: Array<string>;
               "snapshot_on_error"?: boolean;
+            }) | null;
+            "eventhubs"?: ({
+              "auth_type"?: string;
+              "checkpoint_container_url"?: string;
+              "connection_string"?: string;
+              "connection_string_secret"?: string;
+              "consumer_group"?: string;
+              "consumer_mode"?: string;
+              "event_hub"?: string;
+              "mock"?: boolean;
+              "namespace"?: string;
+              "observe_partition_tail"?: boolean;
+              "owner_level"?: (number) | null;
+              "partition_id"?: string;
+              "partition_key"?: string;
+              "processor_max_partitions"?: number;
+              "start_position"?: string;
+              "tail_poll_interval_ms"?: number;
+              "timeout_ms"?: number;
+            }) | null;
+            "grpc"?: ({
+              "authority"?: string;
+              "max_recv_msg_size"?: number;
+              "metadata"?: Record<string, string>;
+              "plain_text"?: boolean;
+              "proto_files"?: Array<string>;
+              "timeout_ms"?: number;
+              "use_reflection"?: boolean;
             }) | null;
             "http"?: ({
               "accept_encoding"?: string;
@@ -217366,16 +226031,112 @@ export interface operations {
               "version"?: string;
             }) | null;
             "iterations"?: (number) | null;
+            "java_http"?: ({
+              "accept"?: string;
+              "body_encoding"?: string;
+              "codec"?: string;
+              "content_type"?: string;
+              "extractor_type"?: string;
+              "helper_mode"?: string;
+              "object_schema"?: string;
+              "preserve_binary_result"?: boolean;
+              "request_mapping"?: Record<string, string>;
+              "response_mapping"?: Record<string, string>;
+            }) | null;
             "java_vuser"?: ({
+              "action_timeout_ms"?: number;
               "additional_vm_parameters"?: Array<string>;
               "classpath"?: Array<string>;
               "dedicated_class_loader"?: (boolean) | null;
               "jdk_home"?: string;
               "jdk_selection"?: string;
               "jvm_sharing"?: string;
+              "param_left_brace"?: string;
+              "param_right_brace"?: string;
               "skip_parameter_evaluation"?: (boolean) | null;
+              "startup_timeout_ms"?: number;
               "use_xbootclasspath"?: (boolean) | null;
               "vusers_per_jvm"?: number;
+            }) | null;
+            "jms"?: ({
+              "acknowledgement"?: string;
+              "broker_url"?: string;
+              "client_id"?: string;
+              "delivery_mode"?: string;
+              "destination"?: string;
+              "destination_type"?: string;
+              "message_vpn"?: string;
+              "mock"?: boolean;
+              "password"?: string;
+              "properties"?: Record<string, string>;
+              "provider"?: string;
+              "reply_to"?: string;
+              "subscription"?: string;
+              "timeout_ms"?: number;
+              "tls"?: ({
+                "ca_cert_secret"?: string;
+                "insecure_skip_verify"?: boolean;
+                "trust_store_ref"?: string;
+              }) | null;
+              "username"?: string;
+            }) | null;
+            "kafka"?: ({
+              "acks"?: string;
+              "auto_offset_reset"?: string;
+              "brokers"?: Array<string>;
+              "client_id"?: string;
+              "compression"?: string;
+              "consumer_group"?: string;
+              "consumer_transactions"?: boolean;
+              "idempotence"?: string;
+              "isolation_level"?: string;
+              "max_message_bytes"?: number;
+              "mock"?: boolean;
+              "oauth"?: ({
+                "authentication_method"?: string;
+                "client_id"?: string;
+                "client_secret"?: string;
+                "client_secret_ref"?: string;
+                "mode"?: string;
+                "scope"?: string;
+                "token_url"?: string;
+              }) | null;
+              "oauth_scope"?: string;
+              "partition_strategy"?: string;
+              "partitions"?: number;
+              "producer"?: ({
+                "admission_timeout_ms"?: (number) | null;
+                "batch_bytes"?: (number) | null;
+                "buffer_bytes"?: (number) | null;
+                "delivery_timeout_ms"?: (number) | null;
+                "linger_ms"?: (number) | null;
+                "max_in_flight_requests"?: (number) | null;
+                "request_timeout_ms"?: (number) | null;
+                "retries"?: (number) | null;
+              }) | null;
+              "profile"?: string;
+              "properties"?: Record<string, string>;
+              "sasl_mechanism"?: string;
+              "sasl_password"?: string;
+              "sasl_password_secret"?: string;
+              "sasl_username"?: string;
+              "schema"?: string;
+              "schema_id"?: number;
+              "schema_registry_url"?: string;
+              "security_protocol"?: string;
+              "serialization"?: string;
+              "subject"?: string;
+              "timeout_ms"?: number;
+              "tls"?: ({
+                "ca_cert_file"?: string;
+                "client_cert_file"?: string;
+                "client_key_file"?: string;
+                "insecure_skip_verify"?: boolean;
+                "max_version"?: string;
+                "min_version"?: string;
+              }) | null;
+              "topic"?: string;
+              "transactional_id"?: string;
             }) | null;
             "log"?: ({
               "error_buffer_bytes"?: number;
@@ -217386,6 +226147,19 @@ export interface operations {
               "redact_run_evidence"?: (boolean) | null;
             }) | null;
             "log_level"?: string;
+            "network"?: ({
+              "address"?: string;
+              "base_dn"?: string;
+              "from"?: string;
+              "host"?: string;
+              "password"?: string;
+              "port"?: number;
+              "subprotocol"?: string;
+              "timeout_ms"?: number;
+              "tls"?: boolean;
+              "to"?: Array<string>;
+              "username"?: string;
+            }) | null;
             "override_fields"?: Array<string>;
             "pacing"?: ({
               "arrival_process"?: string;
@@ -217829,18 +226603,26 @@ export interface operations {
                 "ref_key"?: string;
                 "resource_baseline"?: boolean;
                 "runtime_settings"?: ({
+                  "appium"?: (Record<string, unknown>) | null;
                   "auto_transactions"?: string;
                   "base_url"?: string;
                   "browser"?: (Record<string, unknown>) | null;
                   "browser_config"?: (Record<string, unknown>) | null;
                   "browser_emulation"?: (Record<string, unknown>) | null;
+                  "database"?: (Record<string, unknown>) | null;
                   "env"?: Record<string, string>;
                   "error_handling"?: (Record<string, unknown>) | null;
+                  "eventhubs"?: (Record<string, unknown>) | null;
+                  "grpc"?: (Record<string, unknown>) | null;
                   "http"?: (Record<string, unknown>) | null;
                   "iterations"?: (number) | null;
+                  "java_http"?: (Record<string, unknown>) | null;
                   "java_vuser"?: (Record<string, unknown>) | null;
+                  "jms"?: (Record<string, unknown>) | null;
+                  "kafka"?: (Record<string, unknown>) | null;
                   "log"?: (Record<string, unknown>) | null;
                   "log_level"?: string;
+                  "network"?: (Record<string, unknown>) | null;
                   "override_fields"?: Array<string>;
                   "pacing"?: (Record<string, unknown>) | null;
                   "redaction_rules"?: Array<Record<string, unknown>>;
@@ -218039,6 +226821,12 @@ export interface operations {
             "resource_baseline"?: boolean;
             "result_count"?: number;
             "runtime_settings"?: ({
+              "appium"?: ({
+                "capabilities"?: Record<string, unknown>;
+                "element_timeout_ms"?: number;
+                "server_url"?: string;
+                "session_timeout_ms"?: number;
+              }) | null;
               "auto_transactions"?: string;
               "base_url"?: string;
               "browser"?: ({
@@ -218135,6 +226923,18 @@ export interface operations {
                 "mode"?: string;
                 "platform"?: string;
               }) | null;
+              "database"?: ({
+                "conn_max_lifetime_ms"?: number;
+                "driver"?: string;
+                "dsn"?: string;
+                "dsn_secret"?: string;
+                "max_idle_conns"?: number;
+                "max_open_conns"?: number;
+                "max_rows"?: number;
+                "query_timeout_ms"?: number;
+                "read_only"?: boolean;
+                "rollback_on_teardown"?: boolean;
+              }) | null;
               "env"?: Record<string, string>;
               "error_handling"?: ({
                 "continue_on_error"?: (boolean) | null;
@@ -218146,6 +226946,34 @@ export interface operations {
                 "retry_delay_ms"?: number;
                 "retry_on"?: Array<string>;
                 "snapshot_on_error"?: boolean;
+              }) | null;
+              "eventhubs"?: ({
+                "auth_type"?: string;
+                "checkpoint_container_url"?: string;
+                "connection_string"?: string;
+                "connection_string_secret"?: string;
+                "consumer_group"?: string;
+                "consumer_mode"?: string;
+                "event_hub"?: string;
+                "mock"?: boolean;
+                "namespace"?: string;
+                "observe_partition_tail"?: boolean;
+                "owner_level"?: (number) | null;
+                "partition_id"?: string;
+                "partition_key"?: string;
+                "processor_max_partitions"?: number;
+                "start_position"?: string;
+                "tail_poll_interval_ms"?: number;
+                "timeout_ms"?: number;
+              }) | null;
+              "grpc"?: ({
+                "authority"?: string;
+                "max_recv_msg_size"?: number;
+                "metadata"?: Record<string, string>;
+                "plain_text"?: boolean;
+                "proto_files"?: Array<string>;
+                "timeout_ms"?: number;
+                "use_reflection"?: boolean;
               }) | null;
               "http"?: ({
                 "accept_encoding"?: string;
@@ -218216,16 +227044,112 @@ export interface operations {
                 "version"?: string;
               }) | null;
               "iterations"?: (number) | null;
+              "java_http"?: ({
+                "accept"?: string;
+                "body_encoding"?: string;
+                "codec"?: string;
+                "content_type"?: string;
+                "extractor_type"?: string;
+                "helper_mode"?: string;
+                "object_schema"?: string;
+                "preserve_binary_result"?: boolean;
+                "request_mapping"?: Record<string, string>;
+                "response_mapping"?: Record<string, string>;
+              }) | null;
               "java_vuser"?: ({
+                "action_timeout_ms"?: number;
                 "additional_vm_parameters"?: Array<string>;
                 "classpath"?: Array<string>;
                 "dedicated_class_loader"?: (boolean) | null;
                 "jdk_home"?: string;
                 "jdk_selection"?: string;
                 "jvm_sharing"?: string;
+                "param_left_brace"?: string;
+                "param_right_brace"?: string;
                 "skip_parameter_evaluation"?: (boolean) | null;
+                "startup_timeout_ms"?: number;
                 "use_xbootclasspath"?: (boolean) | null;
                 "vusers_per_jvm"?: number;
+              }) | null;
+              "jms"?: ({
+                "acknowledgement"?: string;
+                "broker_url"?: string;
+                "client_id"?: string;
+                "delivery_mode"?: string;
+                "destination"?: string;
+                "destination_type"?: string;
+                "message_vpn"?: string;
+                "mock"?: boolean;
+                "password"?: string;
+                "properties"?: Record<string, string>;
+                "provider"?: string;
+                "reply_to"?: string;
+                "subscription"?: string;
+                "timeout_ms"?: number;
+                "tls"?: ({
+                  "ca_cert_secret"?: string;
+                  "insecure_skip_verify"?: boolean;
+                  "trust_store_ref"?: string;
+                }) | null;
+                "username"?: string;
+              }) | null;
+              "kafka"?: ({
+                "acks"?: string;
+                "auto_offset_reset"?: string;
+                "brokers"?: Array<string>;
+                "client_id"?: string;
+                "compression"?: string;
+                "consumer_group"?: string;
+                "consumer_transactions"?: boolean;
+                "idempotence"?: string;
+                "isolation_level"?: string;
+                "max_message_bytes"?: number;
+                "mock"?: boolean;
+                "oauth"?: ({
+                  "authentication_method"?: string;
+                  "client_id": string;
+                  "client_secret"?: string;
+                  "client_secret_ref"?: string;
+                  "mode": string;
+                  "scope"?: string;
+                  "token_url": string;
+                }) | null;
+                "oauth_scope"?: string;
+                "partition_strategy"?: string;
+                "partitions"?: number;
+                "producer"?: ({
+                  "admission_timeout_ms"?: (number) | null;
+                  "batch_bytes"?: (number) | null;
+                  "buffer_bytes"?: (number) | null;
+                  "delivery_timeout_ms"?: (number) | null;
+                  "linger_ms"?: (number) | null;
+                  "max_in_flight_requests"?: (number) | null;
+                  "request_timeout_ms"?: (number) | null;
+                  "retries"?: (number) | null;
+                }) | null;
+                "profile"?: string;
+                "properties"?: Record<string, string>;
+                "sasl_mechanism"?: string;
+                "sasl_password"?: string;
+                "sasl_password_secret"?: string;
+                "sasl_username"?: string;
+                "schema"?: string;
+                "schema_id"?: number;
+                "schema_registry_url"?: string;
+                "security_protocol"?: string;
+                "serialization"?: string;
+                "subject"?: string;
+                "timeout_ms"?: number;
+                "tls"?: ({
+                  "ca_cert_file"?: string;
+                  "client_cert_file"?: string;
+                  "client_key_file"?: string;
+                  "insecure_skip_verify"?: boolean;
+                  "max_version"?: string;
+                  "min_version"?: string;
+                }) | null;
+                "topic"?: string;
+                "transactional_id"?: string;
               }) | null;
               "log"?: ({
                 "error_buffer_bytes"?: number;
@@ -218236,6 +227160,19 @@ export interface operations {
                 "redact_run_evidence"?: (boolean) | null;
               }) | null;
               "log_level"?: string;
+              "network"?: ({
+                "address"?: string;
+                "base_dn"?: string;
+                "from"?: string;
+                "host"?: string;
+                "password"?: string;
+                "port"?: number;
+                "subprotocol"?: string;
+                "timeout_ms"?: number;
+                "tls"?: boolean;
+                "to"?: Array<string>;
+                "username"?: string;
+              }) | null;
               "override_fields"?: Array<string>;
               "pacing"?: ({
                 "arrival_process"?: string;
@@ -218503,6 +227440,12 @@ export interface operations {
               "ramp_up"?: string;
               "role"?: string;
               "runtime_settings"?: ({
+                "appium"?: ({
+                  "capabilities"?: Record<string, unknown>;
+                  "element_timeout_ms"?: number;
+                  "server_url"?: string;
+                  "session_timeout_ms"?: number;
+                }) | null;
                 "auto_transactions"?: string;
                 "base_url"?: string;
                 "browser"?: ({
@@ -218559,6 +227502,18 @@ export interface operations {
                   "mode"?: string;
                   "platform"?: string;
                 }) | null;
+                "database"?: ({
+                  "conn_max_lifetime_ms"?: number;
+                  "driver"?: string;
+                  "dsn"?: string;
+                  "dsn_secret"?: string;
+                  "max_idle_conns"?: number;
+                  "max_open_conns"?: number;
+                  "max_rows"?: number;
+                  "query_timeout_ms"?: number;
+                  "read_only"?: boolean;
+                  "rollback_on_teardown"?: boolean;
+                }) | null;
                 "env"?: Record<string, string>;
                 "error_handling"?: ({
                   "continue_on_error"?: (boolean) | null;
@@ -218570,6 +227525,34 @@ export interface operations {
                   "retry_delay_ms"?: number;
                   "retry_on"?: Array<string>;
                   "snapshot_on_error"?: boolean;
+                }) | null;
+                "eventhubs"?: ({
+                  "auth_type"?: string;
+                  "checkpoint_container_url"?: string;
+                  "connection_string"?: string;
+                  "connection_string_secret"?: string;
+                  "consumer_group"?: string;
+                  "consumer_mode"?: string;
+                  "event_hub"?: string;
+                  "mock"?: boolean;
+                  "namespace"?: string;
+                  "observe_partition_tail"?: boolean;
+                  "owner_level"?: (number) | null;
+                  "partition_id"?: string;
+                  "partition_key"?: string;
+                  "processor_max_partitions"?: number;
+                  "start_position"?: string;
+                  "tail_poll_interval_ms"?: number;
+                  "timeout_ms"?: number;
+                }) | null;
+                "grpc"?: ({
+                  "authority"?: string;
+                  "max_recv_msg_size"?: number;
+                  "metadata"?: Record<string, string>;
+                  "plain_text"?: boolean;
+                  "proto_files"?: Array<string>;
+                  "timeout_ms"?: number;
+                  "use_reflection"?: boolean;
                 }) | null;
                 "http"?: ({
                   "accept_encoding"?: string;
@@ -218614,16 +227597,84 @@ export interface operations {
                   "version"?: string;
                 }) | null;
                 "iterations"?: (number) | null;
+                "java_http"?: ({
+                  "accept"?: string;
+                  "body_encoding"?: string;
+                  "codec"?: string;
+                  "content_type"?: string;
+                  "extractor_type"?: string;
+                  "helper_mode"?: string;
+                  "object_schema"?: string;
+                  "preserve_binary_result"?: boolean;
+                  "request_mapping"?: Record<string, string>;
+                  "response_mapping"?: Record<string, string>;
+                }) | null;
                 "java_vuser"?: ({
+                  "action_timeout_ms"?: number;
                   "additional_vm_parameters"?: Array<string>;
                   "classpath"?: Array<string>;
                   "dedicated_class_loader"?: (boolean) | null;
                   "jdk_home"?: string;
                   "jdk_selection"?: string;
                   "jvm_sharing"?: string;
+                  "param_left_brace"?: string;
+                  "param_right_brace"?: string;
                   "skip_parameter_evaluation"?: (boolean) | null;
+                  "startup_timeout_ms"?: number;
                   "use_xbootclasspath"?: (boolean) | null;
                   "vusers_per_jvm"?: number;
+                }) | null;
+                "jms"?: ({
+                  "acknowledgement"?: string;
+                  "broker_url"?: string;
+                  "client_id"?: string;
+                  "delivery_mode"?: string;
+                  "destination"?: string;
+                  "destination_type"?: string;
+                  "message_vpn"?: string;
+                  "mock"?: boolean;
+                  "password"?: string;
+                  "properties"?: Record<string, string>;
+                  "provider"?: string;
+                  "reply_to"?: string;
+                  "subscription"?: string;
+                  "timeout_ms"?: number;
+                  "tls"?: (Record<string, unknown>) | null;
+                  "username"?: string;
+                }) | null;
+                "kafka"?: ({
+                  "acks"?: string;
+                  "auto_offset_reset"?: string;
+                  "brokers"?: Array<string>;
+                  "client_id"?: string;
+                  "compression"?: string;
+                  "consumer_group"?: string;
+                  "consumer_transactions"?: boolean;
+                  "idempotence"?: string;
+                  "isolation_level"?: string;
+                  "max_message_bytes"?: number;
+                  "mock"?: boolean;
+                  "oauth"?: (Record<string, unknown>) | null;
+                  "oauth_scope"?: string;
+                  "partition_strategy"?: string;
+                  "partitions"?: number;
+                  "producer"?: (Record<string, unknown>) | null;
+                  "profile"?: string;
+                  "properties"?: Record<string, string>;
+                  "sasl_mechanism"?: string;
+                  "sasl_password"?: string;
+                  "sasl_password_secret"?: string;
+                  "sasl_username"?: string;
+                  "schema"?: string;
+                  "schema_id"?: number;
+                  "schema_registry_url"?: string;
+                  "security_protocol"?: string;
+                  "serialization"?: string;
+                  "subject"?: string;
+                  "timeout_ms"?: number;
+                  "tls"?: (Record<string, unknown>) | null;
+                  "topic"?: string;
+                  "transactional_id"?: string;
                 }) | null;
                 "log"?: ({
                   "error_buffer_bytes"?: number;
@@ -218634,6 +227685,19 @@ export interface operations {
                   "redact_run_evidence"?: (boolean) | null;
                 }) | null;
                 "log_level"?: string;
+                "network"?: ({
+                  "address"?: string;
+                  "base_dn"?: string;
+                  "from"?: string;
+                  "host"?: string;
+                  "password"?: string;
+                  "port"?: number;
+                  "subprotocol"?: string;
+                  "timeout_ms"?: number;
+                  "tls"?: boolean;
+                  "to"?: Array<string>;
+                  "username"?: string;
+                }) | null;
                 "override_fields"?: Array<string>;
                 "pacing"?: ({
                   "arrival_process"?: string;
@@ -225303,6 +234367,12 @@ export interface operations {
           "expected_revision": string;
           "fields": Array<string>;
           "runtime_settings"?: ({
+            "appium"?: ({
+              "capabilities"?: Record<string, unknown>;
+              "element_timeout_ms"?: number;
+              "server_url"?: string;
+              "session_timeout_ms"?: number;
+            }) | null;
             "auto_transactions"?: string;
             "base_url"?: string;
             "browser"?: ({
@@ -225405,6 +234475,18 @@ export interface operations {
               "mode"?: string;
               "platform"?: string;
             }) | null;
+            "database"?: ({
+              "conn_max_lifetime_ms"?: number;
+              "driver"?: string;
+              "dsn"?: string;
+              "dsn_secret"?: string;
+              "max_idle_conns"?: number;
+              "max_open_conns"?: number;
+              "max_rows"?: number;
+              "query_timeout_ms"?: number;
+              "read_only"?: boolean;
+              "rollback_on_teardown"?: boolean;
+            }) | null;
             "error_handling"?: ({
               "continue_on_error"?: (boolean) | null;
               "fail_transaction_on_error_message"?: (boolean) | null;
@@ -225415,6 +234497,34 @@ export interface operations {
               "retry_delay_ms"?: number;
               "retry_on"?: Array<string>;
               "snapshot_on_error"?: boolean;
+            }) | null;
+            "eventhubs"?: ({
+              "auth_type"?: string;
+              "checkpoint_container_url"?: string;
+              "connection_string"?: string;
+              "connection_string_secret"?: string;
+              "consumer_group"?: string;
+              "consumer_mode"?: string;
+              "event_hub"?: string;
+              "mock"?: boolean;
+              "namespace"?: string;
+              "observe_partition_tail"?: boolean;
+              "owner_level"?: (number) | null;
+              "partition_id"?: string;
+              "partition_key"?: string;
+              "processor_max_partitions"?: number;
+              "start_position"?: string;
+              "tail_poll_interval_ms"?: number;
+              "timeout_ms"?: number;
+            }) | null;
+            "grpc"?: ({
+              "authority"?: string;
+              "max_recv_msg_size"?: number;
+              "metadata"?: Record<string, string>;
+              "plain_text"?: boolean;
+              "proto_files"?: Array<string>;
+              "timeout_ms"?: number;
+              "use_reflection"?: boolean;
             }) | null;
             "http"?: ({
               "accept_encoding"?: string;
@@ -225489,16 +234599,112 @@ export interface operations {
               "version"?: string;
             }) | null;
             "iterations"?: (number) | null;
+            "java_http"?: ({
+              "accept"?: string;
+              "body_encoding"?: string;
+              "codec"?: string;
+              "content_type"?: string;
+              "extractor_type"?: string;
+              "helper_mode"?: string;
+              "object_schema"?: string;
+              "preserve_binary_result"?: boolean;
+              "request_mapping"?: Record<string, string>;
+              "response_mapping"?: Record<string, string>;
+            }) | null;
             "java_vuser"?: ({
+              "action_timeout_ms"?: number;
               "additional_vm_parameters"?: Array<string>;
               "classpath"?: Array<string>;
               "dedicated_class_loader"?: (boolean) | null;
               "jdk_home"?: string;
               "jdk_selection"?: string;
               "jvm_sharing"?: string;
+              "param_left_brace"?: string;
+              "param_right_brace"?: string;
               "skip_parameter_evaluation"?: (boolean) | null;
+              "startup_timeout_ms"?: number;
               "use_xbootclasspath"?: (boolean) | null;
               "vusers_per_jvm"?: number;
+            }) | null;
+            "jms"?: ({
+              "acknowledgement"?: string;
+              "broker_url"?: string;
+              "client_id"?: string;
+              "delivery_mode"?: string;
+              "destination"?: string;
+              "destination_type"?: string;
+              "message_vpn"?: string;
+              "mock"?: boolean;
+              "password"?: string;
+              "properties"?: Record<string, string>;
+              "provider"?: string;
+              "reply_to"?: string;
+              "subscription"?: string;
+              "timeout_ms"?: number;
+              "tls"?: ({
+                "ca_cert_secret"?: string;
+                "insecure_skip_verify"?: boolean;
+                "trust_store_ref"?: string;
+              }) | null;
+              "username"?: string;
+            }) | null;
+            "kafka"?: ({
+              "acks"?: string;
+              "auto_offset_reset"?: string;
+              "brokers"?: Array<string>;
+              "client_id"?: string;
+              "compression"?: string;
+              "consumer_group"?: string;
+              "consumer_transactions"?: boolean;
+              "idempotence"?: string;
+              "isolation_level"?: string;
+              "max_message_bytes"?: number;
+              "mock"?: boolean;
+              "oauth"?: ({
+                "authentication_method"?: string;
+                "client_id"?: string;
+                "client_secret"?: string;
+                "client_secret_ref"?: string;
+                "mode"?: string;
+                "scope"?: string;
+                "token_url"?: string;
+              }) | null;
+              "oauth_scope"?: string;
+              "partition_strategy"?: string;
+              "partitions"?: number;
+              "producer"?: ({
+                "admission_timeout_ms"?: (number) | null;
+                "batch_bytes"?: (number) | null;
+                "buffer_bytes"?: (number) | null;
+                "delivery_timeout_ms"?: (number) | null;
+                "linger_ms"?: (number) | null;
+                "max_in_flight_requests"?: (number) | null;
+                "request_timeout_ms"?: (number) | null;
+                "retries"?: (number) | null;
+              }) | null;
+              "profile"?: string;
+              "properties"?: Record<string, string>;
+              "sasl_mechanism"?: string;
+              "sasl_password"?: string;
+              "sasl_password_secret"?: string;
+              "sasl_username"?: string;
+              "schema"?: string;
+              "schema_id"?: number;
+              "schema_registry_url"?: string;
+              "security_protocol"?: string;
+              "serialization"?: string;
+              "subject"?: string;
+              "timeout_ms"?: number;
+              "tls"?: ({
+                "ca_cert_file"?: string;
+                "client_cert_file"?: string;
+                "client_key_file"?: string;
+                "insecure_skip_verify"?: boolean;
+                "max_version"?: string;
+                "min_version"?: string;
+              }) | null;
+              "topic"?: string;
+              "transactional_id"?: string;
             }) | null;
             "log"?: ({
               "error_buffer_bytes"?: number;
@@ -225509,6 +234715,19 @@ export interface operations {
               "redact_run_evidence"?: (boolean) | null;
             }) | null;
             "log_level"?: string;
+            "network"?: ({
+              "address"?: string;
+              "base_dn"?: string;
+              "from"?: string;
+              "host"?: string;
+              "password"?: string;
+              "port"?: number;
+              "subprotocol"?: string;
+              "timeout_ms"?: number;
+              "tls"?: boolean;
+              "to"?: Array<string>;
+              "username"?: string;
+            }) | null;
             "override_fields"?: Array<string>;
             "pacing"?: ({
               "arrival_process"?: string;
@@ -225677,6 +234896,12 @@ export interface operations {
             "review_status"?: string;
             "revision": string;
             "runtime_settings"?: ({
+              "appium"?: ({
+                "capabilities"?: Record<string, unknown>;
+                "element_timeout_ms"?: number;
+                "server_url"?: string;
+                "session_timeout_ms"?: number;
+              }) | null;
               "auto_transactions"?: string;
               "base_url"?: string;
               "browser"?: ({
@@ -225773,6 +234998,18 @@ export interface operations {
                 "mode"?: string;
                 "platform"?: string;
               }) | null;
+              "database"?: ({
+                "conn_max_lifetime_ms"?: number;
+                "driver"?: string;
+                "dsn"?: string;
+                "dsn_secret"?: string;
+                "max_idle_conns"?: number;
+                "max_open_conns"?: number;
+                "max_rows"?: number;
+                "query_timeout_ms"?: number;
+                "read_only"?: boolean;
+                "rollback_on_teardown"?: boolean;
+              }) | null;
               "env"?: Record<string, string>;
               "error_handling"?: ({
                 "continue_on_error"?: (boolean) | null;
@@ -225784,6 +235021,34 @@ export interface operations {
                 "retry_delay_ms"?: number;
                 "retry_on"?: Array<string>;
                 "snapshot_on_error"?: boolean;
+              }) | null;
+              "eventhubs"?: ({
+                "auth_type"?: string;
+                "checkpoint_container_url"?: string;
+                "connection_string"?: string;
+                "connection_string_secret"?: string;
+                "consumer_group"?: string;
+                "consumer_mode"?: string;
+                "event_hub"?: string;
+                "mock"?: boolean;
+                "namespace"?: string;
+                "observe_partition_tail"?: boolean;
+                "owner_level"?: (number) | null;
+                "partition_id"?: string;
+                "partition_key"?: string;
+                "processor_max_partitions"?: number;
+                "start_position"?: string;
+                "tail_poll_interval_ms"?: number;
+                "timeout_ms"?: number;
+              }) | null;
+              "grpc"?: ({
+                "authority"?: string;
+                "max_recv_msg_size"?: number;
+                "metadata"?: Record<string, string>;
+                "plain_text"?: boolean;
+                "proto_files"?: Array<string>;
+                "timeout_ms"?: number;
+                "use_reflection"?: boolean;
               }) | null;
               "http"?: ({
                 "accept_encoding"?: string;
@@ -225854,16 +235119,112 @@ export interface operations {
                 "version"?: string;
               }) | null;
               "iterations"?: (number) | null;
+              "java_http"?: ({
+                "accept"?: string;
+                "body_encoding"?: string;
+                "codec"?: string;
+                "content_type"?: string;
+                "extractor_type"?: string;
+                "helper_mode"?: string;
+                "object_schema"?: string;
+                "preserve_binary_result"?: boolean;
+                "request_mapping"?: Record<string, string>;
+                "response_mapping"?: Record<string, string>;
+              }) | null;
               "java_vuser"?: ({
+                "action_timeout_ms"?: number;
                 "additional_vm_parameters"?: Array<string>;
                 "classpath"?: Array<string>;
                 "dedicated_class_loader"?: (boolean) | null;
                 "jdk_home"?: string;
                 "jdk_selection"?: string;
                 "jvm_sharing"?: string;
+                "param_left_brace"?: string;
+                "param_right_brace"?: string;
                 "skip_parameter_evaluation"?: (boolean) | null;
+                "startup_timeout_ms"?: number;
                 "use_xbootclasspath"?: (boolean) | null;
                 "vusers_per_jvm"?: number;
+              }) | null;
+              "jms"?: ({
+                "acknowledgement"?: string;
+                "broker_url"?: string;
+                "client_id"?: string;
+                "delivery_mode"?: string;
+                "destination"?: string;
+                "destination_type"?: string;
+                "message_vpn"?: string;
+                "mock"?: boolean;
+                "password"?: string;
+                "properties"?: Record<string, string>;
+                "provider"?: string;
+                "reply_to"?: string;
+                "subscription"?: string;
+                "timeout_ms"?: number;
+                "tls"?: ({
+                  "ca_cert_secret"?: string;
+                  "insecure_skip_verify"?: boolean;
+                  "trust_store_ref"?: string;
+                }) | null;
+                "username"?: string;
+              }) | null;
+              "kafka"?: ({
+                "acks"?: string;
+                "auto_offset_reset"?: string;
+                "brokers"?: Array<string>;
+                "client_id"?: string;
+                "compression"?: string;
+                "consumer_group"?: string;
+                "consumer_transactions"?: boolean;
+                "idempotence"?: string;
+                "isolation_level"?: string;
+                "max_message_bytes"?: number;
+                "mock"?: boolean;
+                "oauth"?: ({
+                  "authentication_method"?: string;
+                  "client_id": string;
+                  "client_secret"?: string;
+                  "client_secret_ref"?: string;
+                  "mode": string;
+                  "scope"?: string;
+                  "token_url": string;
+                }) | null;
+                "oauth_scope"?: string;
+                "partition_strategy"?: string;
+                "partitions"?: number;
+                "producer"?: ({
+                  "admission_timeout_ms"?: (number) | null;
+                  "batch_bytes"?: (number) | null;
+                  "buffer_bytes"?: (number) | null;
+                  "delivery_timeout_ms"?: (number) | null;
+                  "linger_ms"?: (number) | null;
+                  "max_in_flight_requests"?: (number) | null;
+                  "request_timeout_ms"?: (number) | null;
+                  "retries"?: (number) | null;
+                }) | null;
+                "profile"?: string;
+                "properties"?: Record<string, string>;
+                "sasl_mechanism"?: string;
+                "sasl_password"?: string;
+                "sasl_password_secret"?: string;
+                "sasl_username"?: string;
+                "schema"?: string;
+                "schema_id"?: number;
+                "schema_registry_url"?: string;
+                "security_protocol"?: string;
+                "serialization"?: string;
+                "subject"?: string;
+                "timeout_ms"?: number;
+                "tls"?: ({
+                  "ca_cert_file"?: string;
+                  "client_cert_file"?: string;
+                  "client_key_file"?: string;
+                  "insecure_skip_verify"?: boolean;
+                  "max_version"?: string;
+                  "min_version"?: string;
+                }) | null;
+                "topic"?: string;
+                "transactional_id"?: string;
               }) | null;
               "log"?: ({
                 "error_buffer_bytes"?: number;
@@ -225874,6 +235235,19 @@ export interface operations {
                 "redact_run_evidence"?: (boolean) | null;
               }) | null;
               "log_level"?: string;
+              "network"?: ({
+                "address"?: string;
+                "base_dn"?: string;
+                "from"?: string;
+                "host"?: string;
+                "password"?: string;
+                "port"?: number;
+                "subprotocol"?: string;
+                "timeout_ms"?: number;
+                "tls"?: boolean;
+                "to"?: Array<string>;
+                "username"?: string;
+              }) | null;
               "override_fields"?: Array<string>;
               "pacing"?: ({
                 "arrival_process"?: string;
@@ -227836,6 +237210,12 @@ export interface operations {
             "revision_source_group_index"?: (number) | null;
             "role"?: string;
             "runtime_settings"?: ({
+              "appium"?: ({
+                "capabilities"?: Record<string, unknown>;
+                "element_timeout_ms"?: number;
+                "server_url"?: string;
+                "session_timeout_ms"?: number;
+              }) | null;
               "auto_transactions"?: string;
               "base_url"?: string;
               "browser"?: ({
@@ -227892,6 +237272,18 @@ export interface operations {
                 "mode"?: string;
                 "platform"?: string;
               }) | null;
+              "database"?: ({
+                "conn_max_lifetime_ms"?: number;
+                "driver"?: string;
+                "dsn"?: string;
+                "dsn_secret"?: string;
+                "max_idle_conns"?: number;
+                "max_open_conns"?: number;
+                "max_rows"?: number;
+                "query_timeout_ms"?: number;
+                "read_only"?: boolean;
+                "rollback_on_teardown"?: boolean;
+              }) | null;
               "env"?: Record<string, string>;
               "error_handling"?: ({
                 "continue_on_error"?: (boolean) | null;
@@ -227903,6 +237295,34 @@ export interface operations {
                 "retry_delay_ms"?: number;
                 "retry_on"?: Array<string>;
                 "snapshot_on_error"?: boolean;
+              }) | null;
+              "eventhubs"?: ({
+                "auth_type"?: string;
+                "checkpoint_container_url"?: string;
+                "connection_string"?: string;
+                "connection_string_secret"?: string;
+                "consumer_group"?: string;
+                "consumer_mode"?: string;
+                "event_hub"?: string;
+                "mock"?: boolean;
+                "namespace"?: string;
+                "observe_partition_tail"?: boolean;
+                "owner_level"?: (number) | null;
+                "partition_id"?: string;
+                "partition_key"?: string;
+                "processor_max_partitions"?: number;
+                "start_position"?: string;
+                "tail_poll_interval_ms"?: number;
+                "timeout_ms"?: number;
+              }) | null;
+              "grpc"?: ({
+                "authority"?: string;
+                "max_recv_msg_size"?: number;
+                "metadata"?: Record<string, string>;
+                "plain_text"?: boolean;
+                "proto_files"?: Array<string>;
+                "timeout_ms"?: number;
+                "use_reflection"?: boolean;
               }) | null;
               "http"?: ({
                 "accept_encoding"?: string;
@@ -227947,16 +237367,84 @@ export interface operations {
                 "version"?: string;
               }) | null;
               "iterations"?: (number) | null;
+              "java_http"?: ({
+                "accept"?: string;
+                "body_encoding"?: string;
+                "codec"?: string;
+                "content_type"?: string;
+                "extractor_type"?: string;
+                "helper_mode"?: string;
+                "object_schema"?: string;
+                "preserve_binary_result"?: boolean;
+                "request_mapping"?: Record<string, string>;
+                "response_mapping"?: Record<string, string>;
+              }) | null;
               "java_vuser"?: ({
+                "action_timeout_ms"?: number;
                 "additional_vm_parameters"?: Array<string>;
                 "classpath"?: Array<string>;
                 "dedicated_class_loader"?: (boolean) | null;
                 "jdk_home"?: string;
                 "jdk_selection"?: string;
                 "jvm_sharing"?: string;
+                "param_left_brace"?: string;
+                "param_right_brace"?: string;
                 "skip_parameter_evaluation"?: (boolean) | null;
+                "startup_timeout_ms"?: number;
                 "use_xbootclasspath"?: (boolean) | null;
                 "vusers_per_jvm"?: number;
+              }) | null;
+              "jms"?: ({
+                "acknowledgement"?: string;
+                "broker_url"?: string;
+                "client_id"?: string;
+                "delivery_mode"?: string;
+                "destination"?: string;
+                "destination_type"?: string;
+                "message_vpn"?: string;
+                "mock"?: boolean;
+                "password"?: string;
+                "properties"?: Record<string, string>;
+                "provider"?: string;
+                "reply_to"?: string;
+                "subscription"?: string;
+                "timeout_ms"?: number;
+                "tls"?: (Record<string, unknown>) | null;
+                "username"?: string;
+              }) | null;
+              "kafka"?: ({
+                "acks"?: string;
+                "auto_offset_reset"?: string;
+                "brokers"?: Array<string>;
+                "client_id"?: string;
+                "compression"?: string;
+                "consumer_group"?: string;
+                "consumer_transactions"?: boolean;
+                "idempotence"?: string;
+                "isolation_level"?: string;
+                "max_message_bytes"?: number;
+                "mock"?: boolean;
+                "oauth"?: (Record<string, unknown>) | null;
+                "oauth_scope"?: string;
+                "partition_strategy"?: string;
+                "partitions"?: number;
+                "producer"?: (Record<string, unknown>) | null;
+                "profile"?: string;
+                "properties"?: Record<string, string>;
+                "sasl_mechanism"?: string;
+                "sasl_password"?: string;
+                "sasl_password_secret"?: string;
+                "sasl_username"?: string;
+                "schema"?: string;
+                "schema_id"?: number;
+                "schema_registry_url"?: string;
+                "security_protocol"?: string;
+                "serialization"?: string;
+                "subject"?: string;
+                "timeout_ms"?: number;
+                "tls"?: (Record<string, unknown>) | null;
+                "topic"?: string;
+                "transactional_id"?: string;
               }) | null;
               "log"?: ({
                 "error_buffer_bytes"?: number;
@@ -227967,6 +237455,19 @@ export interface operations {
                 "redact_run_evidence"?: (boolean) | null;
               }) | null;
               "log_level"?: string;
+              "network"?: ({
+                "address"?: string;
+                "base_dn"?: string;
+                "from"?: string;
+                "host"?: string;
+                "password"?: string;
+                "port"?: number;
+                "subprotocol"?: string;
+                "timeout_ms"?: number;
+                "tls"?: boolean;
+                "to"?: Array<string>;
+                "username"?: string;
+              }) | null;
               "override_fields"?: Array<string>;
               "pacing"?: ({
                 "arrival_process"?: string;
@@ -228064,6 +237565,12 @@ export interface operations {
           "project_id"?: string;
           "resource_baseline"?: boolean;
           "runtime_settings"?: ({
+            "appium"?: ({
+              "capabilities"?: Record<string, unknown>;
+              "element_timeout_ms"?: number;
+              "server_url"?: string;
+              "session_timeout_ms"?: number;
+            }) | null;
             "auto_transactions"?: string;
             "base_url"?: string;
             "browser"?: ({
@@ -228160,6 +237667,18 @@ export interface operations {
               "mode"?: string;
               "platform"?: string;
             }) | null;
+            "database"?: ({
+              "conn_max_lifetime_ms"?: number;
+              "driver"?: string;
+              "dsn"?: string;
+              "dsn_secret"?: string;
+              "max_idle_conns"?: number;
+              "max_open_conns"?: number;
+              "max_rows"?: number;
+              "query_timeout_ms"?: number;
+              "read_only"?: boolean;
+              "rollback_on_teardown"?: boolean;
+            }) | null;
             "env"?: Record<string, string>;
             "error_handling"?: ({
               "continue_on_error"?: (boolean) | null;
@@ -228171,6 +237690,34 @@ export interface operations {
               "retry_delay_ms"?: number;
               "retry_on"?: Array<string>;
               "snapshot_on_error"?: boolean;
+            }) | null;
+            "eventhubs"?: ({
+              "auth_type"?: string;
+              "checkpoint_container_url"?: string;
+              "connection_string"?: string;
+              "connection_string_secret"?: string;
+              "consumer_group"?: string;
+              "consumer_mode"?: string;
+              "event_hub"?: string;
+              "mock"?: boolean;
+              "namespace"?: string;
+              "observe_partition_tail"?: boolean;
+              "owner_level"?: (number) | null;
+              "partition_id"?: string;
+              "partition_key"?: string;
+              "processor_max_partitions"?: number;
+              "start_position"?: string;
+              "tail_poll_interval_ms"?: number;
+              "timeout_ms"?: number;
+            }) | null;
+            "grpc"?: ({
+              "authority"?: string;
+              "max_recv_msg_size"?: number;
+              "metadata"?: Record<string, string>;
+              "plain_text"?: boolean;
+              "proto_files"?: Array<string>;
+              "timeout_ms"?: number;
+              "use_reflection"?: boolean;
             }) | null;
             "http"?: ({
               "accept_encoding"?: string;
@@ -228241,16 +237788,112 @@ export interface operations {
               "version"?: string;
             }) | null;
             "iterations"?: (number) | null;
+            "java_http"?: ({
+              "accept"?: string;
+              "body_encoding"?: string;
+              "codec"?: string;
+              "content_type"?: string;
+              "extractor_type"?: string;
+              "helper_mode"?: string;
+              "object_schema"?: string;
+              "preserve_binary_result"?: boolean;
+              "request_mapping"?: Record<string, string>;
+              "response_mapping"?: Record<string, string>;
+            }) | null;
             "java_vuser"?: ({
+              "action_timeout_ms"?: number;
               "additional_vm_parameters"?: Array<string>;
               "classpath"?: Array<string>;
               "dedicated_class_loader"?: (boolean) | null;
               "jdk_home"?: string;
               "jdk_selection"?: string;
               "jvm_sharing"?: string;
+              "param_left_brace"?: string;
+              "param_right_brace"?: string;
               "skip_parameter_evaluation"?: (boolean) | null;
+              "startup_timeout_ms"?: number;
               "use_xbootclasspath"?: (boolean) | null;
               "vusers_per_jvm"?: number;
+            }) | null;
+            "jms"?: ({
+              "acknowledgement"?: string;
+              "broker_url"?: string;
+              "client_id"?: string;
+              "delivery_mode"?: string;
+              "destination"?: string;
+              "destination_type"?: string;
+              "message_vpn"?: string;
+              "mock"?: boolean;
+              "password"?: string;
+              "properties"?: Record<string, string>;
+              "provider"?: string;
+              "reply_to"?: string;
+              "subscription"?: string;
+              "timeout_ms"?: number;
+              "tls"?: ({
+                "ca_cert_secret"?: string;
+                "insecure_skip_verify"?: boolean;
+                "trust_store_ref"?: string;
+              }) | null;
+              "username"?: string;
+            }) | null;
+            "kafka"?: ({
+              "acks"?: string;
+              "auto_offset_reset"?: string;
+              "brokers"?: Array<string>;
+              "client_id"?: string;
+              "compression"?: string;
+              "consumer_group"?: string;
+              "consumer_transactions"?: boolean;
+              "idempotence"?: string;
+              "isolation_level"?: string;
+              "max_message_bytes"?: number;
+              "mock"?: boolean;
+              "oauth"?: ({
+                "authentication_method"?: string;
+                "client_id"?: string;
+                "client_secret"?: string;
+                "client_secret_ref"?: string;
+                "mode"?: string;
+                "scope"?: string;
+                "token_url"?: string;
+              }) | null;
+              "oauth_scope"?: string;
+              "partition_strategy"?: string;
+              "partitions"?: number;
+              "producer"?: ({
+                "admission_timeout_ms"?: (number) | null;
+                "batch_bytes"?: (number) | null;
+                "buffer_bytes"?: (number) | null;
+                "delivery_timeout_ms"?: (number) | null;
+                "linger_ms"?: (number) | null;
+                "max_in_flight_requests"?: (number) | null;
+                "request_timeout_ms"?: (number) | null;
+                "retries"?: (number) | null;
+              }) | null;
+              "profile"?: string;
+              "properties"?: Record<string, string>;
+              "sasl_mechanism"?: string;
+              "sasl_password"?: string;
+              "sasl_password_secret"?: string;
+              "sasl_username"?: string;
+              "schema"?: string;
+              "schema_id"?: number;
+              "schema_registry_url"?: string;
+              "security_protocol"?: string;
+              "serialization"?: string;
+              "subject"?: string;
+              "timeout_ms"?: number;
+              "tls"?: ({
+                "ca_cert_file"?: string;
+                "client_cert_file"?: string;
+                "client_key_file"?: string;
+                "insecure_skip_verify"?: boolean;
+                "max_version"?: string;
+                "min_version"?: string;
+              }) | null;
+              "topic"?: string;
+              "transactional_id"?: string;
             }) | null;
             "log"?: ({
               "error_buffer_bytes"?: number;
@@ -228261,6 +237904,19 @@ export interface operations {
               "redact_run_evidence"?: (boolean) | null;
             }) | null;
             "log_level"?: string;
+            "network"?: ({
+              "address"?: string;
+              "base_dn"?: string;
+              "from"?: string;
+              "host"?: string;
+              "password"?: string;
+              "port"?: number;
+              "subprotocol"?: string;
+              "timeout_ms"?: number;
+              "tls"?: boolean;
+              "to"?: Array<string>;
+              "username"?: string;
+            }) | null;
             "override_fields"?: Array<string>;
             "pacing"?: ({
               "arrival_process"?: string;

@@ -244,6 +244,15 @@ var scenarioOverridableConfigSections = map[string]bool{
 	"soap":              true,
 	"browser":           true,
 	"browser_emulation": true,
+	// Native protocol sections. PARITY: pkg/api runtimeProtocolOverrideSections.
+	"kafka":     true,
+	"jms":       true,
+	"eventhubs": true,
+	"grpc":      true,
+	"database":  true,
+	"network":   true,
+	"appium":    true,
+	"java_http": true,
 }
 
 // scenarioOverridableJavaVuserFields lists the java_vuser fields a scenario
@@ -260,6 +269,10 @@ var scenarioOverridableJavaVuserFields = map[string]bool{
 	"skip_parameter_evaluation": true,
 	"jvm_sharing":               true,
 	"vusers_per_jvm":            true,
+	"startup_timeout_ms":        true,
+	"action_timeout_ms":         true,
+	"param_left_brace":          true,
+	"param_right_brace":         true,
 }
 
 // scenarioOverridableConfigPath reports whether a scenario runtime_settings

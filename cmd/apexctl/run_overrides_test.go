@@ -14,6 +14,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -368,6 +369,22 @@ func TestRuntimeOverrideCredentialClassesMatchController(t *testing.T) {
 		{name: "credential query value in base_url", overrides: `{"base_url":"https://api.example/?token=basetok-1808"}`, hidden: []string{"basetok-1808"}},
 		{name: "credential fragment value in base_url", overrides: `{"base_url":"https://api.example/#access_token=basefrag-1818"}`, hidden: []string{"basefrag-1818"}},
 		{name: "proxy URL password", overrides: `{"http":{"proxy":{"url":"http://pu:proxypass-1909@proxy.example:3128"}}}`, hidden: []string{"proxypass-1909"}},
+		{name: "kafka SASL password and active username", overrides: `{"kafka":{"sasl_mechanism":"plain","sasl_username":"kuser-2001","sasl_password":"kpass-2002"}}`, hidden: []string{"kuser-2001", "kpass-2002"}},
+		{name: "kafka OAuth client secret", overrides: `{"kafka":{"oauth":{"mode":"client_credentials","token_url":"","client_id":"cid-2101","client_secret":"oauth-2102"}}}`, hidden: []string{"oauth-2102"}, shown: []string{"cid-2101"}},
+		{name: "kafka broker userinfo and credential property", overrides: `{"kafka":{"brokers":["bu:bpass-2201@k.example:9092"],"properties":{"ssl.key.password":"keypass-2202","acks":"all-2203"}}}`, hidden: []string{"bpass-2201", "keypass-2202"}, shown: []string{"all-2203"}},
+		{name: "jms password", overrides: `{"jms":{"username":"juser-2301","password":"jpass-2302"}}`, hidden: []string{"juser-2301", "jpass-2302"}},
+		{name: "event hubs connection string", overrides: `{"eventhubs":{"connection_string":"Endpoint=sb://ns/;SharedAccessKey=ehkey-2401"}}`, hidden: []string{"ehkey-2401"}},
+		{name: "database DSN", overrides: `{"database":{"driver":"postgres","dsn":"postgres://app:dbpass-2501@db.example/app"}}`, hidden: []string{"dbpass-2501"}},
+		{name: "network password", overrides: `{"network":{"username":"nuser-2601","password":"npass-2602"}}`, hidden: []string{"nuser-2601", "npass-2602"}},
+		{name: "gRPC authorization metadata", overrides: `{"grpc":{"metadata":{"authorization":"Bearer gtok-2701","x-tenant":"east-2702"}}}`, hidden: []string{"gtok-2701"}, shown: []string{"east-2702"}},
+		{name: "appium hub userinfo and capability key", overrides: `{"appium":{"server_url":"https://au:apass-2801@hub.example/wd/hub","capabilities":{"cloud:options":{"accessKey":"akey-2802"}}}}`, hidden: []string{"apass-2801", "akey-2802"}},
+		{name: "kafka OAuth token URL credential query", overrides: `{"kafka":{"oauth":{"mode":"client_credentials","token_url":"https://idp.example/token?client_secret=tokq-3101","client_id":"cid-3100"}}}`, hidden: []string{"tokq-3101"}, shown: []string{"cid-3100"}},
+		{name: "kafka JAAS property password", overrides: `{"kafka":{"properties":{"sasl.jaas.config":"org.apache.kafka.common.security.plain.PlainLoginModule required username=\"ju-3109\" password=\"jaaspw-3102\";"}}}`, hidden: []string{"jaaspw-3102"}},
+		{name: "jms property URL userinfo", overrides: `{"jms":{"properties":{"failover.uri":"failover:(tcp://fu:fpass-3103@b1.example:61616)"}}}`, hidden: []string{"fpass-3103"}},
+		{name: "appium device-cloud key capabilities", overrides: `{"appium":{"capabilities":{"browserstack.user":"bsu-2804","browserstack.key":"bskey-2803","testobject_api_key":"tokey-2805","appium:keyboard":"hwkb-2806"}}}`, hidden: []string{"bskey-2803", "tokey-2805"}, shown: []string{"bsu-2804", "hwkb-2806"}},
+		{name: "appium capability credential text", overrides: `{"appium":{"capabilities":{"options":{"login":"user=cu-3110 password=cappw-3104"}}}}`, hidden: []string{"cappw-3104"}},
+		{name: "browser session state and credentials", overrides: `{"browser_config":{"storage_state":"state-3201","session":{"identities":[{"username":"obs-3200","password":"idpw-3202","storage_state":"idstate-3203"}],"jwt":{"login_url":"https://l.example","client_id":"cid","private_key":"jwtkey-3204"}}}}`, hidden: []string{"state-3201", "idpw-3202", "idstate-3203", "jwtkey-3204"}, shown: []string{"obs-3200"}},
+		{name: "network address userinfo", overrides: `{"network":{"address":"smtp://mu:netpw-3105@mail.example:25"}}`, hidden: []string{"netpw-3105"}},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -387,6 +404,71 @@ func TestRuntimeOverrideCredentialClassesMatchController(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// The protocol free-text and URL leaves the controller protects carry
+// credentials for the service-account warning too, and a reference-only
+// JAAS template carries none.
+func TestRuntimeOverrideProtocolFreeTextCredentials(t *testing.T) {
+	for name, raw := range map[string]string{
+		"jaas password":    `{"kafka":{"properties":{"sasl.jaas.config":"PlainLoginModule required username=\"u\" password=\"jaaspw-3102\";"}}}`,
+		"token url secret": `{"kafka":{"oauth":{"token_url":"https://idp.example/token?client_secret=tokq-3101"}}}`,
+		"network address":  `{"network":{"address":"smtp://mu:netpw-3105@mail.example:25"}}`,
+	} {
+		overrides, err := parseRuntimeOverridesJSON([]byte(raw))
+		if err != nil {
+			t.Fatalf("%s: parse: %v", name, err)
+		}
+		if got := runtimeOverrideServiceAccountWarning(runArgs{apiKey: "k", runtimeOverrides: overrides}); got == "" {
+			t.Errorf("%s: no service-account warning", name)
+		}
+	}
+	for name, raw := range map[string]string{
+		"jaas reference":   `{"kafka":{"properties":{"sasl.jaas.config":"PlainLoginModule required username=\"u\" password=\"{{secret.JAAS_PW}}\";"}}}`,
+		"plain property":   `{"kafka":{"properties":{"acks":"all"}}}`,
+		"plain address":    `{"network":{"address":"mail.example:25"}}`,
+		"plain token url":  `{"kafka":{"oauth":{"token_url":"https://idp.example/token"}}}`,
+		"failover no user": `{"jms":{"properties":{"failover.uri":"failover:(tcp://b1.example:61616)"}}}`,
+	} {
+		overrides, err := parseRuntimeOverridesJSON([]byte(raw))
+		if err != nil {
+			t.Fatalf("%s: parse: %v", name, err)
+		}
+		if len(overrides.credentials) != 0 {
+			t.Errorf("%s: credentials = %q, want none", name, overrides.credentials)
+		}
+	}
+}
+
+// Every native protocol credential leaf the controller classifies
+// (stringLeaf/stringMapLeaves/anyMapLeaves in runtimeProtocolCredentialLeaves)
+// has a CLI entry at the same path, so a new controller leaf cannot be missed
+// by the CLI's output redaction.
+func TestRuntimeOverrideProtocolCredentialPathsMatchController(t *testing.T) {
+	controller, err := os.ReadFile(filepath.Join("..", "..", "pkg", "api", "runtime_protocol_sections.go"))
+	if err != nil {
+		t.Fatalf("read controller leaves: %v", err)
+	}
+	cli, err := os.ReadFile("run_overrides.go")
+	if err != nil {
+		t.Fatalf("read CLI entries: %v", err)
+	}
+	leaf := regexp.MustCompile(`(?:stringLeaf|stringMapLeaves|anyMapLeaves)\("([a-z_.]+)"(?:\s*\+[^,]*)?,\s*(runtimeCredential\w+)?`)
+	matches := leaf.FindAllStringSubmatch(string(controller), -1)
+	if len(matches) < 15 {
+		t.Fatalf("found %d controller leaves; the pattern no longer matches runtimeProtocolCredentialLeaves", len(matches))
+	}
+	for _, match := range matches {
+		path, kind := strings.TrimSuffix(match[1], "."), match[2]
+		if kind == "runtimeCredentialSecretName" {
+			// A secret-name field holds a name; the controller refuses a
+			// literal there, so there is no value to scrub.
+			continue
+		}
+		if !strings.Contains(string(cli), `"`+path) {
+			t.Errorf("controller credential leaf %s (%s) has no CLI entry", path, kind)
+		}
 	}
 }
 
