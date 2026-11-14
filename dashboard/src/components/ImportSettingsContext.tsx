@@ -249,10 +249,20 @@ export function SettingValue({ category, path, parameter, value, label, type = '
    : type === 'select' ? <select {...props} value={String(currentValue ?? '')} onChange={e => change(importedOption !== null && e.target.value === importedOption ? undefined : (e.target.value || null))}><option value="">Default</option>{preservedOption ? <option value={preservedOption}>{preservedOption} (imported)</option> : null}{nonEmptyOptions?.map(option => <option key={option} value={option}>{option.replace(/_/g, ' ')}</option>)}</select>
    : type === 'lines' ? <textarea {...props} rows={3} value={Array.isArray(currentValue) ? currentValue.join('\n') : ''} onChange={e => change(e.target.value.split('\n'))} />
    : <input {...props} type={type === 'number' || type === 'signed' ? 'number' : 'text'} min={type === 'number' ? 0 : undefined} step="any" value={String(currentValue ?? '')} placeholder="Default" onChange={e => change(e.target.value === '' ? null : type === 'number' || type === 'signed' ? Number(e.target.value) : e.target.value)} />}
-  {credentialReference && <small className="import-settings-hint">Enter a Credentials reference such as {'{{secret.PROXY_USER}}'}. The import refuses a typed username.</small>}
+  {credentialReference && <small className="import-settings-hint">{credentialReferenceHint(path)}</small>}
   {!parameter && <SettingResetActions path={path} label={label} draftValue={value} currentValue={pendingValue} onChange={change} disabled={props.disabled} acceptedOptions={type === 'select' ? nonEmptyOptions : undefined} credentialReference={credentialReference} />}
   {editor.errors[key] && <span role="alert">{editor.errors[key]}</span>}
  </label>
+}
+
+/**
+ * The hint under a setting whose new value must be a Credentials reference.
+ * The imported value is script-sourced: it stays as it is and resubmits
+ * unchanged; only a newly typed literal is refused.
+ */
+export function credentialReferenceHint(path: string): string {
+ if (path === 'config.http.proxy.username') return 'Enter a Credentials reference such as {{secret.PROXY_USER}}. The import refuses a typed username.'
+ return 'Enter a Credentials reference such as {{secret.NAME}} to change this value. The import refuses a newly typed value; the imported value can stay as it is.'
 }
 
 // Settings the draft must hold a value for: clearing them is a new validation

@@ -5,6 +5,7 @@ import { CategoryActions, SettingValue, formatSettingValue, isSettingModified, u
 import {
  CANONICAL_RUNTIME_GROUPS,
  PROVENANCE_FILTERS,
+ preferredRuntimeCategory,
  readSetting,
  resolveCanonicalRuntimeGroup,
  resolveRuntimeSubgroup,
@@ -46,7 +47,7 @@ function RuntimeSettingsWorkspace({
  // Open on what needs a decision, across every category, when anything does;
  // otherwise on the protocol's settings with the not-applicable ones folded away.
  const [decisionsFirst] = useState(() => (runtimeSettingRows(script)['Requires decision'] || []).length > 0)
- const [selected, setSelected] = useState(() => decisionsFirst ? 'All categories' : script.protocol?.startsWith('jms') ? 'JMS' : script.protocol === 'kafka' ? 'Kafka' : 'HTTP')
+ const [selected, setSelected] = useState(() => decisionsFirst ? 'All categories' : preferredRuntimeCategory(script.protocol))
  const [selectedCanonicalGroup, setSelectedCanonicalGroup] = useState<'All groups' | CanonicalRuntimeGroup>('All groups')
  const [provenanceFilter, setProvenanceFilter] = useState<'custom' | ProvenanceFilterOption>('custom')
  const [hiddenStatuses, setHiddenStatuses] = useState<string[]>(() => decisionsFirst ? ['Mapped for replay', 'Additional APEX settings', 'Preserved only', 'Not applicable'] : ['Not applicable'])
@@ -94,7 +95,7 @@ function RuntimeSettingsWorkspace({
  const categories = [...new Set(orderedGroups.flatMap(([name, rows]) => rows.filter(row => showUnconfigured || isVisibleByDefault(name, row)).map(row => row.category)))].sort()
  const enabledGroups = orderedGroups.filter(([name]) => !hiddenStatuses.includes(name))
  const enabledAllCategories = [...new Set(enabledGroups.flatMap(([, rows]) => rows.map(row => row.category)))].sort()
- const preferred = script.protocol?.startsWith('jms') ? 'JMS' : script.protocol === 'kafka' ? 'Kafka' : 'HTTP'
+ const preferred = preferredRuntimeCategory(script.protocol)
  const active = selected === 'All categories' || categories.includes(selected) || enabledAllCategories.includes(selected)
   ? selected
   : categories.includes(preferred) || enabledAllCategories.includes(preferred)

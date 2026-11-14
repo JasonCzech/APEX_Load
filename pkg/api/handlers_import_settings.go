@@ -1442,7 +1442,7 @@ func defaultImportCategoryForCatalogMeta(meta dsl.ConfigFieldMeta) string {
 		return "Logging"
 	case strings.HasPrefix(meta.Path, "config.error_handling.") || strings.HasPrefix(meta.Path, "config.transaction_granularity."):
 		return "Error handling"
-	case strings.HasPrefix(meta.Path, "config.results.") || strings.HasPrefix(meta.Path, "config.replay_diagnostics."):
+	case strings.HasPrefix(meta.Path, "config.results.") || strings.HasPrefix(meta.Path, "config.replay_diagnostics.") || strings.HasPrefix(meta.Path, "config.observability."):
 		return "Diagnostics"
 	case strings.HasPrefix(meta.Path, "config.browser_emulation."):
 		return "Browser emulation"
@@ -1466,6 +1466,8 @@ func defaultImportCategoryForCatalogMeta(meta dsl.ConfigFieldMeta) string {
 		return "Appium"
 	case strings.HasPrefix(meta.Path, "config.java_vuser."):
 		return "Java VUser"
+	case strings.HasPrefix(meta.Path, "config.java_http."):
+		return "Java HTTP"
 	default:
 		return meta.Group
 	}
@@ -1510,7 +1512,7 @@ func importCatalogFieldMatchesCategory(meta dsl.ConfigFieldMeta, category string
 	case "error_handling", "error handling", "miscellaneous":
 		return strings.HasPrefix(meta.Path, "config.error_handling.") || strings.HasPrefix(meta.Path, "config.transaction_granularity.")
 	case "diagnostics":
-		return strings.HasPrefix(meta.Path, "config.results.") || strings.HasPrefix(meta.Path, "config.replay_diagnostics.")
+		return strings.HasPrefix(meta.Path, "config.results.") || strings.HasPrefix(meta.Path, "config.replay_diagnostics.") || strings.HasPrefix(meta.Path, "config.observability.")
 	case "browser_emulation", "browser emulation":
 		return strings.HasPrefix(meta.Path, "config.browser_emulation.") || strings.HasPrefix(meta.Path, "config.browser.")
 	case "browser":

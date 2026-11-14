@@ -527,3 +527,48 @@ func TestWidenedImportSettingsFamiliesAndCredentialGuards(t *testing.T) {
 		t.Fatalf("expected a typed WS-Security password to be refused, got errs=%v", changeErrs)
 	}
 }
+
+// The editor files Java over HTTP settings under "Java HTTP" and the messaging
+// trace carrier under "Diagnostics", and applies each edit under that
+// category, so the served list and the POST must agree on those names.
+func TestImportSettingsServedCategoriesForJavaHTTPAndObservability(t *testing.T) {
+	served := func(protocol, path string) importSettingField {
+		t.Helper()
+		for _, f := range widenedImportSettingFields(protocol) {
+			if f.Path == path {
+				return f
+			}
+		}
+		t.Fatalf("%s is not served for %s", path, protocol)
+		return importSettingField{}
+	}
+	if got := served("java_http", "config.java_http.content_type").Category; got != "Java HTTP" {
+		t.Fatalf("java_http category = %q, want Java HTTP", got)
+	}
+	for _, protocol := range []string{"kafka", "jms", "eventhubs"} {
+		if got := served(protocol, "config.observability.trace_carrier").Category; got != "Diagnostics" {
+			t.Fatalf("%s trace carrier category = %q, want Diagnostics", protocol, got)
+		}
+	}
+
+	javaHTTP := settingsTestScript()
+	javaHTTP.Protocol = "java_http"
+	for _, category := range []string{"Java HTTP", "protocol_behavior_session"} {
+		updated, errs := applyImportSettings(javaHTTP, category, []ImportSettingsChange{settingChange("config.java_http.content_type", `"application/x-java-serialized-object"`)})
+		if len(errs) != 0 || updated == nil || updated.Config.JavaHTTP.ContentType != "application/x-java-serialized-object" {
+			t.Fatalf("java_http under %q: errs=%v", category, errs)
+		}
+	}
+	kafka := settingsTestScript()
+	kafka.Protocol = "kafka"
+	for _, category := range []string{"Diagnostics", "errors_logging_diagnostics"} {
+		updated, errs := applyImportSettings(kafka, category, []ImportSettingsChange{settingChange("config.observability.trace_carrier", `"w3c"`)})
+		if len(errs) != 0 || updated == nil || updated.Config.Observability.TraceCarrier != "w3c" {
+			t.Fatalf("trace carrier under %q: errs=%v", category, errs)
+		}
+	}
+	// A Diagnostics edit still cannot reach another family's settings.
+	if _, errs := applyImportSettings(kafka, "Diagnostics", []ImportSettingsChange{settingChange("config.kafka.topic", `"orders"`)}); len(errs) == 0 {
+		t.Fatal("a Kafka setting applied under Diagnostics")
+	}
+}
